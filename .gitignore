@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+backend/venv/
+*.egg
+
+# Environment
+.env
+backend/.env
+
+# Auto-generated data (rebuilt on first run)
+data/
+models/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Sisyphus working state
+.sisyphus/
+
+# Generated diagram PNGs (rebuild from SVGs)
+diagram/*@2x.png

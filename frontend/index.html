@@ -1,0 +1,1620 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文档知识库 Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+        .drag-over { border-color: #3b82f6 !important; background-color: #eff6ff !important; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .step-item { animation: slideIn 0.3s ease-out; }
+        .collapsible-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out; }
+        .collapsible-content.expanded { max-height: 500px; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-[1600px] mx-auto p-6">
+        <!-- 标题 -->
+        <div class="mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">📚 文档知识库 Demo</h1>
+            <p class="text-gray-500 mt-1">拖入文档 / 导入邮件 → 自动解析 → 向量化存储 → 智能问答</p>
+        </div>
+        
+        <!-- 功能标签页 -->
+        <div class="mb-6">
+            <div class="flex space-x-1 bg-gray-100 p-1 rounded-lg w-fit">
+                <button onclick="switchTab('upload')" id="tab-upload" class="tab-btn active px-4 py-2 rounded-md text-sm font-medium transition-colors">📄 文档管理</button>
+                <button onclick="switchTab('email')" id="tab-email" class="tab-btn px-4 py-2 rounded-md text-sm font-medium transition-colors">📧 邮件导入</button>
+                <button onclick="switchTab('chat')" id="tab-chat" class="tab-btn px-4 py-2 rounded-md text-sm font-medium transition-colors">💬 智能问答</button>
+                <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn px-4 py-2 rounded-md text-sm font-medium transition-colors">📊 看板</button>
+                <button onclick="switchTab('lancedb')" id="tab-lancedb" class="tab-btn px-4 py-2 rounded-md text-sm font-medium transition-colors">🗄️ LanceDB 内部</button>
+            </div>
+        </div>
+        
+        <!-- Tab 1: 文档管理 - 三列布局 -->
+        <div id="panel-upload" class="tab-panel">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- 左侧：文档上传 + 列表 (4列) -->
+                <div class="lg:col-span-4 space-y-4">
+                    <div id="dropZone" class="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer transition-all duration-200 hover:border-blue-400 hover:bg-blue-50">
+                        <div class="text-4xl mb-3">📄</div>
+                        <p class="font-medium text-gray-700">拖拽文件到此处</p>
+                        <p class="text-xs text-gray-400 mt-2">或点击选择 · PDF/TXT/MD/DOCX/EML</p>
+                        <input type="file" id="fileInput" class="hidden" accept=".pdf,.txt,.md,.docx,.eml" multiple>
+                    </div>
+                    
+                    <div id="uploadProgress" class="hidden bg-white rounded-lg p-3 shadow-sm">
+                        <div class="flex items-center space-x-2">
+                            <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                            <span id="uploadStatus" class="text-sm text-gray-700">正在处理...</span>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white rounded-lg shadow-sm">
+                        <div class="px-3 py-2 border-b border-gray-100 flex justify-between items-center">
+                            <h3 class="font-semibold text-gray-700 text-sm">已上传文档</h3>
+                            <span id="docCount" class="text-xs text-gray-500">0</span>
+                        </div>
+                        <div id="docList" class="divide-y divide-gray-50 max-h-[500px] overflow-y-auto">
+                            <div class="p-3 text-center text-gray-400 text-xs">暂无文档</div>
+                        </div>
+                    </div>
+                    
+                    <div id="stats" class="bg-blue-50 rounded-lg p-3 text-xs text-blue-700">
+                        <span id="statsText">加载中...</span>
+                    </div>
+                </div>
+                
+                <!-- 中间：搜索区 (4列) -->
+                <div class="lg:col-span-4 space-y-4">
+                    <div class="bg-white rounded-lg shadow-sm p-4">
+                        <div class="flex space-x-2">
+                            <input type="text" id="searchInput" placeholder="输入问题，搜索相关文档内容..." 
+                                   class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <button onclick="handleSearch()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">搜索</button>
+                        </div>
+                        <div class="mt-2 flex items-center space-x-3 text-xs text-gray-500">
+                            <label class="flex items-center space-x-1">
+                                <span>返回:</span>
+                                <select id="topK" class="border rounded px-1 py-0.5">
+                                    <option value="3">3</option>
+                                    <option value="5" selected>5</option>
+                                    <option value="10">10</option>
+                                </select>
+                            </label>
+                            <label class="flex items-center space-x-1">
+                                <span>类型:</span>
+                                <select id="fileTypeFilter" class="border rounded px-1 py-0.5">
+                                    <option value="">全部</option>
+                                    <option value=".eml">仅邮件</option>
+                                    <option value=".md">仅Markdown</option>
+                                </select>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white rounded-lg shadow-sm">
+                        <div class="px-4 py-2 border-b border-gray-100">
+                            <h3 class="font-semibold text-gray-700 text-sm">搜索结果</h3>
+                        </div>
+                        <div id="searchResults" class="divide-y divide-gray-50 max-h-[600px] overflow-y-auto">
+                            <div class="p-6 text-center text-gray-400">
+                                <div class="text-3xl mb-2">🔍</div>
+                                <p class="text-sm">输入问题开始搜索</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 右侧：执行流程 (4列) -->
+                <div class="lg:col-span-4 space-y-4">
+                    <!-- 上传流程 -->
+                    <div class="bg-white rounded-lg shadow-sm">
+                        <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                            <h3 class="font-semibold text-gray-700 text-sm flex items-center">
+                                <span class="w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-[10px] mr-2">📤</span>
+                                上传流程
+                            </h3>
+                            <span id="uploadDuration" class="text-[10px] text-gray-500"></span>
+                        </div>
+                        <div class="p-4 max-h-[350px] overflow-y-auto">
+                            <div id="uploadStepsList" class="space-y-2">
+                                <div class="text-center text-gray-400 text-xs py-3">拖入文件后显示流程</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 搜索流程 -->
+                    <div class="bg-white rounded-lg shadow-sm">
+                        <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                            <h3 class="font-semibold text-gray-700 text-sm flex items-center">
+                                <span class="w-5 h-5 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-[10px] mr-2">🔍</span>
+                                搜索流程
+                            </h3>
+                            <span id="stepDuration" class="text-[10px] text-gray-500"></span>
+                        </div>
+                        <div class="p-4 max-h-[350px] overflow-y-auto">
+                            <div id="searchStepsList" class="space-y-2">
+                                <div class="text-center text-gray-400 text-xs py-3">执行搜索后显示流程</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tab 2: 邮件导入 -->
+        <div id="panel-email" class="tab-panel hidden">
+            <div class="max-w-4xl mx-auto">
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h2 class="text-xl font-semibold mb-4">📧 邮件数据导入</h2>
+                    <p class="text-gray-600 mb-6">从本地邮件数据库导入邮件到向量知识库，支持后续智能检索。</p>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <h3 class="font-medium text-gray-700 mb-2">📊 邮件数据库统计</h3>
+                            <div id="emailStats" class="space-y-1 text-sm text-gray-600">
+                                <p>加载中...</p>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-3">💡 线程 = 一组相关邮件的对话</p>
+                        </div>
+                        
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <h3 class="font-medium text-gray-700 mb-2">⚙️ 导入设置</h3>
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">导入数量</label>
+                                    <select id="importCount" class="w-full border rounded-lg px-3 py-2">
+                                        <option value="10">10 封</option>
+                                        <option value="50" selected>50 封</option>
+                                        <option value="100">100 封</option>
+                                    </select>
+                                </div>
+                                <button onclick="importEmails()" id="importBtn" class="w-full bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-medium transition-colors">📥 开始导入</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="importProgress" class="hidden border-t pt-4">
+                        <h3 class="font-medium text-gray-700 mb-3">📋 导入进度</h3>
+                        <div id="importSteps" class="space-y-3"></div>
+                    </div>
+                    
+                    <div class="border-t pt-4 mt-4">
+                        <h3 class="font-medium text-gray-700 mb-3">📬 邮件预览</h3>
+                        <div id="emailPreview" class="space-y-2 max-h-60 overflow-y-auto">
+                            <p class="text-gray-400 text-sm">加载中...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tab 3: 智能问答 -->
+        <div id="panel-chat" class="tab-panel hidden">
+            <div class="max-w-4xl mx-auto">
+                <div class="bg-white rounded-lg shadow-sm">
+                    <div id="chatMessages" class="h-[500px] overflow-y-auto p-6 space-y-4">
+                        <div class="flex items-start space-x-3">
+                            <div class="bg-blue-100 rounded-full p-2">🤖</div>
+                            <div class="bg-gray-100 rounded-lg p-3 max-w-[80%]">
+                                <p class="text-gray-700">你好！我是智能问答助手，基于你的文档和邮件知识库回答问题。</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="border-t p-4">
+                        <div class="flex space-x-3">
+                            <input type="text" id="chatInput" placeholder="输入你的问题..." class="flex-1 border border-gray-200 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <button onclick="handleChat()" id="chatBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium transition-colors">发送</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="chatSources" class="hidden mt-4 bg-white rounded-lg shadow-sm p-4">
+                    <h3 class="font-semibold text-gray-700 mb-3">📚 参考来源</h3>
+                    <div id="sourcesList" class="space-y-2"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tab 4: 看板 -->
+        <div id="panel-dashboard" class="tab-panel hidden">
+            <div class="max-w-5xl mx-auto">
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-xl font-semibold">📊 系统看板</h2>
+                        <div class="flex items-center space-x-3">
+                            <span id="dashboardLastUpdated" class="text-xs text-gray-400">尚未加载</span>
+                            <button onclick="refreshDashboard()" id="dashboardRefreshBtn"
+                                class="text-sm px-3 py-1.5 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors flex items-center space-x-1">
+                                <span id="dashboardRefreshIcon">🔄</span>
+                                <span>刷新</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div class="bg-blue-50 rounded-lg p-4">
+                            <p class="text-sm text-blue-600">📄 文档数</p>
+                            <p id="statDocs" class="text-2xl font-bold text-blue-700">-</p>
+                        </div>
+                        <div class="bg-green-50 rounded-lg p-4">
+                            <p class="text-sm text-green-600">📧 邮件数</p>
+                            <p id="statEmails" class="text-2xl font-bold text-green-700">-</p>
+                        </div>
+                        <div class="bg-purple-50 rounded-lg p-4">
+                            <p class="text-sm text-purple-600">🧵 线程数</p>
+                            <p id="statThreads" class="text-2xl font-bold text-purple-700">-</p>
+                        </div>
+                        <div class="bg-orange-50 rounded-lg p-4">
+                            <p class="text-sm text-orange-600">🧩 向量块数</p>
+                            <p id="statChunks" class="text-2xl font-bold text-orange-700">-</p>
+                        </div>
+                    </div>
+
+                    <!-- 性能指标卡片 -->
+                    <h3 class="font-semibold text-gray-700 mb-3 mt-2">⚡ 性能指标</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div class="bg-cyan-50 rounded-lg p-4">
+                            <p class="text-sm text-cyan-600">💾 LanceDB 磁盘</p>
+                            <p id="perfDisk" class="text-2xl font-bold text-cyan-700">-</p>
+                            <p id="perfDiskBytes" class="text-[10px] text-cyan-500 mt-1">-</p>
+                        </div>
+                        <div class="bg-indigo-50 rounded-lg p-4">
+                            <p class="text-sm text-indigo-600">🔍 平均搜索耗时</p>
+                            <p id="perfSearchAvg" class="text-2xl font-bold text-indigo-700">-</p>
+                            <p id="perfSearchMeta" class="text-[10px] text-indigo-500 mt-1">-</p>
+                        </div>
+                        <div class="bg-teal-50 rounded-lg p-4">
+                            <p class="text-sm text-teal-600">📥 平均文件插入</p>
+                            <p id="perfInsertFile" class="text-2xl font-bold text-teal-700">-</p>
+                            <p id="perfInsertFileMeta" class="text-[10px] text-teal-500 mt-1">-</p>
+                        </div>
+                        <div class="bg-pink-50 rounded-lg p-4">
+                            <p class="text-sm text-pink-600">🧩 平均 chunk 插入</p>
+                            <p id="perfInsertChunk" class="text-2xl font-bold text-pink-700">-</p>
+                            <p id="perfInsertChunkMeta" class="text-[10px] text-pink-500 mt-1">-</p>
+                        </div>
+                    </div>
+
+                    <!-- 趋势图 + Step 拆解 -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+                        <div class="bg-white border border-gray-200 rounded-lg p-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <h3 class="font-semibold text-gray-700">📈 耗时趋势（按天）</h3>
+                                <select id="trendType" onchange="loadTrend()" class="text-xs border border-gray-300 rounded px-2 py-1">
+                                    <option value="search">搜索</option>
+                                    <option value="chat">问答</option>
+                                    <option value="insert_file">文件上传</option>
+                                    <option value="email_import">邮件导入</option>
+                                </select>
+                            </div>
+                            <div class="h-64"><canvas id="trendChart"></canvas></div>
+                        </div>
+                        <div class="bg-white border border-gray-200 rounded-lg p-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <h3 class="font-semibold text-gray-700">🔬 Step 耗时拆解</h3>
+                                <select id="breakdownType" onchange="loadBreakdown()" class="text-xs border border-gray-300 rounded px-2 py-1">
+                                    <option value="search">搜索</option>
+                                    <option value="chat">问答</option>
+                                    <option value="insert_file">文件上传</option>
+                                    <option value="email_import">邮件导入</option>
+                                </select>
+                            </div>
+                            <div class="h-64"><canvas id="breakdownChart"></canvas></div>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 rounded-lg p-6">
+                        <h3 class="font-semibold text-gray-700 mb-4">📁 数据存储目录</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="space-y-3">
+                                <div>
+                                    <p class="font-medium text-gray-700">项目根目录</p>
+                                    <code class="text-xs bg-gray-200 px-2 py-1 rounded block mt-1">~/Desktop/AI产出/email-wiki-demo/</code>
+                                </div>
+                                <div>
+                                    <p class="font-medium text-gray-700">向量数据库 (LanceDB)</p>
+                                    <code class="text-xs bg-gray-200 px-2 py-1 rounded block mt-1">data/lancedb/</code>
+                                </div>
+                                <div>
+                                    <p class="font-medium text-gray-700">邮件数据库 (SQLite)</p>
+                                    <code class="text-xs bg-gray-200 px-2 py-1 rounded block mt-1">data/emails.db</code>
+                                </div>
+                            </div>
+                            <div class="space-y-3">
+                                <div>
+                                    <p class="font-medium text-gray-700">用户上传文档</p>
+                                    <code class="text-xs bg-gray-200 px-2 py-1 rounded block mt-1">uploads/</code>
+                                </div>
+                                <div>
+                                    <p class="font-medium text-gray-700">Embedding 模型缓存</p>
+                                    <code class="text-xs bg-gray-200 px-2 py-1 rounded block mt-1">models/</code>
+                                    <p id="embedderInfo" class="text-[10px] text-gray-400 mt-1">-</p>
+                                </div>
+                                <div>
+                                    <p class="font-medium text-gray-700">测试文档</p>
+                                    <code class="text-xs bg-gray-200 px-2 py-1 rounded block mt-1">test_docs/</code>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 5: LanceDB 内部 -->
+        <div id="panel-lancedb" class="tab-panel hidden">
+            <div class="max-w-6xl mx-auto space-y-6">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-xl font-semibold text-gray-800">🗄️ LanceDB 内部</h2>
+                    <div class="flex items-center space-x-3">
+                        <span id="lancedb-last-updated" class="text-xs text-gray-400">尚未加载</span>
+                        <button onclick="refreshLancedb()" id="lancedb-refresh-btn"
+                            class="text-sm px-3 py-1.5 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors flex items-center space-x-1">
+                            <span id="lancedb-refresh-icon">🔄</span>
+                            <span>刷新</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="lancedb-error" class="hidden bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm">
+                    <span id="lancedb-error-msg"></span>
+                </div>
+
+                <!-- ─── A 区：表概览 ─── -->
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-xl font-semibold mb-4">🗄️ A. 表概览 <span id="lancedb-table-name" class="text-sm font-normal text-gray-500 ml-2"></span></h3>
+
+                    <!-- 4 元信息卡片 -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+                        <div class="bg-slate-50 rounded-lg p-4">
+                            <p class="text-sm text-slate-600">📊 行数</p>
+                            <p id="lancedb-total-rows" class="text-2xl font-bold text-slate-700">-</p>
+                        </div>
+                        <div class="bg-amber-50 rounded-lg p-4">
+                            <p class="text-sm text-amber-600">🔖 当前版本</p>
+                            <p id="lancedb-version" class="text-2xl font-bold text-amber-700">-</p>
+                        </div>
+                        <div class="bg-lime-50 rounded-lg p-4">
+                            <p class="text-sm text-lime-600">📦 Fragment 数</p>
+                            <p id="lancedb-fragments" class="text-2xl font-bold text-lime-700">-</p>
+                        </div>
+                        <div class="bg-fuchsia-50 rounded-lg p-4">
+                            <p class="text-sm text-fuchsia-600">🧭 索引数</p>
+                            <p id="lancedb-indices" class="text-2xl font-bold text-fuchsia-700">-</p>
+                        </div>
+                    </div>
+
+                    <!-- 搜索策略提示条 -->
+                    <div id="lancedb-strategy-bar" class="hidden bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 mb-5 text-sm">
+                        <span id="lancedb-strategy-text"></span>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Schema 表 -->
+                        <div>
+                            <h4 class="font-semibold text-gray-700 mb-3">📋 Schema 字段</h4>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-100">
+                                            <th class="text-left px-3 py-2 text-gray-600 font-medium border-b">字段名</th>
+                                            <th class="text-left px-3 py-2 text-gray-600 font-medium border-b">类型</th>
+                                            <th class="text-center px-3 py-2 text-gray-600 font-medium border-b">向量</th>
+                                            <th class="text-center px-3 py-2 text-gray-600 font-medium border-b">维度</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="lancedb-schema-tbody">
+                                        <tr><td colspan="4" class="px-3 py-4 text-center text-gray-400">加载中…</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Fragment 条形图 -->
+                        <div>
+                            <h4 class="font-semibold text-gray-700 mb-3">📦 Fragment 行数分布</h4>
+                            <div id="lancedb-fragments-chart" class="space-y-1.5 max-h-64 overflow-y-auto pr-2">
+                                <p class="text-gray-400 text-xs">加载中…</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ─── B 区：数据浏览 ─── -->
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-xl font-semibold mb-4">🔍 B. 数据浏览</h3>
+
+                    <!-- 工具条 -->
+                    <div class="flex flex-wrap items-center gap-3 mb-4 pb-4 border-b">
+                        <select id="lancedb-filter-type" onchange="loadLancedbRows(0)" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">全部类型</option>
+                            <option value=".eml">📧 .eml</option>
+                            <option value=".pdf">📕 .pdf</option>
+                            <option value=".md">📝 .md</option>
+                            <option value=".docx">📘 .docx</option>
+                            <option value=".txt">📄 .txt</option>
+                        </select>
+                        <input type="text" id="lancedb-search-kw" placeholder="关键词搜索…"
+                            oninput="clearTimeout(window._ldbKwTimer); window._ldbKwTimer=setTimeout(()=>loadLancedbRows(0),500)"
+                            class="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 min-w-[12rem] focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <label class="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer select-none">
+                            <input type="checkbox" id="lancedb-include-vector" onchange="loadLancedbRows(0)" class="rounded">
+                            显示完整向量
+                        </label>
+                        <span id="lancedb-rows-count" class="text-xs text-gray-400"></span>
+                        <div class="flex items-center gap-2">
+                            <button onclick="lancedbPrevPage()" id="lancedb-prev-btn"
+                                class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed">← 上页</button>
+                            <span id="lancedb-page-info" class="text-sm text-gray-600 min-w-[6rem] text-center">-</span>
+                            <button onclick="lancedbNextPage()" id="lancedb-next-btn"
+                                class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed">下页 →</button>
+                        </div>
+                    </div>
+
+                    <!-- 数据表格 -->
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="bg-gray-50 border-b">
+                                    <th class="text-left px-3 py-2 text-gray-500 font-medium">ID</th>
+                                    <th class="text-left px-3 py-2 text-gray-500 font-medium">文件名</th>
+                                    <th class="text-center px-3 py-2 text-gray-500 font-medium">块#</th>
+                                    <th class="text-left px-3 py-2 text-gray-500 font-medium">内容（摘要）</th>
+                                    <th class="text-left px-3 py-2 text-gray-500 font-medium">向量前5维</th>
+                                    <th class="text-center px-3 py-2 text-gray-500 font-medium">Fragment</th>
+                                    <th class="text-center px-3 py-2 text-gray-500 font-medium">Norm</th>
+                                </tr>
+                            </thead>
+                            <tbody id="lancedb-rows-tbody">
+                                <tr><td colspan="7" class="px-3 py-8 text-center text-gray-400">加载中…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ─── C 区：原理演示 ─── -->
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <button onclick="toggleLancedbDemo()" class="flex items-center gap-2 text-xl font-semibold w-full text-left mb-2 focus:outline-none">
+                        <span id="lancedb-demo-arrow" class="text-gray-400 transition-transform duration-300" style="transform:rotate(-90deg)">▼</span>
+                        🧪 C. 原理演示
+                        <span class="text-sm font-normal text-gray-500 ml-2">点击展开 → 手动输入文本触发逐步演示</span>
+                    </button>
+                    <div id="lancedb-demo-content" style="max-height:0;overflow:hidden;transition:max-height 0.4s ease-out">
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
+
+                            <!-- 左：📥 存入演示 -->
+                            <div class="bg-slate-50 rounded-lg p-5">
+                                <h4 class="font-semibold text-gray-700 mb-4">📥 存入演示</h4>
+                                <div class="space-y-3 mb-4">
+                                    <div>
+                                        <label class="text-xs text-gray-500 mb-1 block">输入文本</label>
+                                        <textarea id="lancedb-insert-text" rows="3"
+                                            class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            placeholder="输入要演示写入的文本">机器学习是 AI 子领域。深度学习用神经网络处理高维数据。</textarea>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label class="text-xs text-gray-500 mb-1 block">chunk_size</label>
+                                            <input type="number" id="lancedb-insert-chunk-size" value="500"
+                                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        </div>
+                                        <div>
+                                            <label class="text-xs text-gray-500 mb-1 block">overlap</label>
+                                            <input type="number" id="lancedb-insert-overlap" value="50"
+                                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        </div>
+                                    </div>
+                                    <button onclick="runInsertDemo()" id="lancedb-insert-btn"
+                                        class="w-full bg-slate-600 hover:bg-slate-700 text-white py-2 px-4 rounded-lg text-sm font-medium transition-colors">
+                                        🚀 执行演示
+                                    </button>
+                                </div>
+                                <div id="lancedb-insert-steps" class="space-y-3"></div>
+                            </div>
+
+                            <!-- 右：🔍 搜索演示 -->
+                            <div class="bg-amber-50 rounded-lg p-5">
+                                <h4 class="font-semibold text-gray-700 mb-4">🔍 搜索演示</h4>
+                                <div class="space-y-3 mb-4">
+                                    <div>
+                                        <label class="text-xs text-gray-500 mb-1 block">查询词</label>
+                                        <input type="text" id="lancedb-search-query" value="邮件项目"
+                                            class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label class="text-xs text-gray-500 mb-1 block">top_k</label>
+                                            <input type="number" id="lancedb-search-topk" value="5"
+                                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        </div>
+                                        <div>
+                                            <label class="text-xs text-gray-500 mb-1 block">score_threshold</label>
+                                            <input type="number" id="lancedb-search-threshold" value="0.3" step="0.05"
+                                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        </div>
+                                    </div>
+                                    <button onclick="runSearchDemo()" id="lancedb-search-btn"
+                                        class="w-full bg-amber-500 hover:bg-amber-600 text-white py-2 px-4 rounded-lg text-sm font-medium transition-colors">
+                                        🔍 执行演示
+                                    </button>
+                                </div>
+                                <div id="lancedb-search-steps" class="space-y-3"></div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+        </div>
+    </div>
+    
+    <script>
+        let documents = [];
+        let isSearching = false;
+        let isChatting = false;
+        let currentQuery = '';
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            loadDocuments();
+            loadEmailStats();
+            loadEmailPreview();
+            setupDragDrop();
+            setupKeyboard();
+        });
+        
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-panel').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(el => {
+                el.classList.remove('bg-white', 'shadow-sm', 'text-blue-600');
+                el.classList.add('text-gray-600');
+            });
+            document.getElementById(`panel-${tab}`).classList.remove('hidden');
+            const btn = document.getElementById(`tab-${tab}`);
+            btn.classList.add('bg-white', 'shadow-sm', 'text-blue-600');
+            btn.classList.remove('text-gray-600');
+
+            if (tab === 'dashboard') {
+                refreshDashboard();
+            }
+            if (tab === 'lancedb') {
+                refreshLancedb();
+            }
+        }
+        document.getElementById('tab-upload').classList.add('bg-white', 'shadow-sm', 'text-blue-600');
+        
+        function toggleSection(type) {
+            const section = document.getElementById(`${type}Section`);
+            const arrow = document.getElementById(`${type}Arrow`);
+            section.classList.toggle('expanded');
+            arrow.style.transform = section.classList.contains('expanded') ? '' : 'rotate(-90deg)';
+        }
+        
+        function setupDragDrop() {
+            const dropZone = document.getElementById('dropZone');
+            const fileInput = document.getElementById('fileInput');
+            dropZone.addEventListener('click', () => fileInput.click());
+            dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+            dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+            dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('drag-over'); handleFiles(e.dataTransfer.files); });
+            fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+        }
+        
+        function setupKeyboard() {
+            document.getElementById('searchInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSearch(); });
+            document.getElementById('chatInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') handleChat(); });
+        }
+        
+        async function handleFiles(files) { for (const file of files) await uploadFile(file); }
+        
+        async function uploadFile(file) {
+            const progress = document.getElementById('uploadProgress');
+            const status = document.getElementById('uploadStatus');
+            progress.classList.remove('hidden');
+            status.textContent = `正在处理: ${file.name}...`;
+            
+            document.getElementById('uploadStepsList').innerHTML = '<div class="text-center text-gray-400 text-xs py-2">正在上传...</div>';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const res = await fetch('/api/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (res.ok) {
+                    status.textContent = `✅ ${data.filename} - ${data.chunks} 个分块`;
+                    setTimeout(() => progress.classList.add('hidden'), 2000);
+                    if (data.steps && data.steps.length > 0) renderUploadSteps(data.steps);
+                    loadDocuments();
+                } else {
+                    status.textContent = `❌ ${data.detail}`;
+                    setTimeout(() => progress.classList.add('hidden'), 3000);
+                }
+            } catch (err) {
+                status.textContent = `❌ ${err.message}`;
+                setTimeout(() => progress.classList.add('hidden'), 3000);
+            }
+        }
+        
+        function renderUploadSteps(steps) {
+            const stepsList = document.getElementById('uploadStepsList');
+            const uploadDuration = document.getElementById('uploadDuration');
+            const totalDuration = steps.reduce((sum, s) => sum + (s.duration_ms || 0), 0);
+            
+            // 显示总耗时在标题栏
+            uploadDuration.textContent = `${totalDuration.toFixed(0)}ms`;
+            
+            stepsList.innerHTML = `
+                ${steps.map((step, i) => `
+                    <div class="step-item bg-gray-50 rounded p-2">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-1.5">
+                                <span class="w-4 h-4 rounded-full bg-blue-500 text-white text-[10px] flex items-center justify-center">${i + 1}</span>
+                                <span class="text-xs font-medium">${step.description}</span>
+                            </div>
+                            <span class="text-[10px] text-gray-500">${(step.duration_ms || 0).toFixed(0)}ms</span>
+                        </div>
+                        ${step.details ? `<div class="ml-5.5 mt-1 text-[10px] text-gray-500">${formatStepDetails(step.details)}</div>` : ''}
+                    </div>
+                `).join('')}
+            `;
+        }
+        
+        function renderSearchSteps(steps) {
+            const stepsList = document.getElementById('searchStepsList');
+            const stepDuration = document.getElementById('stepDuration');
+            
+            if (!steps || steps.length === 0) {
+                stepsList.innerHTML = '<p class="text-gray-400 text-xs">无步骤信息</p>';
+                return;
+            }
+            
+            const totalDuration = steps.reduce((sum, s) => sum + (s.duration_ms || 0), 0);
+            stepDuration.textContent = `${totalDuration.toFixed(0)}ms`;
+            
+            stepsList.innerHTML = steps.map((step, i) => `
+                <div class="step-item bg-gray-50 rounded p-2">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-1.5">
+                            <span class="w-4 h-4 rounded-full bg-green-500 text-white text-[10px] flex items-center justify-center">${i + 1}</span>
+                            <span class="text-xs font-medium">${step.description}</span>
+                        </div>
+                        <span class="text-[10px] text-gray-500">${(step.duration_ms || 0).toFixed(0)}ms</span>
+                    </div>
+                    ${step.details ? `<div class="ml-5.5 mt-1 text-[10px] text-gray-500">${formatStepDetails(step.details)}</div>` : ''}
+                </div>
+            `).join('');
+        }
+        
+        function formatStepDetails(details) {
+            return `<div class="space-y-1">${Object.entries(details).map(([k, v]) => {
+                const label = k.replace(/_/g, ' ');
+                return `<div>${formatDetailItem(label, v)}</div>`;
+            }).join('')}</div>`;
+        }
+        
+        function formatDetailItem(label, value) {
+            // 处理数组
+            if (Array.isArray(value)) {
+                if (value.length === 0) return `<span class="text-gray-400">${label}:</span> <span class="text-gray-500">[]</span>`;
+                
+                // 如果是对象数组（如搜索结果）
+                if (typeof value[0] === 'object') {
+                    return `
+                        <div><span class="text-gray-400">${label}:</span></div>
+                        <div class="ml-3 mt-0.5 space-y-0.5">
+                            ${value.map((item, i) => `
+                                <div class="text-gray-600 bg-white rounded px-1.5 py-0.5">
+                                    ${Object.entries(item).map(([ik, iv]) => `<span class="text-gray-400">${ik}:</span> ${iv}`).join(' · ')}
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+                
+                // 简单数组（如向量预览）
+                return `<span class="text-gray-400">${label}:</span> <span class="text-gray-600 font-mono text-[9px]">[${value.join(', ')}]</span>`;
+            }
+            
+            // 处理对象
+            if (typeof value === 'object' && value !== null) {
+                return `
+                    <div><span class="text-gray-400">${label}:</span></div>
+                    <div class="ml-3 mt-0.5 text-gray-600 bg-white rounded px-1.5 py-0.5">
+                        ${Object.entries(value).map(([ik, iv]) => `<span class="text-gray-400">${ik}:</span> ${iv}`).join(' · ')}
+                    </div>
+                `;
+            }
+            
+            // 简单值
+            return `<span class="text-gray-400">${label}:</span> <span class="text-gray-600">${value}</span>`;
+        }
+        
+        async function loadDocuments() {
+            try {
+                const [docs, stats] = await Promise.all([
+                    fetch('/api/documents').then(r => r.json()),
+                    fetch('/api/stats').then(r => r.json())
+                ]);
+                documents = docs;
+                renderDocList(docs);
+                renderStats(stats);
+                loadDashboardStats(stats);
+            } catch (err) { console.error('加载失败:', err); }
+        }
+        
+        function loadDashboardStats(stats) {
+            const d = stats.documents || {};
+            const e = stats.emails || {};
+            document.getElementById('statDocs').textContent = d.total_documents || 0;
+            document.getElementById('statEmails').textContent = e.total_emails || 0;
+            document.getElementById('statThreads').textContent = e.total_threads || 0;
+            document.getElementById('statChunks').textContent = d.total_chunks || 0;
+
+            const emb = stats.embedder || {};
+            const embEl = document.getElementById('embedderInfo');
+            if (embEl && emb.model_name) {
+                const sizeMb = emb.model_size_mb ? `~${Math.round(emb.model_size_mb)}MB` : '';
+                embEl.textContent = `${emb.model_name} · ${emb.dimension}维 ${sizeMb}`.trim();
+            }
+
+            const perf = stats.performance || {};
+            renderPerfCards(perf);
+        }
+
+        async function refreshDashboard() {
+            const btn = document.getElementById('dashboardRefreshBtn');
+            const icon = document.getElementById('dashboardRefreshIcon');
+            const ts = document.getElementById('dashboardLastUpdated');
+            btn.disabled = true;
+            icon.style.display = 'inline-block';
+            icon.style.transition = 'transform 0.6s ease';
+            icon.style.transform = 'rotate(360deg)';
+            ts.textContent = '刷新中...';
+            try {
+                const stats = await fetch('/api/stats').then(r => r.json());
+                loadDashboardStats(stats);
+                await Promise.all([loadTrend(), loadBreakdown()]);
+                const now = new Date();
+                const hh = String(now.getHours()).padStart(2, '0');
+                const mm = String(now.getMinutes()).padStart(2, '0');
+                const ss = String(now.getSeconds()).padStart(2, '0');
+                ts.textContent = `更新于 ${hh}:${mm}:${ss}`;
+            } catch (err) {
+                console.error('refreshDashboard failed:', err);
+                ts.textContent = '刷新失败';
+            } finally {
+                btn.disabled = false;
+                setTimeout(() => { icon.style.transform = 'rotate(0)'; }, 50);
+            }
+        }
+
+        function renderPerfCards(perf) {
+            const disk = perf.lancedb_disk_bytes || 0;
+            document.getElementById('perfDisk').textContent = formatSize(disk) || '0 B';
+            document.getElementById('perfDiskBytes').textContent = `${disk.toLocaleString()} bytes`;
+
+            const s = perf.search || {};
+            document.getElementById('perfSearchAvg').textContent = s.count ? `${s.avg_ms} ms` : '-';
+            document.getElementById('perfSearchMeta').textContent = s.count
+                ? `n=${s.count} · P95 ${s.p95_ms}ms · max ${s.max_ms}ms` : '暂无搜索记录';
+
+            const ins = perf.insert || {};
+            document.getElementById('perfInsertFile').textContent = ins.file_count ? `${ins.avg_per_file_ms} ms` : '-';
+            document.getElementById('perfInsertFileMeta').textContent = ins.file_count
+                ? `${ins.file_count} 次上传` : '暂无插入记录';
+            document.getElementById('perfInsertChunk').textContent = ins.chunk_count ? `${ins.avg_per_chunk_ms} ms` : '-';
+            document.getElementById('perfInsertChunkMeta').textContent = ins.chunk_count
+                ? `${ins.chunk_count} 个 chunk · 平摊估算` : '暂无 chunk 数据';
+        }
+
+        let trendChartInstance = null;
+        let breakdownChartInstance = null;
+
+        async function loadTrend() {
+            const type = document.getElementById('trendType').value;
+            try {
+                const res = await fetch(`/api/performance/trend?type=${type}&days=7`);
+                const data = await res.json();
+                const labels = data.trend.map(d => d.day);
+                const avg = data.trend.map(d => d.avg_ms);
+                const max = data.trend.map(d => d.max_ms);
+                const ctx = document.getElementById('trendChart');
+                if (trendChartInstance) trendChartInstance.destroy();
+                trendChartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [
+                            { label: 'avg (ms)', data: avg, borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.1)', tension: 0.3, fill: true },
+                            { label: 'max (ms)', data: max, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.05)', tension: 0.3, borderDash: [4, 4] },
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
+                        scales: { y: { beginAtZero: true, ticks: { font: { size: 10 } } }, x: { ticks: { font: { size: 10 } } } }
+                    }
+                });
+            } catch (err) { console.error('trend load failed:', err); }
+        }
+
+        async function loadBreakdown() {
+            const type = document.getElementById('breakdownType').value;
+            try {
+                const res = await fetch(`/api/performance/breakdown?type=${type}`);
+                const data = await res.json();
+                const labels = data.breakdown.map(d => d.step_name);
+                const avg = data.breakdown.map(d => d.avg_ms);
+                const ctx = document.getElementById('breakdownChart');
+                if (breakdownChartInstance) breakdownChartInstance.destroy();
+                breakdownChartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels,
+                        datasets: [{
+                            label: 'avg (ms)', data: avg,
+                            backgroundColor: ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6']
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: { x: { beginAtZero: true, ticks: { font: { size: 10 } } }, y: { ticks: { font: { size: 10 } } } }
+                    }
+                });
+            } catch (err) { console.error('breakdown load failed:', err); }
+        }
+
+        function formatSize(bytes) {
+            if (!bytes || bytes === 0) return '';
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+        
+        function renderDocList(docs) {
+            const container = document.getElementById('docList');
+            const count = document.getElementById('docCount');
+            if (docs.length === 0) {
+                container.innerHTML = '<div class="p-3 text-center text-gray-400 text-xs">暂无文档</div>';
+                count.textContent = '0';
+                return;
+            }
+            count.textContent = `${docs.length}`;
+            container.innerHTML = docs.map(doc => `
+                <div id="doc-${safeId(doc.filename)}" class="px-3 py-2 flex justify-between items-center hover:bg-gray-50 transition-all duration-300">
+                    <div class="flex items-center space-x-2 min-w-0">
+                        <span class="text-lg">${getFileIcon(doc.file_type)}</span>
+                        <div class="min-w-0">
+                            <p class="font-medium text-gray-700 text-xs truncate">${escQ(doc.filename)}</p>
+                            <p class="text-[10px] text-gray-400">${doc.chunk_count}块${doc.file_size ? ' · ' + formatSize(doc.file_size) : ''}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-0.5 flex-shrink-0">
+                        <button onclick="openDoc('${escQ(doc.filename)}')" title="打开" class="text-blue-400 hover:text-blue-600 text-xs px-1.5 py-1 hover:bg-blue-50 rounded">📖</button>
+                        ${doc.file_type === '.eml' 
+                            ? '<span class="text-gray-300 text-xs px-1.5 py-1" title="邮件在数据库中">📁</span>'
+                            : `<button onclick="showInFinder('${escQ(doc.filename)}')" title="Finder" class="text-green-400 hover:text-green-600 text-xs px-1.5 py-1 hover:bg-green-50 rounded">📁</button>`
+                        }
+                        <button onclick="deleteDoc('${escQ(doc.filename)}')" title="删除" class="text-red-400 hover:text-red-600 text-xs px-1.5 py-1 hover:bg-red-50 rounded">🗑️</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function renderStats(stats) {
+            const d = stats.documents || {};
+            const e = stats.emails || {};
+            document.getElementById('statsText').innerHTML = `📊 文档: ${d.total_documents || 0}个 (${d.total_chunks || 0}块) | 📧 邮件: ${e.total_emails || 0}封 (${e.total_threads || 0}线程)`;
+        }
+        
+        async function deleteDoc(filename) {
+            if (!confirm(`确定删除 ${filename}？`)) return;
+            try { await fetch(`/api/documents/${encodeURIComponent(filename)}`, { method: 'DELETE' }); loadDocuments(); } catch (err) { alert('删除失败: ' + err.message); }
+        }
+        
+        async function loadEmailStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+                const s = data.emails || {};
+                document.getElementById('emailStats').innerHTML = `
+                    <p>📧 总邮件数: <strong>${s.total_emails || 0}</strong></p>
+                    <p>🧵 线程数: <strong>${s.total_threads || 0}</strong></p>
+                    <p>👤 发件人数: <strong>${s.total_senders || 0}</strong></p>
+                    ${s.folders ? Object.entries(s.folders).map(([k, v]) => `<p>📁 ${k}: ${v}</p>`).join('') : ''}
+                `;
+            } catch (err) {}
+        }
+        
+        async function loadEmailPreview() {
+            try {
+                const res = await fetch('/api/emails?limit=5');
+                const data = await res.json();
+                const container = document.getElementById('emailPreview');
+                if (data.emails && data.emails.length > 0) {
+                    container.innerHTML = data.emails.map(email => `
+                        <div class="border rounded-lg p-2 hover:bg-gray-50 text-sm">
+                            <div class="flex justify-between">
+                                <span class="font-medium truncate">${email.subject || '无主题'}</span>
+                                <span class="text-xs text-gray-400 ml-2">${(email.received_at || '').substring(0, 10)}</span>
+                            </div>
+                            <p class="text-xs text-gray-500">${email.sender_name || ''}</p>
+                        </div>
+                    `).join('');
+                }
+            } catch (err) {}
+        }
+        
+        async function importEmails() {
+            const count = parseInt(document.getElementById('importCount').value);
+            const btn = document.getElementById('importBtn');
+            const progressDiv = document.getElementById('importProgress');
+            const stepsDiv = document.getElementById('importSteps');
+            
+            btn.disabled = true;
+            btn.textContent = '⏳ 导入中...';
+            progressDiv.classList.remove('hidden');
+            stepsDiv.innerHTML = '<p class="text-gray-500">正在导入...</p>';
+            
+            try {
+                const res = await fetch('/api/emails/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count }) });
+                const data = await res.json();
+                if (res.ok) {
+                    stepsDiv.innerHTML = data.steps.map(step => `
+                        <div class="step-item flex items-start space-x-3 p-3 bg-green-50 rounded-lg">
+                            <span class="text-green-500">✅</span>
+                            <div><p class="font-medium text-sm">${step.description}</p><p class="text-xs text-gray-500">${step.duration_ms?.toFixed(0) || 0}ms</p></div>
+                        </div>
+                    `).join('');
+                    loadDocuments();
+                    loadEmailStats();
+                    alert(`成功导入 ${data.imported_emails} 封邮件`);
+                } else { stepsDiv.innerHTML = `<p class="text-red-500">❌ ${data.detail}</p>`; }
+            } catch (err) { stepsDiv.innerHTML = `<p class="text-red-500">❌ ${err.message}</p>`; }
+            finally { btn.disabled = false; btn.textContent = '📥 开始导入'; }
+        }
+        
+        async function handleSearch() {
+            const input = document.getElementById('searchInput');
+            const query = input.value.trim();
+            if (!query || isSearching) return;
+            
+            isSearching = true;
+            const topK = parseInt(document.getElementById('topK').value);
+            const fileType = document.getElementById('fileTypeFilter').value || '';
+            const container = document.getElementById('searchResults');
+            
+            container.innerHTML = '<div class="p-6 text-center text-gray-400"><div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto mb-2"></div><p class="text-sm">正在搜索...</p></div>';
+            document.getElementById('searchStepsList').innerHTML = '<div class="text-center text-gray-400 text-xs py-2">正在执行...</div>';
+            
+            try {
+                const requestBody = { query, top_k: topK };
+                if (fileType) requestBody.file_type = fileType;
+                
+                const res = await fetch('/api/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+                const data = await res.json();
+                
+                if (res.ok) {
+                    renderSearchSteps(data.steps || []);
+                    renderResults(data);
+                } else { container.innerHTML = `<div class="p-6 text-center text-red-400"><p class="text-sm">搜索失败: ${data.detail || '未知错误'}</p></div>`; }
+            } catch (err) { container.innerHTML = `<div class="p-6 text-center text-red-400"><p class="text-sm">搜索失败: ${err.message}</p></div>`; }
+            finally { isSearching = false; }
+        }
+        
+        function renderResults(data) {
+            const container = document.getElementById('searchResults');
+            if (data.results.length === 0) {
+                container.innerHTML = '<div class="p-6 text-center text-gray-400"><div class="text-3xl mb-2">😕</div><p class="text-sm">未找到相关内容</p></div>';
+                return;
+            }
+            currentQuery = data.query || '';
+            container.innerHTML = data.results.map((r, i) => `
+                <div class="p-3 hover:bg-gray-50 cursor-pointer transition-colors" onclick="scrollToDocument('${escQ(r.filename)}')" title="点击定位到文档列表">
+                    <div class="flex items-start justify-between mb-1">
+                        <span class="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded">${getScoreLabel(r.score)} ${(r.score * 100).toFixed(1)}%</span>
+                        <span class="text-xs text-gray-400">${r.filename} #${r.chunk_index}</span>
+                    </div>
+                    ${r.metadata && r.metadata.subject ? `<p class="text-xs text-blue-600 mb-1">📧 ${highlightText(r.metadata.subject, currentQuery, r.hit_keywords)}</p>` : ''}
+                    <p class="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">${highlightText(r.content, currentQuery, r.hit_keywords)}</p>
+                    ${renderMatchReasons(r.match_reasons)}
+                </div>
+            `).join('');
+        }
+        
+        async function handleChat() {
+            const input = document.getElementById('chatInput');
+            const query = input.value.trim();
+            if (!query || isChatting) return;
+            
+            isChatting = true;
+            input.value = '';
+            
+            const messagesDiv = document.getElementById('chatMessages');
+            const chatBtn = document.getElementById('chatBtn');
+            
+            messagesDiv.innerHTML += `<div class="flex items-start space-x-3 justify-end"><div class="bg-blue-500 text-white rounded-lg p-3 max-w-[80%]"><p>${escapeHtml(query)}</p></div><div class="bg-blue-100 rounded-full p-2">👤</div></div>`;
+            
+            const aiMsgId = `ai-msg-${Date.now()}`;
+            messagesDiv.innerHTML += `<div class="flex items-start space-x-3" id="${aiMsgId}"><div class="bg-blue-100 rounded-full p-2">🤖</div><div class="bg-gray-100 rounded-lg p-3 max-w-[80%]"><div class="flex items-center space-x-2"><div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div><span class="text-gray-500 text-sm">思考中...</span></div></div></div>`;
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            
+            chatBtn.disabled = true;
+            chatBtn.textContent = '思考中...';
+            
+            try {
+                const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, top_k: 5, stream: false }) });
+                const data = await res.json();
+                
+                const aiMsg = document.getElementById(aiMsgId);
+                if (aiMsg) aiMsg.querySelector('.bg-gray-100').innerHTML = `<p class="text-gray-700 text-sm whitespace-pre-wrap">${escapeHtml(data.answer || '抱歉，无法生成回答')}</p>`;
+                
+                if (data.sources && data.sources.length > 0) {
+                    document.getElementById('chatSources').classList.remove('hidden');
+                    document.getElementById('sourcesList').innerHTML = data.sources.map((s, i) => `
+                        <div class="text-sm border-l-2 border-blue-200 pl-2">
+                            <div class="flex items-start space-x-2">
+                                <span class="text-blue-500 font-medium">[${i + 1}]</span>
+                                <span class="text-gray-700">${escapeHtml(s.filename)}</span>
+                                ${s.metadata && s.metadata.subject ? `<span class="text-gray-500">- ${highlightText(s.metadata.subject, query, s.hit_keywords)}</span>` : ''}
+                                <span class="text-gray-400 ml-auto">${(s.score * 100).toFixed(1)}%</span>
+                            </div>
+                            ${renderMatchReasons(s.match_reasons)}
+                        </div>
+                    `).join('');
+                }
+            } catch (err) {
+                const aiMsg = document.getElementById(aiMsgId);
+                if (aiMsg) aiMsg.querySelector('.bg-gray-100').innerHTML = `<p class="text-red-500 text-sm">❌ ${err.message}</p>`;
+            } finally {
+                isChatting = false;
+                chatBtn.disabled = false;
+                chatBtn.textContent = '发送';
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+        }
+        
+        function getFileIcon(ext) { return { '.pdf': '📕', '.txt': '📄', '.md': '📝', '.docx': '📘', '.eml': '📧' }[ext] || '📄'; }
+        function getScoreLabel(score) { if (score >= 0.9) return '🟢'; if (score >= 0.8) return '🟡'; return '🟠'; }
+        function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
+        
+        function highlightText(text, query, hitKeywords) {
+            if (!text) return '';
+            let escaped = escapeHtml(text);
+            let words = [];
+            if (hitKeywords && hitKeywords.length > 0) {
+                words = [...hitKeywords];
+            } else if (query) {
+                words = query.split(/\s+/).filter(w => w.length > 0);
+            }
+            if (words.length === 0) return escaped;
+            words.sort((a, b) => b.length - a.length);
+            const escapedWords = words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+            const regex = new RegExp(`(${escapedWords.join('|')})`, 'gi');
+            return escaped.replace(regex, '<mark class="bg-yellow-200 px-0.5 rounded">$1</mark>');
+        }
+
+        const REASON_COLOR_CLASS = {
+            red:    'bg-red-100 text-red-700 border-red-200',
+            amber:  'bg-amber-100 text-amber-700 border-amber-200',
+            blue:   'bg-blue-100 text-blue-700 border-blue-200',
+            indigo: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+            slate:  'bg-slate-100 text-slate-600 border-slate-200',
+            purple: 'bg-purple-100 text-purple-700 border-purple-200',
+            green:  'bg-green-100 text-green-700 border-green-200',
+        };
+        function renderMatchReasons(reasons) {
+            if (!reasons || reasons.length === 0) return '';
+            return `<div class="flex flex-wrap gap-1 mt-1.5">` +
+                reasons.map(r => `<span class="text-[10px] px-1.5 py-0.5 rounded border ${REASON_COLOR_CLASS[r.color] || REASON_COLOR_CLASS.slate}">${escapeHtml(r.label)}</span>`).join('') +
+                `</div>`;
+        }
+        
+        function scrollToDocument(filename) {
+            const docElement = document.getElementById(`doc-${safeId(filename)}`);
+            if (docElement) {
+                docElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                docElement.classList.add('bg-blue-100', 'ring-2', 'ring-blue-400');
+                setTimeout(() => docElement.classList.remove('bg-blue-100', 'ring-2', 'ring-blue-400'), 2000);
+            }
+        }
+        
+        // Helper: 转义模板字符串中的单引号，防止 onclick 被截断
+        const escQ = s => s.replace(/'/g, "\\'");
+        // Helper: 安全 ID 编码（移除特殊字符）
+        const safeId = s => encodeURIComponent(s).replace(/%/g, '_');
+
+        async function openDoc(filename) { window.open(`/api/documents/${encodeURIComponent(filename)}/open`, '_blank'); }
+        async function showInFinder(filename) {
+            try {
+                const res = await fetch(`/api/documents/${encodeURIComponent(filename)}/show-in-finder`);
+                const data = await res.json();
+                if (res.ok) {
+                    const toast = document.createElement('div');
+                    toast.className = 'fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 text-sm';
+                    toast.textContent = `✅ ${data.message}`;
+                    document.body.appendChild(toast);
+                    setTimeout(() => toast.remove(), 2000);
+                } else { alert(data.detail); }
+            } catch (err) { alert(err.message); }
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // LanceDB 内部 tab — 状态 & 常量
+        // ═══════════════════════════════════════════════════════
+        let lancedbOffset = 0;
+        const LANCEDB_PAGE_SIZE = 20;
+        let lancedbTotal = 0;
+
+        // ─── A 区：加载表概览 ────────────────────────────────────
+        async function refreshLancedb() {
+            const btn = document.getElementById('lancedb-refresh-btn');
+            const icon = document.getElementById('lancedb-refresh-icon');
+            const ts = document.getElementById('lancedb-last-updated');
+            btn.disabled = true;
+            icon.style.transition = 'transform 0.6s ease';
+            icon.style.transform = 'rotate(360deg)';
+            ts.textContent = '刷新中...';
+            try {
+                await Promise.all([loadLancedbInspect(), loadLancedbRows(0)]);
+                const now = new Date();
+                const hh = String(now.getHours()).padStart(2, '0');
+                const mm = String(now.getMinutes()).padStart(2, '0');
+                const ss = String(now.getSeconds()).padStart(2, '0');
+                ts.textContent = `更新于 ${hh}:${mm}:${ss}`;
+            } catch (err) {
+                console.error('refreshLancedb failed:', err);
+                ts.textContent = '刷新失败';
+            } finally {
+                btn.disabled = false;
+                setTimeout(() => { icon.style.transform = 'rotate(0)'; }, 50);
+            }
+        }
+
+        async function loadLancedbInspect() {
+            const errDiv = document.getElementById('lancedb-error');
+            errDiv.classList.add('hidden');
+            try {
+                const res = await fetch('/api/lancedb/inspect');
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || '加载失败');
+
+                // 元信息卡片
+                document.getElementById('lancedb-table-name').textContent = `(${data.table_name})`;
+                document.getElementById('lancedb-total-rows').textContent = data.total_rows;
+                document.getElementById('lancedb-version').textContent = `v${data.current_version}`;
+                document.getElementById('lancedb-fragments').textContent = data.fragment_count;
+                document.getElementById('lancedb-indices').textContent = (data.indices || []).length;
+
+                // 搜索策略提示条
+                const stratBar = document.getElementById('lancedb-strategy-bar');
+                const stratText = document.getElementById('lancedb-strategy-text');
+                stratBar.classList.remove('hidden');
+                if (!data.has_index) {
+                    const flops = data.total_rows * data.vector_dim * 2;
+                    stratText.innerHTML = `⚠️ 当前无索引 → 每次搜索做全量 L2 扫描（O(n×d) = <strong>${data.total_rows} × ${data.vector_dim}</strong> 次浮点运算 ≈ <strong>${flops.toLocaleString()}</strong> FLOP）`;
+                } else {
+                    stratText.innerHTML = `✅ 已有索引（${(data.indices || []).length} 个）→ ${data.search_strategy}`;
+                }
+
+                // Schema 表
+                const schemaBody = document.getElementById('lancedb-schema-tbody');
+                schemaBody.innerHTML = (data.schema || []).map(f => `
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="px-3 py-2 font-mono text-blue-700 font-medium">${f.name}</td>
+                        <td class="px-3 py-2 text-gray-600 text-xs">${f.type}</td>
+                        <td class="px-3 py-2 text-center">${f.is_vector ? '<span class="bg-fuchsia-100 text-fuchsia-700 text-xs px-2 py-0.5 rounded-full font-medium">✓ 向量</span>' : '<span class="text-gray-300">-</span>'}</td>
+                        <td class="px-3 py-2 text-center text-sm">${f.vector_dim ? `<span class="font-mono text-fuchsia-600">${f.vector_dim}</span>` : '<span class="text-gray-300">-</span>'}</td>
+                    </tr>
+                `).join('');
+
+                // Fragment 条形图
+                const frags = data.fragments || [];
+                const maxRows = Math.max(...frags.map(f => f.rows), 1);
+                document.getElementById('lancedb-fragments-chart').innerHTML = frags.map(f => {
+                    const pct = Math.round((f.rows / maxRows) * 100);
+                    return `
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="text-gray-500 w-16 text-right shrink-0">frag-${f.id}</span>
+                            <div class="flex-1 bg-gray-100 rounded-full h-5 relative overflow-hidden">
+                                <div class="absolute left-0 top-0 h-full bg-lime-400 rounded-full" style="width:${pct}%"></div>
+                                <span class="absolute right-2 top-0 h-full flex items-center text-gray-600 text-[10px]">${f.rows} 行</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (err) {
+                document.getElementById('lancedb-error-msg').textContent = '❌ 加载概览失败: ' + err.message;
+                document.getElementById('lancedb-error').classList.remove('hidden');
+            }
+        }
+
+        // ─── B 区：加载数据行 ────────────────────────────────────
+        async function loadLancedbRows(offset) {
+            if (offset !== undefined) lancedbOffset = offset;
+            const fileType = document.getElementById('lancedb-filter-type').value;
+            const keyword  = document.getElementById('lancedb-search-kw').value;
+            const includeVector = document.getElementById('lancedb-include-vector').checked;
+
+            const tbody = document.getElementById('lancedb-rows-tbody');
+            tbody.innerHTML = '<tr><td colspan="7" class="px-3 py-8 text-center text-gray-400"><div class="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500 mr-2 align-middle"></div>加载中…</td></tr>';
+
+            try {
+                let url = `/api/lancedb/rows?limit=${LANCEDB_PAGE_SIZE}&offset=${lancedbOffset}&include_full_vector=${includeVector}`;
+                if (fileType) url += `&file_type=${encodeURIComponent(fileType)}`;
+                if (keyword)  url += `&keyword=${encodeURIComponent(keyword)}`;
+
+                const res  = await fetch(url);
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || '加载失败');
+
+                lancedbTotal = data.total;
+                const page       = Math.floor(lancedbOffset / LANCEDB_PAGE_SIZE) + 1;
+                const totalPages = Math.max(1, Math.ceil(lancedbTotal / LANCEDB_PAGE_SIZE));
+
+                document.getElementById('lancedb-rows-count').textContent = `共 ${lancedbTotal} 条`;
+                document.getElementById('lancedb-page-info').textContent  = `第 ${page} / ${totalPages} 页`;
+                document.getElementById('lancedb-prev-btn').disabled = lancedbOffset === 0;
+                document.getElementById('lancedb-next-btn').disabled = lancedbOffset + LANCEDB_PAGE_SIZE >= lancedbTotal;
+
+                if (!data.rows || data.rows.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="px-3 py-8 text-center text-gray-400">无数据</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.rows.map((row, idx) => {
+                    const globalIdx     = lancedbOffset + idx;
+                    const shortId       = (row.id || '').length > 22 ? (row.id || '').substring(0, 22) + '…' : (row.id || '');
+                    const contentPrev   = (row.content || '').length > 80 ? (row.content || '').substring(0, 80) + '…' : (row.content || '');
+                    const vecPrev       = (row.vector_preview || []).slice(0, 5).map(v => v.toFixed(3)).join(', ');
+                    const norm          = row.vector_norm != null ? row.vector_norm.toFixed(4) : '-';
+                    const detailId      = `ldb-detail-${globalIdx}`;
+                    return `
+                        <tr class="border-b border-gray-100 hover:bg-slate-50 cursor-pointer" onclick="toggleLancedbRow('${detailId}')">
+                            <td class="px-3 py-2 font-mono text-xs text-blue-600" title="${escapeHtml(row.id || '')}">${escapeHtml(shortId)}</td>
+                            <td class="px-3 py-2 text-xs text-gray-700 max-w-[8rem] truncate" title="${escapeHtml(row.filename || '')}">${escapeHtml(row.filename || '-')}</td>
+                            <td class="px-3 py-2 text-center text-xs text-gray-600">${row.chunk_index != null ? row.chunk_index : '-'}</td>
+                            <td class="px-3 py-2 text-xs text-gray-600 max-w-[12rem]" title="${escapeHtml(row.content || '')}">${escapeHtml(contentPrev)}</td>
+                            <td class="px-3 py-2 font-mono text-[10px] text-gray-500">[${vecPrev}]</td>
+                            <td class="px-3 py-2 text-center text-xs text-lime-700 font-medium">${row.fragment_id != null ? row.fragment_id : '-'}</td>
+                            <td class="px-3 py-2 text-center text-xs text-gray-500">${norm}</td>
+                        </tr>
+                        <tr id="${detailId}" class="hidden bg-slate-50 border-b border-slate-200">
+                            <td colspan="7" class="px-4 py-4">${renderLancedbRowDetail(row)}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="7" class="px-3 py-4 text-center text-red-500 text-sm">❌ 加载失败: ${err.message}</td></tr>`;
+            }
+        }
+
+        function toggleLancedbRow(detailId) {
+            const el = document.getElementById(detailId);
+            if (el) el.classList.toggle('hidden');
+        }
+
+        function renderLancedbRowDetail(row) {
+            let metaHtml = '-';
+            try {
+                const meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata;
+                metaHtml = `<pre class="text-xs bg-white border rounded p-2 max-h-40 overflow-auto whitespace-pre-wrap">${escapeHtml(JSON.stringify(meta, null, 2))}</pre>`;
+            } catch (e) {
+                metaHtml = `<code class="text-xs">${escapeHtml(String(row.metadata || '-'))}</code>`;
+            }
+            const hasFullVec = row.vector_full && row.vector_full.length > 0;
+            const heatmapHtml = hasFullVec
+                ? `<div class="mt-2">${renderVectorHeatmap(row.vector_full)}</div>`
+                : `<p class="text-xs text-gray-400 mt-2">（勾选"显示完整向量"后重新加载可查看热力图）</p>`;
+            return `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <p class="text-xs font-semibold text-gray-600 mb-1">📝 完整内容</p>
+                        <pre class="text-xs bg-white border rounded p-2 max-h-40 overflow-auto whitespace-pre-wrap">${escapeHtml(row.content || '')}</pre>
+                    </div>
+                    <div>
+                        <p class="text-xs font-semibold text-gray-600 mb-1">📋 Metadata JSON</p>
+                        ${metaHtml}
+                        <p class="text-xs text-gray-500 mt-1">🗂 物理归属：Fragment <strong class="text-lime-700">${row.fragment_id != null ? row.fragment_id : '-'}</strong></p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-semibold text-gray-600 mb-1">🌡️ Vector 热力图 (${row.vector_dim || 384} 维)</p>
+                        <p class="text-[10px] text-gray-400 mb-1">蓝=正值 · 红=负值 · 深=绝对值大</p>
+                        ${heatmapHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        // 384 格完整热力图（每格 8×8px）
+        function renderVectorHeatmap(vector) {
+            if (!vector || vector.length === 0) return '<p class="text-xs text-gray-400">无向量数据</p>';
+            const cells = vector.map(v => {
+                const abs   = Math.abs(v);
+                const alpha = Math.min(1, abs * 5).toFixed(2);
+                const color = v >= 0 ? `rgba(59,130,246,${alpha})` : `rgba(239,68,68,${alpha})`;
+                return `<div style="width:8px;height:8px;background:${color};flex-shrink:0" title="${v.toFixed(4)}"></div>`;
+            }).join('');
+            return `<div style="display:flex;flex-wrap:wrap;gap:1px;max-width:312px">${cells}</div>`;
+        }
+
+        // 16 格迷你热力图（每格 10×10px）
+        function renderVectorHeatmap16(vec) {
+            if (!vec || vec.length === 0) return '';
+            const cells = vec.map(v => {
+                const abs   = Math.abs(v);
+                const alpha = Math.min(1, abs * 5).toFixed(2);
+                const color = v >= 0 ? `rgba(59,130,246,${alpha})` : `rgba(239,68,68,${alpha})`;
+                return `<div style="width:10px;height:10px;background:${color}" title="${v.toFixed(4)}"></div>`;
+            }).join('');
+            return `<div style="display:flex;gap:2px;flex-wrap:wrap;max-width:200px">${cells}</div>`;
+        }
+
+        // ─── B 区分页 ────────────────────────────────────────────
+        function lancedbPrevPage() {
+            if (lancedbOffset > 0) loadLancedbRows(Math.max(0, lancedbOffset - LANCEDB_PAGE_SIZE));
+        }
+        function lancedbNextPage() {
+            if (lancedbOffset + LANCEDB_PAGE_SIZE < lancedbTotal) loadLancedbRows(lancedbOffset + LANCEDB_PAGE_SIZE);
+        }
+
+        // ─── C 区折叠 ────────────────────────────────────────────
+        function toggleLancedbDemo() {
+            const content = document.getElementById('lancedb-demo-content');
+            const arrow   = document.getElementById('lancedb-demo-arrow');
+            const isOpen  = content.style.maxHeight && content.style.maxHeight !== '0px';
+            content.style.maxHeight = isOpen ? '0px' : '4000px';
+            arrow.style.transform   = isOpen ? 'rotate(-90deg)' : 'rotate(0deg)';
+        }
+
+        // ─── C 区通用折叠卡片 ────────────────────────────────────
+        function toggleLancedbStepCard(id) {
+            const el = document.getElementById(id);
+            if (el) el.classList.toggle('expanded');
+        }
+
+        // ─── C 左：存入演示 ──────────────────────────────────────
+        async function runInsertDemo() {
+            const btn      = document.getElementById('lancedb-insert-btn');
+            const stepsDiv = document.getElementById('lancedb-insert-steps');
+            btn.disabled    = true;
+            btn.textContent = '⏳ 演示中…';
+            stepsDiv.innerHTML = '<div class="text-center text-gray-400 text-sm py-4"><div class="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-slate-500 mr-2 align-middle"></div>执行中…</div>';
+            try {
+                const res  = await fetch('/api/lancedb/demo/insert', {
+                    method : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body   : JSON.stringify({
+                        text      : document.getElementById('lancedb-insert-text').value,
+                        chunk_size: parseInt(document.getElementById('lancedb-insert-chunk-size').value),
+                        overlap   : parseInt(document.getElementById('lancedb-insert-overlap').value)
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || '请求失败');
+                stepsDiv.innerHTML = (data.steps || []).map((step, i) => renderInsertStep(step, i)).join('');
+            } catch (err) {
+                stepsDiv.innerHTML = `<div class="bg-red-50 border border-red-200 text-red-700 rounded p-3 text-sm">❌ ${err.message}</div>`;
+            } finally {
+                btn.disabled    = false;
+                btn.textContent = '🚀 执行演示';
+            }
+        }
+
+        function renderInsertStep(step, i) {
+            const stepId = `insert-step-${i}`;
+            const out    = step.output || {};
+            let bodyHtml = `<p class="text-xs text-gray-600 mb-3">${escapeHtml(step.description || '')}</p>`;
+
+            if (step.name === 'parse_and_chunk') {
+                const chunks = out.chunks || [];
+                bodyHtml += `<p class="text-xs text-gray-500 mb-2">共 <strong>${out.chunk_count}</strong> 块，合计 <strong>${out.total_chars}</strong> 字符，均 <strong>${out.avg_chars}</strong> 字符/块</p>`;
+                bodyHtml += chunks.map(c => `
+                    <div class="bg-white border rounded p-2 mb-1.5 text-xs flex gap-3 items-start">
+                        <span class="text-gray-400 shrink-0">#${c.index}</span>
+                        <span class="text-amber-600 shrink-0">${c.length} 字</span>
+                        <span class="text-gray-700">${escapeHtml(c.preview)}</span>
+                    </div>
+                `).join('');
+            } else if (step.name === 'embed_chunks') {
+                const vecs = out.vectors || [];
+                bodyHtml += `<p class="text-xs text-gray-500 mb-2">模型: <strong>${out.model}</strong> · 维度: <strong>${out.vector_dim}</strong></p>`;
+                bodyHtml += vecs.map(v => `
+                    <div class="bg-white border rounded p-2 mb-1.5">
+                        <div class="flex flex-wrap gap-4 text-xs text-gray-600 mb-2">
+                            <span>Chunk#${v.chunk_index}</span>
+                            <span>dim=<strong>${v.dim}</strong></span>
+                            <span>norm=<strong class="text-blue-600">${v.norm}</strong></span>
+                            <span>min=${v.min}</span>
+                            <span>max=${v.max}</span>
+                        </div>
+                        <p class="text-[10px] text-gray-400 mb-1">前16维: ${(v.preview_first16 || []).join(', ')}</p>
+                        ${renderVectorHeatmap16(v.preview_first16 || [])}
+                    </div>
+                `).join('');
+            } else if (step.name === 'would_insert') {
+                const recs = out.records_preview || [];
+                bodyHtml += `
+                    <div class="bg-amber-50 border border-amber-300 rounded p-3 mb-3">
+                        <p class="text-xs font-semibold text-amber-800 mb-1">🏷️ sandbox 仅演示，<em>未真实写入</em></p>
+                        <p class="text-xs text-amber-700">将创建 Fragment ID: <strong class="text-lime-700">${out.would_create_fragment_id}</strong></p>
+                        <p class="text-xs text-amber-700">写入后版本: <strong>v${out.current_version}</strong> → <strong class="text-blue-700">v${out.version_after_insert}</strong></p>
+                    </div>
+                `;
+                bodyHtml += recs.map(r => `
+                    <div class="bg-white border rounded p-2 text-xs text-gray-600 mb-1">
+                        <span class="font-mono text-blue-600">${escapeHtml(r.id)}</span>
+                        <span class="text-gray-500 ml-2">${escapeHtml(r.content_preview)}</span>
+                        <div class="text-gray-400 mt-1">向量前8: [${(r.vector_preview_first8 || []).join(', ')}]</div>
+                    </div>
+                `).join('');
+            }
+
+            return `
+                <div class="step-item border border-gray-200 rounded-lg overflow-hidden">
+                    <button onclick="toggleLancedbStepCard('${stepId}')"
+                        class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left focus:outline-none">
+                        <div class="flex items-center gap-2">
+                            <span class="w-6 h-6 rounded-full bg-slate-500 text-white text-xs flex items-center justify-center shrink-0">${i + 1}</span>
+                            <span class="font-medium text-sm">${escapeHtml(step.title)}</span>
+                        </div>
+                        <span class="text-xs text-gray-400">${(step.duration_ms || 0).toFixed(0)}ms ▼</span>
+                    </button>
+                    <div id="${stepId}" class="collapsible-content expanded px-4 py-3">
+                        ${bodyHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        // ─── C 右：搜索演示 ──────────────────────────────────────
+        async function runSearchDemo() {
+            const btn      = document.getElementById('lancedb-search-btn');
+            const stepsDiv = document.getElementById('lancedb-search-steps');
+            btn.disabled    = true;
+            btn.textContent = '⏳ 演示中…';
+            stepsDiv.innerHTML = '<div class="text-center text-gray-400 text-sm py-4"><div class="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-amber-500 mr-2 align-middle"></div>执行中…</div>';
+            try {
+                const res  = await fetch('/api/lancedb/demo/search', {
+                    method : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body   : JSON.stringify({
+                        query          : document.getElementById('lancedb-search-query').value,
+                        top_k          : parseInt(document.getElementById('lancedb-search-topk').value),
+                        score_threshold: parseFloat(document.getElementById('lancedb-search-threshold').value)
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || '请求失败');
+                stepsDiv.innerHTML = (data.steps || []).map((step, i) => renderSearchStep(step, i)).join('');
+            } catch (err) {
+                stepsDiv.innerHTML = `<div class="bg-red-50 border border-red-200 text-red-700 rounded p-3 text-sm">❌ ${err.message}</div>`;
+            } finally {
+                btn.disabled    = false;
+                btn.textContent = '🔍 执行演示';
+            }
+        }
+
+        function renderSearchStep(step, i) {
+            const stepId = `search-step-${i}`;
+            const out    = step.output || {};
+            let bodyHtml = `<p class="text-xs text-gray-600 mb-3">${escapeHtml(step.description || '')}</p>`;
+
+            if (step.name === 'embed_query') {
+                bodyHtml += `
+                    <div class="flex flex-wrap gap-4 text-xs text-gray-600 mb-2">
+                        <span>模型: <strong>${escapeHtml(out.model || '')}</strong></span>
+                        <span>维度: <strong>${out.dim}</strong></span>
+                        <span>norm: <strong class="text-blue-600">${out.norm}</strong></span>
+                    </div>
+                    <p class="text-[10px] text-gray-400 mb-1">前16维: ${(out.preview_first16 || []).join(', ')}</p>
+                    ${renderVectorHeatmap16(out.preview_first16 || [])}
+                `;
+            } else if (step.name === 'scan_strategy') {
+                const flops     = out.flops_estimate || 0;
+                const formatted = `${out.total_rows_to_scan} × ${out.vector_dim} × 2 = ${flops.toLocaleString()} 次浮点运算`;
+                bodyHtml += `
+                    <div class="bg-amber-100 border border-amber-300 rounded p-3">
+                        <p class="font-bold text-amber-800 text-base mb-1">${out.has_index ? '✅ 索引检索' : '⚠️ 全量扫描'}</p>
+                        <p class="text-amber-700 text-xs">策略: <strong>${escapeHtml(out.strategy || '')}</strong> · 扫描 ${out.fragments_to_scan} 个 fragment · ${out.total_rows_to_scan} 行</p>
+                        <p class="text-amber-600 text-xs mt-1">估算 FLOP：<code class="bg-amber-50 px-1 rounded font-mono">${formatted}</code></p>
+                    </div>
+                `;
+            } else if (step.name === 'compute_distances') {
+                const cands   = out.candidates || [];
+                const maxDist = out.distance_max || 1;
+                bodyHtml += `<p class="text-xs text-gray-500 mb-2">返回 <strong>${out.candidates_returned}</strong> 候选，距离范围 [${(out.distance_min || 0).toFixed(4)}, ${(out.distance_max || 0).toFixed(4)}]</p>`;
+                bodyHtml += cands.map(c => {
+                    const pct = Math.round((c.distance / maxDist) * 100);
+                    return `
+                        <div class="bg-white border rounded p-2 mb-1.5 text-xs">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="font-mono text-blue-600 truncate max-w-[6rem]" title="${escapeHtml(c.id || '')}">${escapeHtml((c.id || '').substring(0, 22))}</span>
+                                <span class="text-gray-500 truncate flex-1" title="${escapeHtml(c.filename || '')}">${escapeHtml(c.filename || '')}</span>
+                                <span class="text-slate-600 font-mono shrink-0">d=${c.distance.toFixed(4)}</span>
+                            </div>
+                            <div class="bg-gray-100 rounded-full h-2 w-full">
+                                <div class="bg-slate-400 h-2 rounded-full" style="width:${pct}%"></div>
+                            </div>
+                            <p class="text-gray-400 mt-1 truncate">${escapeHtml(c.content_preview || '')}</p>
+                        </div>
+                    `;
+                }).join('');
+            } else if (step.name === 'top_k_selection') {
+                const sel = out.selected || [];
+                bodyHtml += `<p class="text-xs text-gray-500 mb-2">选取 Top-<strong>${out.k}</strong> 条</p>`;
+                bodyHtml += sel.map((c, ci) => `
+                    <div class="bg-blue-50 border border-blue-200 rounded p-2 mb-1.5 text-xs flex items-center gap-2">
+                        <span class="bg-blue-500 text-white px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0">#${ci + 1}</span>
+                        <span class="font-mono text-blue-600 truncate">${escapeHtml((c.id || '').substring(0, 28))}</span>
+                        <span class="text-gray-500 ml-auto shrink-0">d=${c.distance.toFixed(4)}</span>
+                    </div>
+                `).join('');
+            } else if (step.name === 'score_conversion') {
+                const exs = out.examples || [];
+                bodyHtml += `<p class="text-xs text-gray-500 mb-2">公式：<code class="bg-gray-100 px-1.5 py-0.5 rounded font-mono">${escapeHtml(out.formula || '')}</code></p>`;
+                bodyHtml += `<table class="w-full text-xs border-collapse mb-2"><thead><tr class="bg-gray-100"><th class="px-2 py-1 text-left border-b font-medium">ID</th><th class="px-2 py-1 text-center border-b font-medium">distance</th><th class="px-2 py-1 text-center border-b font-medium">→ similarity</th></tr></thead><tbody>`;
+                bodyHtml += exs.map(e => `
+                    <tr class="border-b border-gray-100">
+                        <td class="px-2 py-1 font-mono text-blue-600 truncate max-w-[8rem]">${escapeHtml((e.id || '').substring(0, 24))}</td>
+                        <td class="px-2 py-1 text-center font-mono">${e.distance.toFixed(4)}</td>
+                        <td class="px-2 py-1 text-center font-bold text-green-600">${e.similarity_score.toFixed(4)}</td>
+                    </tr>
+                `).join('');
+                bodyHtml += '</tbody></table>';
+            } else if (step.name === 'filter') {
+                const kept    = out.kept_results    || [];
+                const dropped = out.dropped_results || [];
+                bodyHtml += `<p class="text-xs text-gray-500 mb-2">阈值: <strong>${out.threshold}</strong> · 保留 <span class="text-green-600 font-bold">${out.kept}</span> 条 · 丢弃 <span class="text-red-500 font-bold">${out.dropped}</span> 条</p>`;
+                bodyHtml += kept.map(r => `
+                    <div class="bg-green-50 border border-green-200 rounded px-2 py-1.5 mb-1">
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="bg-green-500 text-white px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0">✓ 保留</span>
+                            <span class="font-mono text-blue-600 truncate">${escapeHtml((r.id || '').substring(0, 28))}</span>
+                            <span class="text-gray-500 ml-auto shrink-0">sim=${r.similarity_score.toFixed(4)}</span>
+                        </div>
+                        ${renderMatchReasons(r.match_reasons)}
+                    </div>
+                `).join('');
+                bodyHtml += dropped.map(r => `
+                    <div class="bg-red-50 border border-red-200 rounded px-2 py-1.5 mb-1">
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="bg-red-400 text-white px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0">✗ 丢弃</span>
+                            <span class="font-mono text-blue-600 truncate">${escapeHtml((r.id || '').substring(0, 28))}</span>
+                            <span class="text-gray-500 ml-auto shrink-0">sim=${r.similarity_score.toFixed(4)}</span>
+                        </div>
+                        ${renderMatchReasons(r.match_reasons)}
+                    </div>
+                `).join('');
+            }
+
+            return `
+                <div class="step-item border border-gray-200 rounded-lg overflow-hidden">
+                    <button onclick="toggleLancedbStepCard('${stepId}')"
+                        class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left focus:outline-none">
+                        <div class="flex items-center gap-2">
+                            <span class="w-6 h-6 rounded-full bg-amber-500 text-white text-xs flex items-center justify-center shrink-0">${i + 1}</span>
+                            <span class="font-medium text-sm">${escapeHtml(step.title)}</span>
+                        </div>
+                        <span class="text-xs text-gray-400">${(step.duration_ms || 0).toFixed(0)}ms ▼</span>
+                    </button>
+                    <div id="${stepId}" class="collapsible-content expanded px-4 py-3">
+                        ${bodyHtml}
+                    </div>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

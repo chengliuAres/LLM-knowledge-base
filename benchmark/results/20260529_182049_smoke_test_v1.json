@@ -1,0 +1,82 @@
+{
+  "baseline_id": 1,
+  "label": "smoke_test_v1",
+  "notes": "联调验证：小规模一次性跑通全链路",
+  "config": {
+    "embedding_model": "all-MiniLM-L6-v2",
+    "vector_dim": 384,
+    "chunk_size": 500,
+    "chunk_overlap": 50,
+    "top_k": 5,
+    "score_threshold": 0.3,
+    "distance_metric": "L2",
+    "search_runs": 3,
+    "search_queries": 30,
+    "insert_doc_sizes": [
+      5,
+      20
+    ],
+    "insert_runs": 3
+  },
+  "summary": {
+    "search": {
+      "count": 90,
+      "avg_ms": 11.81,
+      "p50_ms": 7.55,
+      "p95_ms": 19.56,
+      "max_ms": 323.3,
+      "min_ms": 6.61
+    },
+    "search_breakdown": [
+      {
+        "step_name": "embed_query",
+        "count": 90,
+        "avg_ms": 9.74,
+        "max_ms": 321.15
+      },
+      {
+        "step_name": "lanceDB_search",
+        "count": 90,
+        "avg_ms": 2.03,
+        "max_ms": 2.44
+      },
+      {
+        "step_name": "filter_results",
+        "count": 90,
+        "avg_ms": 0.0,
+        "max_ms": 0.0
+      },
+      {
+        "step_name": "preprocess",
+        "count": 90,
+        "avg_ms": 0.0,
+        "max_ms": 0.01
+      }
+    ],
+    "insert": {
+      "file_count": 7,
+      "chunk_count": 85,
+      "avg_per_file_ms": 81.71,
+      "avg_per_chunk_ms": 6.73
+    },
+    "insert_per_size": {
+      "5": {
+        "runs": 3,
+        "avg_ms": 63.87,
+        "min_ms": 20.99,
+        "max_ms": 147.69,
+        "avg_per_chunk_ms": 12.77
+      },
+      "20": {
+        "runs": 3,
+        "avg_ms": 82.88,
+        "min_ms": 44.43,
+        "max_ms": 157.2,
+        "avg_per_chunk_ms": 4.14
+      }
+    },
+    "lancedb_disk_bytes": 1088228,
+    "started_at": "2026-05-29T18:20:43.013780",
+    "finished_at": "2026-05-29T18:20:49.267085"
+  }
+}

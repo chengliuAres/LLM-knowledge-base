@@ -1,0 +1,230 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 820">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap');
+      text { font-family: 'JetBrains Mono', 'Noto Sans SC', 'PingFang SC', sans-serif; }
+      .title { fill: #e2e8f0; font-size: 13px; font-weight: 700; }
+      .sub { fill: #94a3b8; font-size: 9px; }
+      .badge { fill: #64748b; font-size: 8px; }
+    </style>
+    <!-- Arrow marker -->
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#64748b"/>
+    </marker>
+    <marker id="arrow-cyan" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#22d3ee"/>
+    </marker>
+    <marker id="arrow-emerald" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#34d399"/>
+    </marker>
+    <marker id="arrow-violet" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#a78bfa"/>
+    </marker>
+    <!-- Glow filter -->
+    <filter id="glow-cyan" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="960" height="820" rx="12" fill="#0b1120"/>
+
+  <!-- Title -->
+  <text x="480" y="36" text-anchor="middle" fill="#e2e8f0" font-size="18" font-weight="700" font-family="'Noto Sans SC', sans-serif">文档知识库 — 系统架构图</text>
+  <text x="480" y="54" text-anchor="middle" fill="#64748b" font-size="11" font-family="'Noto Sans SC', sans-serif">Document Knowledge Base — System Architecture</text>
+
+  <!-- ════════════════════════════════════════════════ -->
+  <!-- LAYER 1: Web UI (Frontend)                      -->
+  <!-- ════════════════════════════════════════════════ -->
+
+  <!-- Region: 浏览器 / 前端 -->
+  <rect x="40" y="76" width="880" height="110" rx="10" fill="none" stroke="#22d3ee" stroke-width="1" stroke-dasharray="6,3" opacity="0.5"/>
+  <text x="52" y="94" fill="#22d3ee" font-size="10" font-weight="600" opacity="0.8">[Web] 浏览器 / 前端</text>
+  <text x="880" y="94" fill="#64748b" font-size="8" text-anchor="end">Single HTML + Tailwind CSS</text>
+
+  <!-- Tab cards -->
+  <rect x="80" y="106" width="180" height="58" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="170" y="130" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">[Doc] 文档管理</text>
+  <text x="170" y="148" text-anchor="middle" fill="#94a3b8" font-size="8">拖拽上传 · 解析 · 索引</text>
+
+  <rect x="290" y="106" width="180" height="58" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="380" y="130" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">[Mail] 邮件导入</text>
+  <text x="380" y="148" text-anchor="middle" fill="#94a3b8" font-size="8">EML 解析 · 批量导入</text>
+
+  <rect x="500" y="106" width="180" height="58" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="590" y="130" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">[Search] 语义搜索</text>
+  <text x="590" y="148" text-anchor="middle" fill="#94a3b8" font-size="8">向量搜索 · 步骤追踪</text>
+
+  <rect x="710" y="106" width="180" height="58" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="800" y="130" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">[Chat] 智能问答</text>
+  <text x="800" y="148" text-anchor="middle" fill="#94a3b8" font-size="8">RAG · LLM 推理</text>
+
+  <!-- Arrows from Web UI to Server -->
+  <!-- Left arrow -->
+  <path d="M170,164 L170,220" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M380,164 L380,220" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M590,164 L590,220" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M800,164 L800,220" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- ════════════════════════════════════════════════ -->
+  <!-- LAYER 2: FastAPI Server (Backend)               -->
+  <!-- ════════════════════════════════════════════════ -->
+
+  <rect x="40" y="230" width="880" height="260" rx="10" fill="none" stroke="#34d399" stroke-width="1" stroke-dasharray="6,3" opacity="0.5"/>
+  <text x="52" y="248" fill="#34d399" font-size="10" font-weight="600" opacity="0.8">[Gear] 后端服务 FastAPI + uvicorn</text>
+  <text x="880" y="248" fill="#64748b" font-size="8" text-anchor="end">Python · Port 8000</text>
+
+  <!-- StepTracker (cross-cutting) -->
+  <rect x="60" y="260" width="840" height="30" rx="4" fill="rgba(251,146,60,0.15)" stroke="#fb923c" stroke-width="1"/>
+  <text x="480" y="279" text-anchor="middle" fill="#fb923c" font-size="10" font-weight="500">[Track] StepTracker — 全流程执行步骤追踪</text>
+
+  <!-- Backend module boxes -->
+  <!-- Parser -->
+  <rect x="80" y="310" width="185" height="80" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="172" y="334" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">[Read] Parser</text>
+  <text x="172" y="350" text-anchor="middle" fill="#94a3b8" font-size="8">文档解析器</text>
+  <text x="172" y="368" text-anchor="middle" fill="#64748b" font-size="7">PDF · TXT · MD · DOCX · EML</text>
+
+  <!-- Embedder -->
+  <rect x="290" y="310" width="185" height="80" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="382" y="334" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">[Brain] Embedder</text>
+  <text x="382" y="350" text-anchor="middle" fill="#94a3b8" font-size="8">向量编码器</text>
+  <text x="382" y="368" text-anchor="middle" fill="#64748b" font-size="7">sentence-transformers</text>
+  <text x="382" y="382" text-anchor="middle" fill="#64748b" font-size="7">384维向量</text>
+
+  <!-- LLM Client -->
+  <rect x="500" y="310" width="185" height="80" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="592" y="334" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">[Bot] LLM Client</text>
+  <text x="592" y="350" text-anchor="middle" fill="#94a3b8" font-size="8">大模型客户端</text>
+  <text x="592" y="368" text-anchor="middle" fill="#64748b" font-size="7">OpenAI · Ollama · 小米</text>
+
+  <!-- Email DB Handler -->
+  <rect x="710" y="310" width="185" height="80" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="802" y="334" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">[Inbox] EmailDB</text>
+  <text x="802" y="350" text-anchor="middle" fill="#94a3b8" font-size="8">邮件数据库管理</text>
+  <text x="802" y="368" text-anchor="middle" fill="#64748b" font-size="7">SQLite 读写</text>
+
+  <!-- Process flow annotations -->
+  <text x="172" y="418" text-anchor="middle" fill="#64748b" font-size="7">解析文本 → 分块</text>
+  <text x="382" y="418" text-anchor="middle" fill="#64748b" font-size="7">文本 → 向量</text>
+  <text x="592" y="418" text-anchor="middle" fill="#64748b" font-size="7">RAG 问答推理</text>
+  <text x="802" y="418" text-anchor="middle" fill="#64748b" font-size="7">邮件 CRUD</text>
+
+  <!-- Arrows from Server to Storage -->
+  <path d="M170,400 L170,510" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M382,400 L382,510" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M592,400 L592,510" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M800,400 L800,510" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- ════════════════════════════════════════════════ -->
+  <!-- LAYER 3: Data Storage                          -->
+  <!-- ════════════════════════════════════════════════ -->
+
+  <rect x="40" y="520" width="880" height="130" rx="10" fill="none" stroke="#a78bfa" stroke-width="1" stroke-dasharray="6,3" opacity="0.5"/>
+  <text x="52" y="538" fill="#a78bfa" font-size="10" font-weight="600" opacity="0.8">[DB] 数据存储</text>
+  <text x="880" y="538" fill="#64748b" font-size="8" text-anchor="end">Local · 无需独立部署</text>
+
+  <!-- File System -->
+  <g transform="translate(80, 550)">
+    <rect x="0" y="10" width="175" height="60" rx="2" fill="#0f172a"/>
+    <ellipse cx="87.5" cy="10" rx="87.5" ry="16" fill="#0f172a"/>
+    <ellipse cx="87.5" cy="70" rx="87.5" ry="16" fill="#0f172a"/>
+    <rect x="0" y="10" width="175" height="60" fill="rgba(120,53,15,0.25)"/>
+    <ellipse cx="87.5" cy="10" rx="87.5" ry="16" fill="rgba(120,53,15,0.25)" stroke="#fbbf24" stroke-width="1.5"/>
+    <ellipse cx="87.5" cy="70" rx="87.5" ry="16" fill="rgba(120,53,15,0.25)" stroke="#fbbf24" stroke-width="1.5"/>
+    <line x1="0" y1="10" x2="0" y2="70" stroke="#fbbf24" stroke-width="1.5"/>
+    <line x1="175" y1="10" x2="175" y2="70" stroke="#fbbf24" stroke-width="1.5"/>
+    <text x="87.5" y="38" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">[Folder] uploads/</text>
+    <text x="87.5" y="54" text-anchor="middle" fill="#94a3b8" font-size="8">原始文件存储</text>
+  </g>
+
+  <!-- LanceDB -->
+  <g transform="translate(290, 550)">
+    <rect x="0" y="10" width="185" height="60" rx="2" fill="#0f172a"/>
+    <ellipse cx="92.5" cy="10" rx="92.5" ry="16" fill="#0f172a"/>
+    <ellipse cx="92.5" cy="70" rx="92.5" ry="16" fill="#0f172a"/>
+    <rect x="0" y="10" width="185" height="60" fill="rgba(76,29,149,0.35)"/>
+    <ellipse cx="92.5" cy="10" rx="92.5" ry="16" fill="rgba(76,29,149,0.35)" stroke="#a78bfa" stroke-width="1.5"/>
+    <ellipse cx="92.5" cy="70" rx="92.5" ry="16" fill="rgba(76,29,149,0.35)" stroke="#a78bfa" stroke-width="1.5"/>
+    <line x1="0" y1="10" x2="0" y2="70" stroke="#a78bfa" stroke-width="1.5"/>
+    <line x1="185" y1="10" x2="185" y2="70" stroke="#a78bfa" stroke-width="1.5"/>
+    <text x="92.5" y="38" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">[Diamond] LanceDB</text>
+    <text x="92.5" y="54" text-anchor="middle" fill="#94a3b8" font-size="8">向量数据库 · 语义检索</text>
+  </g>
+
+  <!-- SQLite -->
+  <g transform="translate(510, 550)">
+    <rect x="0" y="10" width="185" height="60" rx="2" fill="#0f172a"/>
+    <ellipse cx="92.5" cy="10" rx="92.5" ry="16" fill="#0f172a"/>
+    <ellipse cx="92.5" cy="70" rx="92.5" ry="16" fill="#0f172a"/>
+    <rect x="0" y="10" width="185" height="60" fill="rgba(76,29,149,0.35)"/>
+    <ellipse cx="92.5" cy="10" rx="92.5" ry="16" fill="rgba(76,29,149,0.35)" stroke="#a78bfa" stroke-width="1.5"/>
+    <ellipse cx="92.5" cy="70" rx="92.5" ry="16" fill="rgba(76,29,149,0.35)" stroke="#a78bfa" stroke-width="1.5"/>
+    <line x1="0" y1="10" x2="0" y2="70" stroke="#a78bfa" stroke-width="1.5"/>
+    <line x1="185" y1="10" x2="185" y2="70" stroke="#a78bfa" stroke-width="1.5"/>
+    <text x="92.5" y="38" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">[DB] SQLite</text>
+    <text x="92.5" y="54" text-anchor="middle" fill="#94a3b8" font-size="8">邮件数据库 emails.db</text>
+  </g>
+
+  <!-- LLM API (External) -->
+  <g transform="translate(730, 550)">
+    <rect x="0" y="10" width="155" height="60" rx="6" fill="rgba(136,19,55,0.3)" stroke="#fb7185" stroke-width="1.5"/>
+    <text x="77.5" y="38" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">[Cloud] LLM API</text>
+    <text x="77.5" y="54" text-anchor="middle" fill="#94a3b8" font-size="8">OpenAI · Ollama</text>
+  </g>
+
+  <!-- Arrows from Server to LLM API -->
+  <path d="M592,390 L592,440 L807,440 L807,545" stroke="#fb7185" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+
+  <!-- ════════════════════════════════════════════════ -->
+  <!-- DATA FLOW LAYER (bottom)                        -->
+  <!-- ════════════════════════════════════════════════ -->
+
+  <rect x="40" y="670" width="880" height="70" rx="10" fill="none" stroke="#fb923c" stroke-width="1" stroke-dasharray="6,3" opacity="0.5"/>
+  <text x="52" y="688" fill="#fb923c" font-size="10" font-weight="600" opacity="0.8">[Flow] 主要数据流</text>
+
+  <!-- Flow 1: Upload -->
+  <rect x="65" y="700" width="200" height="26" rx="4" fill="rgba(251,146,60,0.12)" stroke="#fb923c" stroke-width="0.8"/>
+  <text x="165" y="717" text-anchor="middle" fill="#fb923c" font-size="8">[Up] 上传流程: 文件 → Parser → Embedder → LanceDB</text>
+
+  <!-- Flow 2: Search -->
+  <rect x="285" y="700" width="200" height="26" rx="4" fill="rgba(251,146,60,0.12)" stroke="#fb923c" stroke-width="0.8"/>
+  <text x="385" y="717" text-anchor="middle" fill="#fb923c" font-size="8">[Search] 搜索流程: 查询 → Embedder → LanceDB → 结果</text>
+
+  <!-- Flow 3: Chat -->
+  <rect x="505" y="700" width="200" height="26" rx="4" fill="rgba(251,146,60,0.12)" stroke="#fb923c" stroke-width="0.8"/>
+  <text x="605" y="717" text-anchor="middle" fill="#fb923c" font-size="8">[Chat] 问答流程: 查询 → RAG(检索+LLM) → 回答</text>
+
+  <!-- Flow 4: Email -->
+  <rect x="725" y="700" width="170" height="26" rx="4" fill="rgba(251,146,60,0.12)" stroke="#fb923c" stroke-width="0.8"/>
+  <text x="810" y="717" text-anchor="middle" fill="#fb923c" font-size="8">[Mail] 邮件: EML → SQLite → 导入</text>
+
+  <!-- Legend -->
+  <rect x="40" y="758" width="880" height="40" rx="6" fill="rgba(30,41,59,0.5)"/>
+  <text x="60" y="783" fill="#64748b" font-size="9" font-weight="600">图例:</text>
+
+  <rect x="110" y="770" width="12" height="12" rx="2" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1"/>
+  <text x="126" y="780" fill="#64748b" font-size="8">前端</text>
+
+  <rect x="170" y="770" width="12" height="12" rx="2" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1"/>
+  <text x="186" y="780" fill="#64748b" font-size="8">后端</text>
+
+  <rect x="230" y="770" width="12" height="12" rx="2" fill="rgba(76,29,149,0.35)" stroke="#a78bfa" stroke-width="1"/>
+  <text x="246" y="780" fill="#64748b" font-size="8">数据库</text>
+
+  <rect x="300" y="770" width="12" height="12" rx="2" fill="rgba(120,53,15,0.25)" stroke="#fbbf24" stroke-width="1"/>
+  <text x="316" y="780" fill="#64748b" font-size="8">文件系统</text>
+
+  <rect x="380" y="770" width="12" height="12" rx="2" fill="rgba(136,19,55,0.3)" stroke="#fb7185" stroke-width="1"/>
+  <text x="396" y="780" fill="#64748b" font-size="8">外部服务</text>
+
+  <rect x="470" y="770" width="12" height="12" rx="2" fill="rgba(251,146,60,0.12)" stroke="#fb923c" stroke-width="1"/>
+  <text x="486" y="780" fill="#64748b" font-size="8">数据流</text>
+
+  <path d="M550,776 L570,776" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="575" y="780" fill="#64748b" font-size="8">调用/写入</text>
+
+  <path d="M640,776 L660,776" stroke="#fb7185" stroke-width="1.5" stroke-dasharray="4,3" fill="none" marker-end="url(#arrow)"/>
+  <text x="665" y="780" fill="#64748b" font-size="8">外部调用</text>
+</svg>

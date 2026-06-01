@@ -1,0 +1,10 @@
+fastapi==0.115.0
+uvicorn==0.30.0
+python-multipart==0.0.9
+lancedb>=0.6.0,<0.7.0
+sentence-transformers==3.0.0
+PyPDF2==3.0.1
+python-docx==1.1.0
+pydantic>=2.0.0
+pandas>=2.0.0
+openai>=1.0.0
