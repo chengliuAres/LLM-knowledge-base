@@ -3,7 +3,7 @@
 基于 LanceDB 的文档语义搜索系统，支持文档上传、邮件导入、智能问答。
 
 <p align="center">
-  <img src="diagram/intro@2x.png" alt="项目介绍" width="700"/>
+  <img src="diagram/intro.svg" alt="项目介绍" width="700"/>
 </p>
 
 ## 功能特性
@@ -91,7 +91,7 @@ kill $(pgrep -f "uvicorn main:app")
 ## 技术架构
 
 <p align="center">
-  <img src="diagram/architecture@2x.png" alt="系统架构图" width="900"/>
+  <img src="diagram/architecture.svg" alt="系统架构图" width="900"/>
 </p>
 
 ## API 接口
