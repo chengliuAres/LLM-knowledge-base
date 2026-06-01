@@ -37,9 +37,9 @@
   <!-- HEADER SECTION                                 -->
   <!-- ════════════════════════════════════════════════ -->
 
-  <text x="420" y="58" text-anchor="middle" fill="#e2e8f0" font-size="28" font-weight="700" filter="url(#glow)">[Lib] 文档知识库 Demo</text>
-  <text x="420" y="84" text-anchor="middle" fill="#94a3b8" font-size="12" font-weight="500">基于 LanceDB 的文档语义搜索系统</text>
-  <text x="420" y="102" text-anchor="middle" fill="#64748b" font-size="10">Document Knowledge Base — Semantic Search with RAG</text>
+  <text x="420" y="58" text-anchor="middle" fill="#e2e8f0" font-size="28" font-weight="700" filter="url(#glow)">[Lib] 文档知识库</text>
+  <text x="420" y="84" text-anchor="middle" fill="#94a3b8" font-size="12" font-weight="500">基于 LanceDB 的智能文档知识库系统</text>
+  <text x="420" y="102" text-anchor="middle" fill="#64748b" font-size="10">Personal Knowledge Base — Build your own RAG system</text>
 
   <!-- Version badge -->
   <rect x="640" y="40" width="80" height="22" rx="11" fill="rgba(34,211,238,0.12)" stroke="#22d3ee" stroke-width="0.8"/>
@@ -145,5 +145,5 @@
   <!-- ════════════════════════════════════════════════ -->
 
   <rect x="40" y="575" width="760" height="16" rx="4" fill="rgba(30,41,59,0.4)"/>
-  <text x="420" y="587" text-anchor="middle" fill="#64748b" font-size="8">文档知识库 Demo v2.0 · Powered by LanceDB + FastAPI + sentence-transformers</text>
+  <text x="420" y="587" text-anchor="middle" fill="#64748b" font-size="8">文档知识库 v2.0 · Powered by LanceDB + FastAPI + sentence-transformers</text>
 </svg>

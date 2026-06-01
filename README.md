@@ -1,17 +1,28 @@
-# 文档知识库 Demo v2.0
+# 文档知识库
 
-基于 LanceDB 的文档语义搜索系统，支持文档上传、邮件导入、智能问答。
+基于 LanceDB 的智能文档知识库系统 —— 从零搭建个人知识库的完整参考实现。
 
 <p align="center">
   <img src="diagram/intro.svg" alt="项目介绍" width="700"/>
 </p>
 
+> **项目定位**：一套代码完整、可直接运行的文档知识库系统。旨在帮助你理解如何将 **文档管理 → 向量化 → 语义检索 → RAG 问答** 这条链路串起来。代码结构清晰、模块解耦，适合在此基础上进行二次开发，构建属于自己的个人知识库。
+
 ## 功能特性
 
-- 📄 **文档管理**: 拖拽上传 PDF/TXT/MD/DOCX，自动解析分块
-- 📧 **邮件导入**: 从本地邮件DB导入数据，支持批量导入
-- 🔍 **语义搜索**: 基于向量相似度的智能搜索，展示执行流程
-- 💬 **智能问答**: RAG架构，基于知识库的问答
+- 📄 **文档管理**: 拖拽上传 PDF/TXT/MD/DOCX/EML，自动解析、分块、向量化
+- 📧 **邮件导入**: 从本地邮件数据库导入邮件，支持批量处理和搜索
+- 🔍 **语义搜索**: 基于向量相似度的智能搜索，展示完整执行流程
+- 💬 **智能问答**: RAG 架构，基于知识库内容回答问题，附带来源引用
+- 📊 **系统看板**: 文档/邮件统计、向量存储状态、性能数据可视化
+- 🗄️ **LanceDB 内部探查**: 表结构、版本历史、向量展示，直观理解向量数据库
+
+## 适用场景
+
+- 📖 **学习参考**: 了解 RAG 完整链路 —— Embedding → 向量检索 → LLM 推理
+- 🔧 **二次开发**: 基于现成架构快速定制自己的知识库系统
+- 🧪 **技术验证**: 测试不同 Embedding 模型、LLM、分块策略的效果
+- 📚 **个人知识管理**: 搭建私有文档库，支持语义搜索和智能问答
 
 ## 技术栈
 
@@ -19,10 +30,10 @@
 |----|------|
 | Web 框架 | FastAPI + uvicorn |
 | 向量数据库 | LanceDB（嵌入式，无需独立部署） |
-| Embedding | sentence-transformers `all-MiniLM-L6-v2`（本地，384维） |
+| Embedding | sentence-transformers（本地，384维） |
 | 邮件存储 | SQLite（`data/emails.db`） |
 | LLM | OpenAI 兼容接口（默认小米 MiMo，支持 Ollama/OpenAI） |
-| 前端 | 单 HTML 文件 + Tailwind CSS（CDN） |
+| 前端 | 单 HTML 文件 + Tailwind CSS（CDN） + Chart.js |
 
 ## 快速开始
 
@@ -64,12 +75,12 @@ lsof -ti:8000 | xargs kill
 kill $(pgrep -f "uvicorn main:app")
 ```
 
-### 4. 使用演示
+### 4. 使用指南
 
 #### 文档上传
 1. 切换到"📄 文档管理"标签
-2. 拖拽或点击上传文档
-3. 等待解析完成
+2. 拖拽或点击上传文档（支持 PDF / TXT / MD / DOCX / EML）
+3. 系统自动解析、分块、向量化并存入 LanceDB
 
 #### 邮件导入
 1. 切换到"📧 邮件导入"标签
@@ -86,7 +97,7 @@ kill $(pgrep -f "uvicorn main:app")
 #### 智能问答
 1. 切换到"💬 智能问答"标签
 2. 输入问题
-3. AI会基于知识库回答并显示来源
+3. AI 会基于知识库回答并显示来源
 
 ## 技术架构
 
@@ -108,26 +119,59 @@ kill $(pgrep -f "uvicorn main:app")
 | DELETE | /api/documents/{filename} | 删除文档 |
 | GET | /api/stats | 统计信息 |
 
+完整 API 文档请参考 [backend/main.py](backend/main.py)。
+
 ## 项目结构
 
 ```
 email-wiki-demo/
 ├── backend/
-│   ├── main.py              # FastAPI 主入口
-│   ├── parser.py            # 文档解析器
-│   ├── embedder.py          # Embedding 封装
-│   ├── db.py                # LanceDB 操作
-│   ├── email_db.py          # 邮件数据库
-│   ├── email_parser.py      # 邮件解析器
-│   ├── llm_client.py        # LLM 客户端
-│   ├── step_tracker.py      # 步骤追踪器
+│   ├── main.py              # FastAPI 主入口（路由 + 请求处理）
+│   ├── parser.py            # 文档解析器（PDF/TXT/MD/DOCX/EML）
+│   ├── embedder.py          # Embedding 封装（sentence-transformers）
+│   ├── db.py                # LanceDB 向量数据库操作
+│   ├── email_db.py          # SQLite 邮件数据库操作
+│   ├── email_parser.py      # 邮件解析转换
+│   ├── llm_client.py        # LLM 客户端（OpenAI/Ollama/小米）
+│   ├── match_reasons.py     # 搜索匹配原因分析
+│   ├── metrics_db.py        # 性能指标数据库
+│   ├── lancedb_inspect.py   # LanceDB 内部状态探查
+│   ├── step_tracker.py      # 全流程执行步骤追踪
 │   └── requirements.txt
 ├── frontend/
-│   └── index.html           # 前端页面
-├── data/                    # 数据目录
-├── uploads/                 # 上传文件
-├── start.sh                 # 启动脚本
+│   └── index.html           # 单页前端（全部交互）
+├── start.sh                 # 一键启动脚本
+├── diagram/
+│   ├── intro.svg            # 项目介绍图
+│   └── architecture.svg     # 系统架构图
+├── benchmark/               # 性能测试工具
+├── data/                    # 数据库目录（自动生成，gitignore）
+├── models/                  # 模型缓存目录（自动下载，gitignore）
+├── uploads/                 # 上传文件目录
 └── README.md
+```
+
+## 二次开发指引
+
+本项目各模块职责清晰、解耦良好，方便针对性修改：
+
+| 需求 | 改哪里 |
+|------|--------|
+| 替换 Embedding 模型 | [`backend/embedder.py`](backend/embedder.py) — `MODEL_NAME` 常量改为其他 sentence-transformers 模型 |
+| 更换 LLM | [`backend/llm_client.py`](backend/llm_client.py) — 按接口规范接入新模型 |
+| 增加文档格式支持 | [`backend/parser.py`](backend/parser.py) — 添加 `read_xxx()` 函数并注册到 `read_file()` |
+| 自定义分块策略 | [`backend/parser.py`](backend/parser.py) — 修改 `chunk_text()` 函数 |
+| 修改前端界面 | [`frontend/index.html`](frontend/index.html) — 单个 HTML，改起来很方便 |
+| 接入其他向量数据库 | [`backend/db.py`](backend/db.py) — 替换 LanceDB 调用为 Milvus/Chroma/Qdrant 等 |
+| 添加新的分析功能 | [`backend/metrics_db.py`](backend/metrics_db.py) + [`backend/lancedb_inspect.py`](backend/lancedb_inspect.py) |
+
+## 核心流程
+
+```
+上传文档 → Parser 解析 → Chunk 分块 → Embedder 向量化 → LanceDB 存储
+用户搜索 → Embedder 编码查询 → LanceDB 向量检索 → 匹配结果排序 → 前端展现
+智能问答 → 向量检索 Top-K → 构建 Prompt → LLM 推理 → 返回答案 + 来源
+```
 ```
 
 ## 环境变量说明

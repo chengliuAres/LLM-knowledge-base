@@ -1,4 +1,4 @@
-"""FastAPI 主入口 - 文档知识库 Demo (增强版)"""
+"""FastAPI 主入口 - 文档知识库"""
 
 import os
 import shutil
@@ -22,7 +22,7 @@ import metrics_db
 import lancedb_inspect
 from match_reasons import annotate_results
 
-app = FastAPI(title="文档知识库 Demo", version="2.0.0")
+app = FastAPI(title="文档知识库", version="2.0.0")
 
 # 上传目录
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads")
