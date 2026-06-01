@@ -49,7 +49,7 @@ def get_table():
     return _table
 
 
-def l2_to_similarity(distance: float) -> float:
+def cosine_distance_to_similarity(distance: float) -> float:
     """
     将余弦距离转换为相似度分数 [0, 1]
     
@@ -111,7 +111,7 @@ def search_similar(query_vector: list[float], top_k: int = 5, filter_expr: str =
     for r in results:
         # 计算相似度分数
         distance = r.get("_distance", 0)
-        score = l2_to_similarity(distance)
+        score = cosine_distance_to_similarity(distance)
         
         item = {
             "id": r["id"],

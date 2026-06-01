@@ -332,13 +332,13 @@ async def search(request: SearchRequest):
         
         step4.complete({
             "table_name": "documents",
-            "distance_metric": "L2 (欧氏距离)",
+            "distance_metric": "余弦距离 (cosine)",
             "index_type": "无索引 → 全量扫描所有行",
             "filter": filter_expr or "无过滤"
         })
         
         # 步骤5: LanceDB 向量检索
-        step5 = tracker.add_step("lanceDB_search", "LanceDB 向量检索 (L2距离计算)")
+        step5 = tracker.add_step("lanceDB_search", "LanceDB 向量检索 (余弦距离)")
         step5.start()
         
         results = search_similar(query_vector, top_k=request.top_k, filter_expr=filter_expr)
@@ -354,7 +354,7 @@ async def search(request: SearchRequest):
             })
         
         step5.complete({
-            "scan_method": "全量L2距离计算",
+            "scan_method": "全量余弦距离计算",
             "total_vectors": "所有文档向量",
             "returned_count": len(results),
             "score_formula": "similarity = 1 / (1 + distance)",

@@ -2,12 +2,10 @@
 
 import os
 from typing import AsyncGenerator, Union
+from dotenv import load_dotenv
 
-
-# 小米 MiMo 配置
-XIAOMI_API_KEY = "tp-cjdh66icm8h140rcvvlffq0pmyszd8im1u0hjkdo0rsdvrxi"
-XIAOMI_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1"
-XIAOMI_MODEL = "mimo-v2.5-pro"
+# 启动时加载 .env 文件
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 
 class LLMClient:
@@ -61,23 +59,20 @@ class OpenAICompatibleClient(LLMClient):
 
 
 def get_llm_client() -> LLMClient:
-    """获取 LLM 客户端实例"""
-    # 优先使用环境变量配置
-    provider = os.getenv("LLM_PROVIDER", "xiaomi")
+    """获取 LLM 客户端实例（优先读环境变量，缺省走 xiaomi）"""
+    provider = os.getenv("LLM_PROVIDER", "xiaomi").lower()
     
     if provider == "ollama":
-        # 本地 Ollama
         return OpenAICompatibleClient(
             api_key="ollama",
             base_url="http://localhost:11434/v1",
             model=os.getenv("LLM_MODEL", "qwen2:7b")
         )
     elif provider == "xiaomi":
-        # 小米 MiMo
         return OpenAICompatibleClient(
-            api_key=XIAOMI_API_KEY,
-            base_url=XIAOMI_BASE_URL,
-            model=XIAOMI_MODEL
+            api_key=os.getenv("LLM_API_KEY", ""),
+            base_url=os.getenv("LLM_BASE_URL", "https://token-plan-cn.xiaomimimo.com/v1"),
+            model=os.getenv("LLM_MODEL", "mimo-v2.5-pro"),
         )
     else:
         # OpenAI 兼容接口（从环境变量读取）

@@ -57,7 +57,7 @@ def inspect_overview() -> dict:
         "fragment_count": len(fragments),
         "indices": list(ds.list_indices()),
         "has_index": len(list(ds.list_indices())) > 0,
-        "search_strategy": "全量 L2 距离扫描" if not list(ds.list_indices()) else "索引检索",
+        "search_strategy": "全量余弦距离扫描" if not list(ds.list_indices()) else "索引检索",
     }
 
 
@@ -237,7 +237,7 @@ def demo_search(query: str, top_k: int = 5, score_threshold: float = 0.3) -> dic
     total_rows = ds.count_rows()
 
     t1 = time.time()
-    raw = table.search(query_vec).limit(max(top_k * 4, 20)).to_list()
+    raw = table.search(query_vec).metric("cosine").limit(max(top_k * 4, 20)).to_list()
     scan_ms = (time.time() - t1) * 1000
 
     distance_distribution = []
@@ -256,7 +256,7 @@ def demo_search(query: str, top_k: int = 5, score_threshold: float = 0.3) -> dic
     for r in top_k_rows:
         raw_rec = raw_by_id.get(r["id"], {})
         d = r["distance"]
-        score = 1.0 / (1.0 + d)
+        score = (1.0 - d + 1.0) / 2.0  # 余弦距离 → [0,1] 相似度
         try:
             metadata = json.loads(raw_rec.get("metadata") or "{}")
         except Exception:
@@ -293,7 +293,7 @@ def demo_search(query: str, top_k: int = 5, score_threshold: float = 0.3) -> dic
                 "name": "scan_strategy",
                 "title": "2. 检索策略",
                 "duration_ms": 0,
-                "description": "无索引 → 全量遍历每个 fragment 中的所有行，逐行计算 L2 距离",
+                "description": "无索引 → 全量遍历每个 fragment 中的所有行，逐行计算余弦距离",
                 "output": {
                     "has_index": has_index,
                     "strategy": "full_scan" if not has_index else "indexed_search",
@@ -306,9 +306,9 @@ def demo_search(query: str, top_k: int = 5, score_threshold: float = 0.3) -> dic
             },
             {
                 "name": "compute_distances",
-                "title": "3. 计算 L2 距离 + 排序",
+                "title": "3. 计算余弦距离 + 排序",
                 "duration_ms": round(scan_ms, 2),
-                "description": "L2 = √Σ(query_i - vector_i)²，取距离最小的若干条",
+                "description": "余弦距离 = 1 - cosine_similarity，取距离最小的若干条",
                 "output": {
                     "candidates_returned": len(distance_distribution),
                     "distance_min": distance_distribution[0]["distance"] if distance_distribution else None,
@@ -330,9 +330,9 @@ def demo_search(query: str, top_k: int = 5, score_threshold: float = 0.3) -> dic
                 "name": "score_conversion",
                 "title": "5. 距离 → 相似度分数",
                 "duration_ms": 0,
-                "description": "公式：similarity = 1 / (1 + L2_distance)，把 [0, +∞) 距离映射到 (0, 1] 相似度",
+                "description": "公式：similarity = (1 - cosine_distance + 1) / 2，把余弦距离映射到 [0, 1] 相似度",
                 "output": {
-                    "formula": "similarity = 1 / (1 + distance)",
+                    "formula": "similarity = (2 - distance) / 2",
                     "examples": scored,
                 },
             },
