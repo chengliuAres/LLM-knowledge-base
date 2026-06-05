@@ -46,9 +46,9 @@ MCP 调用 → code_mcp.py（MCP tools）→ code_search.py / llm_client.py
 
 ### 关键设计决策
 
-- **Embedding 模型**：本地 `all-MiniLM-L6-v2`（384维），启动时单例预加载，首次启动会下载模型（~90MB）
+- **Embedding 模型**：本地 `paraphrase-multilingual-MiniLM-L12-v2`（384维，多语言），启动时单例预加载，首次启动会下载模型（~90MB）
 - **LanceDB 元数据**：metadata 字段以 JSON 字符串存储（非原生 JSON），读写时需手动 `json.dumps/loads`
-- **相似度计算**：LanceDB 返回 L2 距离，通过 `1/(1+distance)` 转换为 `[0,1]` 相似度分数，低于 0.3 的结果被过滤
+- **相似度计算**：LanceDB 使用余弦距离（cosine），通过 `(1 - distance + 1) / 2` 转换为 `[0,1]` 相似度分数，低于 0.3 的结果被过滤
 - **搜索能力边界**：`/api/search` 和 `/api/chat` 走向量搜索（LanceDB）；`/api/emails/search` 走 SQL `LIKE`（仅搜 SQLite 原始邮件，不走向量）
 - **步骤追踪**：`StepTracker` 贯穿搜索/问答/导入全链路，每步耗时透传前端展示
 - **前端**：单文件 `frontend/index.html`（Tailwind CDN），无构建步骤，FastAPI 直接 serve
