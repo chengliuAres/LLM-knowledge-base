@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-基于 LanceDB + sentence-transformers 的本地文档知识库 Demo，支持文档上传、邮件导入、向量搜索和 RAG 问答。这是一个 email-wiki 技术验证项目，演示 Karpathy LLM-wiki 方案在邮件场景的核心链路。
+基于 LanceDB + sentence-transformers 的本地文档知识库 Demo，支持文档上传、邮件导入、代码索引、向量搜索和 RAG 问答。支持 MCP 协议对外暴露 AI 工具能力。这是一个 email-wiki 技术验证项目，演示 Karpathy LLM-wiki 方案在邮件/代码场景的核心链路。
 
 ## 启动与运行
 
@@ -39,7 +39,9 @@ LLM_MODEL=gpt-3.5-turbo
 ```
 文档上传 → parser.py（分块）→ embedder.py（384维向量）→ db.py（LanceDB）
 邮件导入 → email_db.py（SQLite）→ email_parser.py（转换分块）→ embedder.py → db.py
-用户查询 → embedder.py（查询向量化）→ db.py（向量搜索）→ llm_client.py（RAG）
+代码扫描 → code_parser.py（tree-sitter AST 分块）→ embedder.py → code_db.py（LanceDB + SQLite FTS）
+用户查询 → embedder.py（查询向量化）→ db.py/code_db.py（向量搜索）→ llm_client.py（RAG）
+MCP 调用 → code_mcp.py（MCP tools）→ code_search.py / llm_client.py
 ```
 
 ### 关键设计决策
@@ -84,6 +86,9 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 |------|------|
 | `data/lancedb/` | 向量数据库（文档 chunks + 邮件 chunks） |
 | `data/emails.db` | SQLite 邮件数据库（示例邮件） |
+| `data/code_lancedb/` | 代码向量数据库（独立目录） |
+| `data/code_index.db` | 代码 SQLite FTS5 全文索引 |
+| `data/code_repos.json` | 已索引仓库的配置和状态 |
 | `uploads/` | 用户上传的原始文件 |
 
 ### 各模块职责
@@ -96,6 +101,12 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 - `email_parser.py`：邮件 dict → LanceDB 兼容的 chunk 列表（file_type=`.eml`）
 - `llm_client.py`：OpenAI 兼容客户端，支持流式/非流式，`build_rag_prompt` 构造提示词
 - `step_tracker.py`：轻量执行步骤记录器（`Step` dataclass）
+- `code_parser.py`：tree-sitter AST 解析 + 混合分块（代码知识库）
+- `code_db.py`：LanceDB + SQLite FTS5 双存储（代码知识库）
+- `code_search.py`：混合搜索 + RRF 融合排序（代码知识库）
+- `code_routes.py`：代码知识库 REST API 路由
+- `code_mcp.py`：MCP server + tools（SSE 传输）
+- `code_config.py`：扫描配置管理（code_repos.json）
 
 ## API 接口
 
@@ -110,3 +121,21 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 | GET | `/api/emails/search` | 关键词搜索邮件 |
 | DELETE | `/api/documents/{filename}` | 删除文档及其所有 chunks |
 | GET | `/api/stats` | 文档库 + 邮件库统计 |
+
+### 代码知识库 API（`code_routes.py`）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/code/scan` | 扫描目录，建立代码索引 |
+| POST | `/api/code/search` | 混合搜索（向量+关键词） |
+| POST | `/api/code/chat` | RAG 代码问答，支持流式 |
+| GET | `/api/code/repos` | 已索引的仓库列表 |
+| GET | `/api/code/stats` | 代码索引统计信息 |
+| DELETE | `/api/code/repos/{name}` | 删除仓库索引 |
+| POST | `/api/code/repos/{name}/refresh` | 全量刷新仓库（幂等） |
+
+### MCP 端点
+
+| 端点 | 说明 |
+|------|------|
+| `/mcp/sse` | MCP SSE 传输端点，暴露 code_search/code_chat/code_list_repos/code_file_context 四个 tools |
