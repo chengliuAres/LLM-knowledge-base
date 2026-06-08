@@ -12,7 +12,7 @@
 
 - 📄 **文档管理**: 拖拽上传 PDF/TXT/MD/DOCX/EML，自动解析、分块、向量化
 - 📧 **邮件导入**: 从本地邮件数据库导入邮件，支持批量处理和搜索
-- 💻 **代码知识库**: tree-sitter AST 解析 6 种语言，混合搜索（向量+关键词 RRF 融合）
+- 💻 **代码知识库**: tree-sitter AST 解析 15+ 种语言，混合搜索（向量+关键词 RRF 融合），调用图追踪（BFS 多跳调用链）
 - 🔍 **语义搜索**: 基于向量相似度的智能搜索，展示完整执行流程
 - 💬 **智能问答**: RAG 架构，基于知识库内容回答问题，附带来源引用
 - 🔌 **MCP 协议**: 暴露 AI 工具能力，Hermes/Claude 可直接调用代码搜索和问答
@@ -118,11 +118,12 @@ mcp_servers:
     url: http://localhost:8000/mcp/sse
 ```
 
-重启 Hermes 后自动注册 4 个工具：
+重启 Hermes 后自动注册 5 个工具：
 - `mcp_code-kb_code_search` — 搜索代码库
 - `mcp_code-kb_code_chat` — RAG 代码问答
 - `mcp_code-kb_code_list_repos` — 列出已索引仓库
 - `mcp_code-kb_code_file_context` — 获取文件上下文
+- `mcp_code-kb_code_trace` — 追踪调用链（谁调了它 / 它调了谁）
 
 ## 💻 代码知识库（详细）
 
@@ -152,6 +153,7 @@ mcp_servers:
 LanceDB (code_chunks)     ← 向量检索（语义搜索）
 SQLite FTS5 (code_fts)    ← 关键词检索（符号名/路径精确搜索）
 SQLite (code_meta)        ← 结构化过滤和统计
+SQLite (code_relations)   ← 调用关系表（call graph，支持 BFS 多跳追踪）
 code_repos.json           ← 仓库配置 + 文件 mtime（增量扫描）
 ```
 
@@ -178,6 +180,22 @@ code_repos.json           ← 仓库配置 + 文件 mtime（增量扫描）
 ```
 
 同一 chunk 在两路都命中时 RRF 分数相加，最终按融合分数排序。
+
+### 调用图追踪（code_trace）
+
+```
+用户查询（符号名或搜索关键词）
+  ├── 混合搜索定位入口符号 ────────────┐
+  └── code_relations 反向索引查找 ─────┤
+                                       ▼
+                              trace_chain BFS 多跳追踪
+                              (direction: callers/callees/both, depth: 1-3)
+                                       ▼
+                              返回调用图（节点 + 边 + 直接调用者/被调用者）
+```
+
+Agent 通过 `code_trace` 可自动理清跨文件业务链路：
+> "支付流程: OrderVC.submitOrder() → PaymentService.processPayment: → APIClient.sendRequest:completion: → handleResponse: 回调更新 UI"
 
 ## 技术架构
 
@@ -212,6 +230,7 @@ code_repos.json           ← 仓库配置 + 文件 mtime（增量扫描）
 | GET | /api/code/stats | 索引统计信息 |
 | DELETE | /api/code/repos/{name} | 删除仓库索引 |
 | POST | /api/code/repos/{name}/refresh | 全量刷新仓库索引（幂等） |
+| POST | /api/code/trace | 调用链追踪（symbol + direction + depth） |
 
 ### MCP 端点
 
@@ -234,11 +253,11 @@ email-wiki-demo/
 │   ├── email_db.py          # SQLite 邮件数据库操作
 │   ├── email_parser.py      # 邮件解析转换
 │   ├── llm_client.py        # LLM 客户端（OpenAI/Ollama/小米）
-│   ├── code_parser.py       # 代码解析器（tree-sitter AST + 混合分块）  ← 新增
-│   ├── code_db.py           # 代码存储层（LanceDB + SQLite FTS5）       ← 新增
-│   ├── code_search.py       # 代码搜索层（混合搜索 + RRF 融合）         ← 新增
-│   ├── code_routes.py       # 代码知识库 REST API 路由                  ← 新增
-│   ├── code_mcp.py          # MCP Server（4 tools + SSE 传输）          ← 新增
+│   ├── code_parser.py       # 代码解析器（tree-sitter AST + 混合分块 + 调用关系提取）
+│   ├── code_db.py           # 代码存储层（LanceDB + SQLite FTS5 + code_relations 调用图）
+│   ├── code_search.py       # 代码搜索层（混合搜索 + RRF 融合 + trace_code 调用链追踪）
+│   ├── code_routes.py       # 代码知识库 REST API 路由（含 /api/code/trace）
+│   ├── code_mcp.py          # MCP Server（5 tools + SSE 传输）
 │   ├── code_config.py       # 代码仓库配置管理（增量扫描）               ← 新增
 │   ├── match_reasons.py     # 搜索匹配原因分析
 │   ├── metrics_db.py        # 性能指标数据库
@@ -269,7 +288,8 @@ email-wiki-demo/
 | 修改搜索融合算法 | `code_search.py` — 修改 `rrf_fusion()` 函数 |
 | 修改前端界面 | `index.html` — 单个 HTML 文件 |
 | 接入其他向量数据库 | `db.py` / `code_db.py` — 替换 LanceDB 调用 |
-| 扩展 MCP 工具 | `code_mcp.py` — 在 `TOOLS` 列表和 `execute_tool()` 中添加 |
+| 扩展 MCP 工具 | `code_mcp.py` — 在 `TOOLS` 列表和 `execute_tool()` 中添加（当前 5 tools） |
+| 扩展调用关系追踪 | `code_parser.py` — `_extract_call_name()` 添加新语言；`code_db.py` — 调整 `trace_chain()` 遍历策略 |
 
 ## 核心流程
 
@@ -279,8 +299,9 @@ email-wiki-demo/
   用户搜索 → Embedder 编码查询 → LanceDB 向量检索 → 匹配结果排序 → 前端展现
 
 代码知识库:
-  扫描目录 → tree-sitter AST 解析 → 混合分块 → Embedder 向量化 → LanceDB + SQLite FTS5 双写
+  扫描目录 → tree-sitter AST 解析 → 混合分块 + 调用关系提取 → Embedder 向量化 → LanceDB + SQLite FTS5 + code_relations 三写
   用户搜索 → Embedder + FTS5 双路检索 → RRF 融合排序 → 前端展现
+  调用链追踪 → 混搜定位符号 → code_relations BFS 多跳追踪 → 返回调用图
   代码问答 → 混合搜索 Top-K → 构建 Prompt → LLM 推理 → 返回答案 + 引用源
 
 MCP 工具链:

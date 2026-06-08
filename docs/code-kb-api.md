@@ -237,6 +237,62 @@ data: [DONE]
 
 ---
 
+## POST /api/code/trace
+
+追踪符号的调用链 — 快速理清跨文件业务逻辑。先混搜定位符号入口，再通过 `code_relations` 表做 BFS 多跳追踪。
+
+**请求:**
+```json
+{
+    "symbol": "processPayment",
+    "repo_name": "ghmail",
+    "direction": "both",
+    "depth": 2
+}
+```
+
+**参数:**
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| symbol | string | ✅ | - | 符号名或搜索查询 |
+| repo_name | string | ❌ | "" | 仓库名过滤 |
+| direction | string | ❌ | "both" | callers(谁调我) / callees(我调谁) / both |
+| depth | int | ❌ | 2 | 追踪跳数 1-3 |
+
+**响应:**
+```json
+{
+    "query": "processPayment",
+    "depth": 2,
+    "direction": "both",
+    "matched_symbols": [
+        {"symbol": "PaymentService", "file_path": "PaymentService.m", "line_start": 8, "chunk_type": "implementation"}
+    ],
+    "traces": [
+        {
+            "entry_symbol": "PaymentService",
+            "entry_file": "PaymentService.m",
+            "direct_callers": [{"symbol": "OrderVC", "file": "OrderVC.m", "line": 45}],
+            "direct_callees": [
+                {"symbol": "validateOrder:", "line": 11},
+                {"symbol": "sendRequest:completion:", "line": 12}
+            ],
+            "chain": {
+                "nodes": [{"symbol": "...", "file": "...", "chunk_id": "..."}],
+                "edges": [{"from": "PaymentService", "to": "validateOrder:", "line": 11, "relation": "calls"}]
+            }
+        }
+    ],
+    "steps": [...]
+}
+```
+
+**状态码:**
+- 200: 成功
+- 400: symbol 为空
+
+---
+
 ## POST /api/code/fts/migrate-chinese
 
 对已有 FTS5 索引进行中文分词迁移 (jieba 分词重建)。
@@ -317,3 +373,45 @@ data: [DONE]
 **输出:**
 - 无行号参数: 文件完整内容 + 元数据 (最大 5000 字符, 超出截断)
 - 有行号参数: 指定范围 + 前后各 10 行上下文 + 元数据
+
+### code_trace
+
+追踪符号的调用链 — 谁调用了它 / 它调用了谁。用于快速理清跨文件业务逻辑链路。
+
+**输入:**
+```json
+{
+    "symbol": "processPayment",    // 符号名或搜索查询
+    "repo": "ghmail",              // 可选, 仓库名过滤
+    "direction": "both",           // callers / callees / both (默认 both)
+    "depth": 2                     // 追踪跳数 1-3 (默认 2)
+}
+```
+
+**输出:**
+```json
+{
+    "symbol": "processPayment",
+    "direction": "both",
+    "depth": 2,
+    "direct_callers": [{"symbol": "OrderVC", "file": "OrderVC.m", "line": 45}],
+    "direct_callees": [
+        {"symbol": "validateOrder:", "line": 11},
+        {"symbol": "sendRequest:completion:", "line": 12}
+    ],
+    "chain": {
+        "nodes": [{"symbol": "...", "file": "...", "chunk_id": "..."}],
+        "edges": [{"from": "PaymentService", "to": "validateOrder:", "line": 11, "relation": "calls"}]
+    }
+}
+```
+
+**典型使用场景 (Agent 多跳推理):**
+```
+Agent: code_trace("PaymentService", direction="callees", depth=2)
+  → PaymentService → validateOrder: → refundOrder: → reverseOrder:
+  → PaymentService → sendRequest:completion: → handleResponse:
+Agent 输出: "支付流程从 PaymentService 进入，先校验订单 (validateOrder:)，
+           如需退款走 refundOrder: → reverseOrder:，
+           正常支付走 sendRequest:completion: → handleResponse: 回调处理结果。"
+```

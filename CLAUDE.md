@@ -39,8 +39,9 @@ LLM_MODEL=gpt-3.5-turbo
 ```
 文档上传 → parser.py（分块）→ embedder.py（384维向量）→ db.py（LanceDB）
 邮件导入 → email_db.py（SQLite）→ email_parser.py（转换分块）→ embedder.py → db.py
-代码扫描 → code_parser.py（tree-sitter AST 分块）→ embedder.py → code_db.py（LanceDB + SQLite FTS）
+代码扫描 → code_parser.py（tree-sitter AST 分块 + 调用关系提取）→ code_embedder.py → code_db.py（LanceDB + SQLite FTS5 + code_relations）
 用户查询 → embedder.py（查询向量化）→ db.py/code_db.py（向量搜索）→ llm_client.py（RAG）
+调用链追踪 → code_search.py（混搜定位符号）→ code_db.py（trace_chain BFS 多跳追踪）
 MCP 调用 → code_mcp.py（MCP tools）→ code_search.py / llm_client.py
 ```
 
@@ -87,7 +88,7 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 | `data/lancedb/` | 向量数据库（文档 chunks + 邮件 chunks） |
 | `data/emails.db` | SQLite 邮件数据库（示例邮件） |
 | `data/code_lancedb/` | 代码向量数据库（独立目录） |
-| `data/code_index.db` | 代码 SQLite FTS5 全文索引 |
+| `data/code_index.db` | 代码 SQLite FTS5 全文索引 + 调用关系表（`code_relations`） |
 | `data/code_repos.json` | 已索引仓库的配置和状态 |
 | `uploads/` | 用户上传的原始文件 |
 
@@ -101,9 +102,9 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 - `email_parser.py`：邮件 dict → LanceDB 兼容的 chunk 列表（file_type=`.eml`）
 - `llm_client.py`：OpenAI 兼容客户端，支持流式/非流式，`build_rag_prompt` 构造提示词
 - `step_tracker.py`：轻量执行步骤记录器（`Step` dataclass）
-- `code_parser.py`：tree-sitter AST 解析 + 混合分块（代码知识库）
-- `code_db.py`：LanceDB + SQLite FTS5 双存储（代码知识库）
-- `code_search.py`：混合搜索 + RRF 融合排序（代码知识库）
+- `code_parser.py`：tree-sitter AST 解析 + 混合分块 + 调用关系提取（代码知识库）
+- `code_db.py`：LanceDB + SQLite FTS5 双存储 + 调用关系表 `code_relations`（代码知识库）
+- `code_search.py`：混合搜索 + RRF 融合排序 + `trace_code` 调用链追踪（代码知识库）
 - `code_routes.py`：代码知识库 REST API 路由
 - `code_mcp.py`：MCP server + tools（SSE 传输）
 - `code_config.py`：扫描配置管理（code_repos.json）
@@ -133,9 +134,10 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 | GET | `/api/code/stats` | 代码索引统计信息 |
 | DELETE | `/api/code/repos/{name}` | 删除仓库索引 |
 | POST | `/api/code/repos/{name}/refresh` | 全量刷新仓库（幂等） |
+| POST | `/api/code/trace` | 调用链追踪（symbol/direction/depth） |
 
 ### MCP 端点
 
 | 端点 | 说明 |
 |------|------|
-| `/mcp/sse` | MCP SSE 传输端点，暴露 code_search/code_chat/code_list_repos/code_file_context 四个 tools |
+| `/mcp/sse` | MCP SSE 传输端点，暴露 code_search / code_chat / code_list_repos / code_file_context / code_trace 五个 tools |
