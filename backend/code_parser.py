@@ -126,17 +126,49 @@ _HASH_COMMENT_RE = re.compile(r'#[^\n]*')
 # 剥离后避免跨语言 embedding 模型被中文 query 匹配到代码里的中文字面量
 _CN_STRIP_RE = re.compile(r'[一-鿿㐀-䶿\U00020000-\U0002a6df]+')
 
-# ── tree-sitter Parser 全局缓存 ─────────────────────────────────────
-# tree_sitter_language_pack 的 get_parser() 每次创建全新的 Language+Parser
-# 不缓存会导致 3773 个文件 = 3773 个 Language(含完整语法) + 3773 个 Parser → 内存爆炸
-_PARSER_CACHE = {}
+# ── tree-sitter Parser 线程本地缓存 ──────────────────────────────────
+# tree-sitter 0.25.x 的 Parser 不可跨线程，用 thread-local 每线程独立缓存。
+import threading
+_PARSER_LOCALS = threading.local()
+# 全局标记：哪些语言的 parser 已确认可从缓存加载（子进程验证过）
+_AVAILABLE_LANGUAGES: set = set()
 
 def _get_cached_parser(language: str):
-    """获取缓存的 tree-sitter Parser（每种语言只创建一个，复用）"""
-    if language not in _PARSER_CACHE:
+    """获取缓存的 tree-sitter Parser（每线程独立缓存）
+
+    如果 parser 需要从 GitHub 下载且网络不通，会在 15 秒后超时抛出异常。
+    """
+    cache = getattr(_PARSER_LOCALS, 'parsers', None)
+    if cache is None:
+        cache = {}
+        _PARSER_LOCALS.parsers = cache
+
+    if language not in cache:
+        # 首次遇到该语言：用子进程验证 parser 可用（含网络下载超时检测）
+        if language not in _AVAILABLE_LANGUAGES:
+            import subprocess, sys
+
+            try:
+                subprocess.run(
+                    [sys.executable, "-c",
+                     f"from tree_sitter_language_pack import get_parser; get_parser('{language}')"],
+                    timeout=15, capture_output=True,
+                )
+            except subprocess.TimeoutExpired:
+                raise TimeoutError(
+                    f"加载 tree-sitter parser '{language}' 超时（15s），"
+                    f"可能是网络不通无法从 GitHub 下载 parser 文件。"
+                )
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(f"加载 tree-sitter parser '{language}' 失败: {e.stderr.decode()}")
+
+            _AVAILABLE_LANGUAGES.add(language)
+
+        # 当前线程缓存原始 parser（调用处用 _compat_parse() 做兼容适配）
         from tree_sitter_language_pack import get_parser
-        _PARSER_CACHE[language] = get_parser(language)
-    return _PARSER_CACHE[language]
+        cache[language] = get_parser(language)
+
+    return cache[language]
 
 # ── 语言 ↔ 扩展名映射 ──────────────────────────────────────────────
 
