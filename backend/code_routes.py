@@ -397,8 +397,10 @@ async def scan_progress_sse(scan_id: str):
         queue = job.subscribe()
         try:
             while True:
+                # 取消后缩短超时，快速响应
+                timeout = 3 if job.status in ("cancelled", "error") else 60
                 try:
-                    entry = await asyncio.wait_for(queue.get(), timeout=60)
+                    entry = await asyncio.wait_for(queue.get(), timeout=timeout)
 
                     # 后台线程发来的最终信号
                     if entry.get("_final"):
@@ -444,6 +446,7 @@ async def cancel_scan(scan_id: str):
 
     log.info(f"[scan:{scan_id}] 用户取消扫描")
     job.cancel_event.set()
+    job.status = "cancelled"  # 立即标记状态，SSE 心跳可检测
     return {"status": "cancelling", "scan_id": scan_id}
 
 
