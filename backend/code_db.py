@@ -203,7 +203,7 @@ def insert_chunks(chunks: list[dict]):
     for c in chunks:
         fts_rows.append((
             c["id"],
-            segment_for_fts(c["content"]),  # 中文分词 → FTS5 可正确索引
+            segment_for_fts(c.get("display_text", c["content"])),  # 用 display_text 索引，与向量搜索对齐
             c.get("symbol_name", ""),
             c["file_path"],
             c["language"],
