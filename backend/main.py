@@ -10,6 +10,12 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 
+# 静音第三方库的 tqdm/进度条/调试日志
+logging.getLogger("jieba").setLevel(logging.WARNING)
+logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+logging.getLogger("transformers").setLevel(logging.WARNING)
+os.environ["TQDM_DISABLE"] = "1"  # 禁用 tqdm 进度条
+
 import shutil
 import time
 import json
@@ -21,7 +27,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from parser import process_file
-from embedder import embed_text, embed_batch, _model_name as EMBED_MODEL_NAME, get_model_info
+from embedder import embed_text, embed_query, embed_batch, _model_name as EMBED_MODEL_NAME, get_model_info
 from db import insert_documents, search_similar, list_documents, delete_document, get_stats
 from email_db import init_db, get_all_emails, get_stats as get_email_stats, search_emails, init_sample_data
 from email_parser import email_to_chunks, batch_convert_emails
@@ -327,7 +333,7 @@ async def search(request: SearchRequest):
         step3 = tracker.add_step("embed_query", "生成查询向量 (Embedding)")
         step3.start()
         
-        query_vector = embed_text(query_clean)
+        query_vector = embed_query(query_clean)
         
         step3.complete({
             "model": EMBED_MODEL_NAME,
@@ -430,7 +436,7 @@ async def chat(request: ChatRequest):
         step2 = tracker.add_step("retrieve_docs", "检索相关文档")
         step2.start()
         
-        query_vector = embed_text(request.query)
+        query_vector = embed_query(request.query)
         search_results = search_similar(query_vector, top_k=request.top_k)
         annotate_results(request.query, search_results)
         
