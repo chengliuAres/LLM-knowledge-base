@@ -1662,7 +1662,10 @@
 
                 <!-- 仓库列表 -->
                 <div class="bg-white rounded-lg shadow-sm border p-4 flex-1">
-                    <h3 class="font-semibold text-gray-700 text-sm mb-3">📦 已索引仓库</h3>
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="font-semibold text-gray-700 text-sm">📦 已索引仓库</h3>
+                        <button onclick="codeClearAll()" id="codeClearBtn" class="text-[10px] text-red-500 hover:text-red-700 hover:bg-red-50 px-1.5 py-0.5 rounded">🗑️ 清空全部</button>
+                    </div>
                     <div id="codeRepoList" class="space-y-2">
                         <div class="p-3 text-center text-gray-400 text-xs">暂无仓库</div>
                     </div>
@@ -1975,6 +1978,25 @@
             codeLoadRepos();
         } catch (e) {
             alert('刷新失败: ' + e.message);
+        }
+    }
+
+    async function codeClearAll() {
+        if (!confirm('确认清空全部索引？\n\n将删除所有仓库的 LanceDB 向量数据 + SQLite 关键词索引 + 配置记录。\n此操作不可恢复。')) return;
+        const btn = document.getElementById('codeClearBtn');
+        btn.disabled = true;
+        btn.textContent = '⏳ 清空中...';
+        try {
+            const res = await fetch('/api/code/repos', {method: 'DELETE'});
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail);
+            alert(`已清空: ${data.deleted_chunks} chunks, ${data.cleared_repos.length} 个仓库`);
+            codeLoadRepos();
+        } catch (e) {
+            alert('清空失败: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🗑️ 清空全部';
         }
     }
 

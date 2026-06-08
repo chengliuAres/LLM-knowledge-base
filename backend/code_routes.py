@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from step_tracker import StepTracker
 from code_parser import parse_repo, scan_directory
-from code_db import insert_chunks, delete_by_repo, delete_by_file, get_stats, get_chunks_by_file
+from code_db import insert_chunks, delete_by_repo, delete_by_file, get_stats
 from code_search import search_code
 from code_config import (
     list_repos, get_repo_config, register_repo, remove_repo,
@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/code", tags=["code-kb"])
 class ScanRequest(BaseModel):
     repo_name: str
     repo_path: str
-    project_type: str = "generic"
+    project_type: str = ""  # 空字符串 = 自动检测工程类型
     languages: list[str] = Field(default_factory=list)
     skip_dirs: list[str] = Field(default_factory=list)
     skip_extensions: list[str] = Field(default_factory=list)
@@ -113,13 +113,17 @@ def _run_scan(job: ScanJob):
     log.info(f"[scan:{job.scan_id}] 后台线程启动: {req.repo_name}")
 
     try:
+        # 0. 自动检测工程类型
+        from code_parser import auto_detect_project_type
+        effective_type = req.project_type or auto_detect_project_type(repo_path)
+
         # 1. 扫描目录
         job.update("scan_files", "扫描目录文件...")
         if job.is_cancelled():
             return
-        log.info(f"[scan:{job.scan_id}] 开始扫描目录: {repo_path}")
+        log.info(f"[scan:{job.scan_id}] 开始扫描目录: {repo_path}, type={effective_type}")
         files = scan_directory(
-            repo_path, req.project_type,
+            repo_path, effective_type,
             req.languages or None,
             set(req.skip_dirs) if req.skip_dirs else None,
             set(req.skip_extensions) if req.skip_extensions else None,
@@ -156,7 +160,7 @@ def _run_scan(job: ScanJob):
         files_to_parse = incremental["added"] + incremental["updated"]
         if not files_to_parse:
             job.update("done", "无新增/更新文件，扫描完成")
-            _finalize_scan(job, files)
+            _finalize_scan(job, files, effective_type)
             return
 
         log.info(f"[scan:{job.scan_id}] 解析 {len(files_to_parse)} 个文件...")
@@ -203,7 +207,7 @@ def _run_scan(job: ScanJob):
             paired = pairs.get(f["rel_path"], "")
             chunks = chunk_code(
                 code_bytes, f["language"], f["rel_path"],
-                req.repo_name, req.project_type, repo_path, paired or "",
+                req.repo_name, effective_type, repo_path, paired or "",
             )
             for c in chunks:
                 if c["metadata"].get("parse_warning"):
@@ -217,7 +221,7 @@ def _run_scan(job: ScanJob):
 
         if not all_batch_chunks:
             job.update("done", "无可索引内容")
-            _finalize_scan(job, files)
+            _finalize_scan(job, files, effective_type)
             return
 
         # 5. 分批 embedding + 写入
@@ -257,7 +261,7 @@ def _run_scan(job: ScanJob):
         log.info(f"[scan:{job.scan_id}] 写入完成: {len(all_batch_chunks)} chunks")
 
         # 6. 更新配置
-        _finalize_scan(job, files)
+        _finalize_scan(job, files, effective_type)
 
     except Exception as e:
         job.status = "error"
@@ -282,13 +286,13 @@ def _run_scan(job: ScanJob):
                 pass
 
 
-def _finalize_scan(job: ScanJob, files: list):
+def _finalize_scan(job: ScanJob, files: list, effective_type: str = ""):
     """扫描完成后更新配置"""
     req = job.req
     from code_db import get_stats as get_code_stats
     db_stats = get_code_stats()
     register_repo(req.repo_name, os.path.abspath(req.repo_path),
-                  req.project_type, req.languages, db_stats)
+                  effective_type or req.project_type, req.languages, db_stats)
     new_mtimes = {f["rel_path"]: f["mtime"] for f in files}
     update_file_mtimes(req.repo_name, new_mtimes)
     job.stats = db_stats
@@ -340,7 +344,11 @@ def get_table_from_db():
 async def scan_repo_endpoint(req: ScanRequest):
     """启动异步扫描, 返回 scan_id"""
     repo_path = os.path.abspath(req.repo_path)
-    log.info(f"[scan] 启动扫描: repo={req.repo_name}, path={repo_path}, type={req.project_type}, langs={req.languages}")
+
+    # 自动检测工程类型
+    from code_parser import auto_detect_project_type
+    detected_type = req.project_type or auto_detect_project_type(repo_path)
+    log.info(f"[scan] 启动扫描: repo={req.repo_name}, path={repo_path}, type={detected_type} (指定={req.project_type or '自动'}), langs={req.languages}")
 
     if not os.path.isdir(repo_path):
         log.warning(f"[scan] 目录不存在: {repo_path}")
@@ -590,6 +598,46 @@ async def list_repos_endpoint():
 async def stats_endpoint():
     """索引统计信息"""
     return get_stats()
+
+
+# ── POST /api/code/fts/migrate-chinese ─────────────────────────────
+
+@router.post("/fts/migrate-chinese")
+async def migrate_fts_chinese_endpoint(repo_name: str = ""):
+    """迁移现有 FTS5 索引：对中文内容进行 jieba 分词重建。
+
+    可选传 repo_name 仅迁移指定仓库。
+    新索引写入时已自动分词，此端点用于迁移历史数据。
+    """
+    from code_db import migrate_fts_chinese
+    result = migrate_fts_chinese(repo_name or None)
+    return {"status": "ok", **result}
+
+
+# ── DELETE /api/code/repos (清空全部) ─────────────────────────────
+
+@router.delete("/repos")
+async def clear_all_repos():
+    """清空所有索引数据 (LanceDB + SQLite + 配置)"""
+    from code_db import clear_all as db_clear_all
+    from code_config import load_config, save_config
+
+    repos = list_repos()
+    repo_names = [r["name"] for r in repos]
+    log.info(f"[clear] 清空全部: {len(repo_names)} 个仓库")
+
+    # 清空 DB
+    deleted = db_clear_all()
+
+    # 清空配置
+    save_config({"repos": {}, "file_mtimes": {}})
+
+    # 释放所有扫描锁
+    for name in repo_names:
+        release_scan_lock(name)
+
+    log.info(f"[clear] 完成: 删除 {deleted} chunks")
+    return {"status": "ok", "deleted_chunks": deleted, "cleared_repos": repo_names}
 
 
 # ── DELETE /api/code/repos/{name} ────────────────────────────────

@@ -11,6 +11,9 @@ import lancedb
 from datetime import datetime
 from typing import Optional
 
+from embedder import get_dimension
+from text_utils import segment_for_fts, segment_query_for_match
+
 # ── 路径配置 ──────────────────────────────────────────────────────
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -34,13 +37,39 @@ def get_db() -> lancedb.DBConnection:
 
 
 def get_table():
-    """获取 code_chunks 表 (不存在则创建)"""
+    """获取 code_chunks 表 (不存在则创建，维度不匹配则自动迁移)"""
     global _table
     if _table is None:
         db = get_db()
+        dim = get_dimension()
         try:
             _table = db.open_table(TABLE_NAME)
+            # 检查维度是否匹配
+            schema = _table.schema
+            for field in schema:
+                if field.name == 'vector' and hasattr(field.type, 'list_size'):
+                    existing_dim = field.type.list_size
+                    if existing_dim != dim:
+                        import uuid
+                        backup_name = f"{TABLE_NAME}_{existing_dim}dim_backup"
+                        print(f"[code_db] 向量维度不匹配: 现存={existing_dim}, 当前={dim}")
+                        print(f"[code_db] 备份旧表为 {backup_name}，创建新表")
+                        try:
+                            db.drop_table(backup_name)
+                        except Exception:
+                            pass
+                        try:
+                            db.drop_table(TABLE_NAME)
+                        except Exception:
+                            pass
+                        _table = None
+                        raise FileNotFoundError("schema 已废弃，重建表")
+        except FileNotFoundError:
+            _table = None
         except Exception:
+            _table = None
+
+        if _table is None:
             placeholder = [{
                 "id": "__placeholder__",
                 "repo_name": "",
@@ -53,7 +82,7 @@ def get_table():
                 "content": "",
                 "line_start": 0,
                 "line_end": 0,
-                "vector": [0.0] * 384,
+                "vector": [0.0] * dim,
                 "metadata": "{}",
             }]
             _table = db.create_table(TABLE_NAME, data=placeholder)
@@ -172,7 +201,7 @@ def insert_chunks(chunks: list[dict]):
     for c in chunks:
         fts_rows.append((
             c["id"],
-            c["content"],
+            segment_for_fts(c["content"]),  # 中文分词 → FTS5 可正确索引
             c.get("symbol_name", ""),
             c["file_path"],
             c["language"],
@@ -324,8 +353,8 @@ def search_keyword(
     """关键词搜索 (SQLite FTS5)"""
     conn = get_sqlite()
 
-    # 构造 FTS5 查询
-    fts_query = query.strip()
+    # 构造 FTS5 查询 — 中文查询先分词再构造短语查询
+    fts_query = segment_query_for_match(query.strip())
     if not fts_query:
         return []
 
@@ -476,3 +505,71 @@ def get_chunks_by_file(repo_name: str, file_path: str) -> list[dict]:
         return sorted(result, key=lambda x: x["line_start"])
     except Exception:
         return []
+
+
+# ── FTS5 中文分词迁移 ──────────────────────────────────────────────
+
+def migrate_fts_chinese(repo_name: Optional[str] = None) -> dict:
+    """一次性迁移：对已有 FTS5 索引的中文内容进行分词重建。
+
+    读取所有 (或指定仓库) 的 FTS5 行，用 jieba 分词后重新插入。
+    FTS5 虚拟表不支持 UPDATE content，所以用 DELETE + INSERT。
+
+    Args:
+        repo_name: 可选，仅迁移指定仓库
+
+    Returns:
+        {"total": int, "updated": int}
+    """
+    conn = get_sqlite()
+
+    if repo_name:
+        rows = conn.execute(
+            "SELECT chunk_id, content, symbol_name, file_path, language, repo_name "
+            "FROM code_fts WHERE repo_name = ?",
+            (repo_name,)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT chunk_id, content, symbol_name, file_path, language, repo_name FROM code_fts"
+        ).fetchall()
+
+    updated = 0
+    for row in rows:
+        chunk_id, content, sym, fpath, lang, repo = row
+        segmented = segment_for_fts(content) if content else ""
+        if segmented != content:
+            conn.execute("DELETE FROM code_fts WHERE chunk_id = ?", (chunk_id,))
+            conn.execute(
+                "INSERT INTO code_fts (chunk_id, content, symbol_name, file_path, language, repo_name) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (chunk_id, segmented, sym, fpath, lang, repo)
+            )
+            updated += 1
+
+    conn.commit()
+    return {"total": len(rows), "updated": updated}
+
+
+# ── 清空全部 ─────────────────────────────────────────────────────
+
+def clear_all() -> int:
+    """清空所有代码索引数据 (LanceDB + SQLite), 返回删除数量"""
+    global _table
+
+    # SQLite count + 清空
+    conn = get_sqlite()
+    total = conn.execute("SELECT COUNT(*) FROM code_meta").fetchone()[0]
+    conn.execute("DELETE FROM code_fts")
+    conn.execute("DELETE FROM code_meta")
+    conn.commit()
+
+    # LanceDB: 删除并重建表
+    try:
+        db = get_db()
+        db.drop_table(TABLE_NAME)
+        _table = None  # 重置单例
+    except Exception:
+        pass
+
+    return total
