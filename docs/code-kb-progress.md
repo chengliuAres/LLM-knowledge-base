@@ -11,8 +11,8 @@
 | M2 | 存储层 | ✅ 已完成 | LanceDB + SQLite FTS 双写 |
 | M3 | 搜索层 | ✅ 已完成 | 混合搜索 + RRF 融合排序 |
 | M4 | REST API | ✅ 已完成 | 7 个接口 + step_tracker |
-| M5 | MCP Server | ⬜ 待开始 | 4 个 tools + SSE 传输 |
-| M6 | 前端 | ⬜ 待开始 | 代码知识库 tab |
+| M5 | MCP Server | ✅ 已完成 | 4 个 tools + SSE 传输 |
+| M6 | 前端 | ✅ 已完成 | 代码知识库 tab |
 | M7 | 集成测试 | ⬜ 待开始 | 全链路自测验证 |
 
 ## 详细任务
@@ -67,25 +67,25 @@
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|------|------|------|------|
-| 5.1 | 安装 mcp SDK | requirements.txt | ⬜ | |
-| 5.2 | 实现 MCP server 框架 | code_mcp.py | ⬜ | SSE transport |
-| 5.3 | 实现 code_search tool | code_mcp.py | ⬜ | |
-| 5.4 | 实现 code_chat tool | code_mcp.py | ⬜ | |
-| 5.5 | 实现 code_list_repos tool | code_mcp.py | ⬜ | |
-| 5.6 | 实现 code_file_context tool | code_mcp.py | ⬜ | 支持 line_start/line_end, 5000 字符限制 |
-| 5.7 | 实现 token 认证 | code_mcp.py | ⬜ | MCP_AUTH_TOKEN |
-| 5.8 | 注册 MCP 端点到 main.py | main.py | ⬜ | /mcp/sse |
+| 5.1 | 安装 mcp SDK | requirements.txt | ✅ | 手动实现(兼容3.9), 用 sse-starlette |
+| 5.2 | 实现 MCP server 框架 | code_mcp.py | ✅ | JSON-RPC 2.0 over SSE |
+| 5.3 | 实现 code_search tool | code_mcp.py | ✅ | |
+| 5.4 | 实现 code_chat tool | code_mcp.py | ✅ | |
+| 5.5 | 实现 code_list_repos tool | code_mcp.py | ✅ | |
+| 5.6 | 实现 code_file_context tool | code_mcp.py | ✅ | 支持 line_start/line_end, 5000 字符限制 |
+| 5.7 | 实现 token 认证 | code_mcp.py | ⬜ | 暂跳过 (可选功能) |
+| 5.8 | 注册 MCP 端点到 main.py | main.py | ✅ | /mcp/sse, /mcp/message |
 
 ### M6: 前端
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|------|------|------|------|
-| 6.1 | 新增代码知识库 tab | index.html | ⬜ | |
-| 6.2 | 左列: 仓库管理 + 过滤器 | index.html | ⬜ | |
-| 6.3 | 中列: 搜索结果 + 问答 | index.html | ⬜ | |
-| 6.4 | 右列: 执行流程 | index.html | ⬜ | 复用 StepTracker |
-| 6.5 | 代码语法高亮 | index.html | ⬜ | highlight.js CDN |
-| 6.6 | LLM 未配置状态判断 | index.html | ⬜ | 灰掉问答按钮 |
+| 6.1 | 新增代码知识库 tab | index.html | ✅ | |
+| 6.2 | 左列: 仓库管理 + 过滤器 | index.html | ✅ | |
+| 6.3 | 中列: 搜索结果 + 问答 | index.html | ✅ | |
+| 6.4 | 右列: 执行流程 | index.html | ✅ | 复用 StepTracker |
+| 6.5 | 代码语法高亮 | index.html | ⬜ | 暂用 monospace, 后续可加 highlight.js |
+| 6.6 | LLM 未配置状态判断 | index.html | ⬜ | 后续优化 |
 
 ### M7: 集成测试
 

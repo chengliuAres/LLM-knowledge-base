@@ -33,6 +33,7 @@
                 <button onclick="switchTab('chat')" id="tab-chat" class="tab-btn px-4 py-2 rounded-md text-sm font-medium transition-colors">💬 智能问答</button>
                 <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn px-4 py-2 rounded-md text-sm font-medium transition-colors">📊 看板</button>
                 <button onclick="switchTab('lancedb')" id="tab-lancedb" class="tab-btn px-4 py-2 rounded-md text-sm font-medium transition-colors">🗄️ LanceDB 内部</button>
+                <button onclick="switchTab('codekb')" id="tab-codekb" class="tab-btn px-4 py-2 rounded-md text-sm font-medium transition-colors">💻 代码知识库</button>
             </div>
         </div>
         
@@ -1615,6 +1616,355 @@
                 </div>
             `;
         }
+    </script>
+
+    <!-- ═══ 代码知识库 Tab ═══ -->
+    <div id="panel-codekb" class="tab-panel hidden">
+        <div class="grid grid-cols-12 gap-4 mt-4" style="height: calc(100vh - 180px);">
+            <!-- 左列: 仓库管理 (3列) -->
+            <div class="col-span-3 flex flex-col gap-4 overflow-y-auto">
+                <!-- 扫描新仓库 -->
+                <div class="bg-white rounded-lg shadow-sm border p-4">
+                    <h3 class="font-semibold text-gray-700 text-sm mb-3">📂 扫描新仓库</h3>
+                    <input id="codeRepoName" type="text" placeholder="仓库名 (如 ghmail)" class="w-full border rounded px-2 py-1.5 text-sm mb-2">
+                    <input id="codeRepoPath" type="text" placeholder="本地路径" class="w-full border rounded px-2 py-1.5 text-sm mb-2">
+                    <select id="codeProjectType" class="w-full border rounded px-2 py-1.5 text-sm mb-2">
+                        <option value="ios">iOS</option>
+                        <option value="macos">macOS</option>
+                        <option value="android">Android</option>
+                        <option value="flutter">Flutter</option>
+                        <option value="rn">React Native</option>
+                        <option value="kmp">KMP</option>
+                        <option value="generic">通用</option>
+                    </select>
+                    <button onclick="codeScanRepo()" id="codeScanBtn" class="w-full bg-blue-600 text-white rounded py-1.5 text-sm hover:bg-blue-700">🔍 开始扫描</button>
+                </div>
+
+                <!-- 仓库列表 -->
+                <div class="bg-white rounded-lg shadow-sm border p-4 flex-1">
+                    <h3 class="font-semibold text-gray-700 text-sm mb-3">📦 已索引仓库</h3>
+                    <div id="codeRepoList" class="space-y-2">
+                        <div class="p-3 text-center text-gray-400 text-xs">暂无仓库</div>
+                    </div>
+                </div>
+
+                <!-- 统计 -->
+                <div class="bg-white rounded-lg shadow-sm border p-4">
+                    <h3 class="font-semibold text-gray-700 text-sm mb-2">📊 统计</h3>
+                    <div id="codeStats" class="text-xs text-gray-500">加载中...</div>
+                </div>
+
+                <!-- 过滤器 -->
+                <div class="bg-white rounded-lg shadow-sm border p-4">
+                    <h3 class="font-semibold text-gray-700 text-sm mb-2">🔧 过滤器</h3>
+                    <select id="codeFilterRepo" class="w-full border rounded px-2 py-1 text-sm mb-2"><option value="">全部仓库</option></select>
+                    <select id="codeFilterLang" class="w-full border rounded px-2 py-1 text-sm mb-2"><option value="">全部语言</option></select>
+                    <select id="codeFilterType" class="w-full border rounded px-2 py-1 text-sm"><option value="">全部类型</option></select>
+                </div>
+            </div>
+
+            <!-- 中列: 搜索结果 + 问答 (6列) -->
+            <div class="col-span-6 flex flex-col gap-4 overflow-y-auto">
+                <!-- 搜索 -->
+                <div class="bg-white rounded-lg shadow-sm border p-4">
+                    <div class="flex gap-2 mb-3">
+                        <input id="codeSearchInput" type="text" placeholder="搜索代码..." class="flex-1 border rounded px-3 py-2 text-sm" onkeypress="if(event.key==='Enter')codeSearch()">
+                        <select id="codeSearchMode" class="border rounded px-2 py-2 text-sm">
+                            <option value="hybrid">混合</option>
+                            <option value="vector">语义</option>
+                            <option value="keyword">关键词</option>
+                        </select>
+                        <button onclick="codeSearch()" class="bg-blue-600 text-white rounded px-4 py-2 text-sm hover:bg-blue-700">搜索</button>
+                    </div>
+                </div>
+
+                <!-- 搜索结果 -->
+                <div id="codeSearchResults" class="bg-white rounded-lg shadow-sm border p-4 flex-1">
+                    <div class="p-6 text-center text-gray-400">输入关键词搜索代码</div>
+                </div>
+
+                <!-- 问答 -->
+                <div class="bg-white rounded-lg shadow-sm border p-4">
+                    <h3 class="font-semibold text-gray-700 text-sm mb-2">💬 代码问答</h3>
+                    <div class="flex gap-2">
+                        <input id="codeChatInput" type="text" placeholder="问一个问题..." class="flex-1 border rounded px-3 py-2 text-sm" onkeypress="if(event.key==='Enter')codeChat()">
+                        <button onclick="codeChat()" id="codeChatBtn" class="bg-green-600 text-white rounded px-4 py-2 text-sm hover:bg-green-700">提问</button>
+                    </div>
+                    <div id="codeChatAnswer" class="mt-3 text-sm text-gray-700 hidden"></div>
+                </div>
+            </div>
+
+            <!-- 右列: 执行流程 (3列) -->
+            <div class="col-span-3 overflow-y-auto">
+                <div class="bg-white rounded-lg shadow-sm border p-4">
+                    <h3 class="font-semibold text-gray-700 text-sm mb-3">⚡ 执行流程</h3>
+                    <div id="codeSteps" class="space-y-2">
+                        <div class="p-3 text-center text-gray-400 text-xs">等待操作...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ═══ 代码知识库 JavaScript ═══
+
+    function escapeHtml(str) {
+        const d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
+    }
+
+    async function codeLoadRepos() {
+        try {
+            const [reposRes, statsRes] = await Promise.all([
+                fetch('/api/code/repos').then(r => r.json()),
+                fetch('/api/code/stats').then(r => r.json()),
+            ]);
+
+            // 仓库列表
+            const el = document.getElementById('codeRepoList');
+            if (reposRes.repos.length === 0) {
+                el.innerHTML = '<div class="p-3 text-center text-gray-400 text-xs">暂无仓库，请扫描新仓库</div>';
+            } else {
+                el.innerHTML = reposRes.repos.map(r => `
+                    <div class="border rounded p-3 hover:bg-gray-50">
+                        <div class="flex items-center justify-between">
+                            <span class="font-medium text-sm">${escapeHtml(r.name)}</span>
+                            <span class="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">${escapeHtml(r.project_type)}</span>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">${r.total_chunks || 0} chunks · ${(r.languages || []).join(', ')}</div>
+                        <div class="text-[10px] text-gray-400 mt-1">${r.last_scanned ? new Date(r.last_scanned).toLocaleString() : '未扫描'}</div>
+                        <div class="flex gap-1 mt-2">
+                            <button onclick="codeRefreshRepo('${escapeHtml(r.name)}')" class="text-[10px] bg-gray-100 hover:bg-gray-200 px-2 py-0.5 rounded">刷新</button>
+                            <button onclick="codeDeleteRepo('${escapeHtml(r.name)}')" class="text-[10px] bg-red-50 hover:bg-red-100 text-red-600 px-2 py-0.5 rounded">删除</button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            // 统计
+            const statsEl = document.getElementById('codeStats');
+            if (statsRes.total_chunks > 0) {
+                const langTags = Object.entries(statsRes.by_language || {}).map(([k, v]) => `<span class="bg-gray-100 px-1 rounded">${k}:${v}</span>`).join(' ');
+                statsEl.innerHTML = `<div>总 chunks: <b>${statsRes.total_chunks}</b></div><div>仓库: ${statsRes.total_repos}</div><div class="mt-1">${langTags}</div>`;
+            } else {
+                statsEl.innerHTML = '<div class="text-gray-400">暂无数据</div>';
+            }
+
+            // 过滤器选项
+            const repoSelect = document.getElementById('codeFilterRepo');
+            repoSelect.innerHTML = '<option value="">全部仓库</option>' + reposRes.repos.map(r => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.name)}</option>`).join('');
+
+            const langs = new Set();
+            reposRes.repos.forEach(r => (r.languages || []).forEach(l => langs.add(l)));
+            document.getElementById('codeFilterLang').innerHTML = '<option value="">全部语言</option>' + [...langs].map(l => `<option value="${l}">${l}</option>`).join('');
+
+        } catch (e) {
+            console.error('codeLoadRepos error:', e);
+        }
+    }
+
+    async function codeScanRepo() {
+        const name = document.getElementById('codeRepoName').value.trim();
+        const path = document.getElementById('codeRepoPath').value.trim();
+        const type = document.getElementById('codeProjectType').value;
+        if (!name || !path) return alert('请填写仓库名和路径');
+
+        const btn = document.getElementById('codeScanBtn');
+        btn.disabled = true;
+        btn.textContent = '⏳ 扫描中...';
+
+        try {
+            const res = await fetch('/api/code/scan', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({repo_name: name, repo_path: path, project_type: type, languages: []}),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || '扫描失败');
+
+            codeRenderSteps(data.steps || []);
+            alert(`扫描完成: ${data.total_chunks} chunks`);
+            codeLoadRepos();
+        } catch (e) {
+            alert('扫描失败: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🔍 开始扫描';
+        }
+    }
+
+    async function codeRefreshRepo(name) {
+        if (!confirm(`确认刷新仓库 ${name}？`)) return;
+        try {
+            const res = await fetch(`/api/code/repos/${name}/refresh`, {method: 'POST'});
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail);
+            codeRenderSteps(data.steps || []);
+            alert(`刷新完成: ${data.total_chunks} chunks`);
+            codeLoadRepos();
+        } catch (e) {
+            alert('刷新失败: ' + e.message);
+        }
+    }
+
+    async function codeDeleteRepo(name) {
+        if (!confirm(`确认删除仓库 ${name} 的索引？`)) return;
+        try {
+            const res = await fetch(`/api/code/repos/${name}`, {method: 'DELETE'});
+            if (!res.ok) throw new Error((await res.json()).detail);
+            codeLoadRepos();
+        } catch (e) {
+            alert('删除失败: ' + e.message);
+        }
+    }
+
+    async function codeSearch() {
+        const query = document.getElementById('codeSearchInput').value.trim();
+        if (!query) return;
+
+        const mode = document.getElementById('codeSearchMode').value;
+        const filters = {};
+        const repo = document.getElementById('codeFilterRepo').value;
+        const lang = document.getElementById('codeFilterLang').value;
+        if (repo) filters.repo_name = repo;
+        if (lang) filters.language = lang;
+
+        try {
+            const res = await fetch('/api/code/search', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({query, mode, top_k: 10, filters}),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail);
+
+            codeRenderSteps(data.steps || []);
+            codeRenderResults(data.results || [], query);
+        } catch (e) {
+            alert('搜索失败: ' + e.message);
+        }
+    }
+
+    function codeRenderResults(results, query) {
+        const el = document.getElementById('codeSearchResults');
+        if (results.length === 0) {
+            el.innerHTML = '<div class="p-6 text-center text-gray-400">无结果</div>';
+            return;
+        }
+
+        el.innerHTML = results.map((r, i) => {
+            let content = escapeHtml(r.content);
+            // 高亮关键词
+            if (query) {
+                const words = query.split(/\s+/).filter(w => w.length > 1);
+                words.forEach(w => {
+                    const re = new RegExp(`(${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                    content = content.replace(re, '<mark class="bg-yellow-200">$1</mark>');
+                });
+            }
+
+            const sourceTag = r.source === 'both' ? '🎯 混合' : r.source === 'keyword' ? '🔤 关键词' : '🧠 语义';
+            const langColors = {objc: 'bg-orange-100 text-orange-700', swift: 'bg-red-100 text-red-700', java: 'bg-blue-100 text-blue-700', kotlin: 'bg-purple-100 text-purple-700', dart: 'bg-cyan-100 text-cyan-700', cpp: 'bg-gray-100 text-gray-700'};
+            const langColor = langColors[r.language] || 'bg-gray-100 text-gray-700';
+
+            return `
+            <div class="border rounded-lg p-3 mb-2 hover:bg-gray-50 cursor-pointer" onclick="codeHighlightRepo('${escapeHtml(r.file_path)}')">
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="text-xs font-mono text-blue-600 truncate">${escapeHtml(r.file_path)}</span>
+                    <span class="text-[10px] ${langColor} px-1.5 py-0.5 rounded shrink-0">${escapeHtml(r.language)}</span>
+                    <span class="text-[10px] bg-gray-100 px-1.5 py-0.5 rounded shrink-0">${escapeHtml(r.chunk_type)}</span>
+                    ${r.symbol_name ? `<span class="text-[10px] font-medium text-gray-700">${escapeHtml(r.symbol_name)}</span>` : ''}
+                </div>
+                <pre class="text-xs bg-gray-50 rounded p-2 overflow-x-auto max-h-40" style="font-family: 'SF Mono', Monaco, monospace">${content}</pre>
+                <div class="flex items-center gap-3 mt-1 text-[10px] text-gray-400">
+                    <span>L${r.line_start}-${r.line_end}</span>
+                    <span>${sourceTag}</span>
+                    <span>${r.match_reason || ''}</span>
+                    ${r.score ? `<span>score: ${r.score.toFixed(4)}</span>` : ''}
+                    ${r.rrf_score ? `<span>rrf: ${r.rrf_score.toFixed(6)}</span>` : ''}
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function codeHighlightRepo(filePath) {
+        // 点击搜索结果时高亮对应文件 (简化版)
+        console.log('Navigate to:', filePath);
+    }
+
+    async function codeChat() {
+        const question = document.getElementById('codeChatInput').value.trim();
+        if (!question) return;
+
+        const btn = document.getElementById('codeChatBtn');
+        const answerEl = document.getElementById('codeChatAnswer');
+        btn.disabled = true;
+        btn.textContent = '⏳';
+        answerEl.classList.remove('hidden');
+        answerEl.innerHTML = '<div class="text-gray-400">思考中...</div>';
+
+        const filters = {};
+        const repo = document.getElementById('codeFilterRepo').value;
+        if (repo) filters.repo_name = repo;
+
+        try {
+            const res = await fetch('/api/code/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({question, top_k: 5, filters, stream: false}),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail);
+
+            codeRenderSteps(data.steps || []);
+
+            let html = `<div class="prose prose-sm max-w-none">${escapeHtml(data.answer).replace(/\n/g, '<br>')}</div>`;
+            if (data.sources && data.sources.length > 0) {
+                html += '<div class="mt-2 text-xs text-gray-500"><b>引用:</b> ';
+                html += data.sources.map(s => `${escapeHtml(s.file_path)}:${s.line_start}`).join(', ');
+                html += '</div>';
+            }
+            answerEl.innerHTML = html;
+        } catch (e) {
+            answerEl.innerHTML = `<div class="text-red-500">错误: ${escapeHtml(e.message)}</div>`;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '提问';
+        }
+    }
+
+    function codeRenderSteps(steps) {
+        const el = document.getElementById('codeSteps');
+        if (!steps || steps.length === 0) {
+            el.innerHTML = '<div class="p-3 text-center text-gray-400 text-xs">无步骤</div>';
+            return;
+        }
+
+        el.innerHTML = steps.map((s, i) => `
+            <div class="border rounded p-2">
+                <div class="flex items-center gap-2">
+                    <span class="w-5 h-5 rounded-full ${s.status === 'completed' ? 'bg-green-500' : s.status === 'error' ? 'bg-red-500' : 'bg-gray-400'} text-white text-[10px] flex items-center justify-center">${i + 1}</span>
+                    <span class="text-xs font-medium">${escapeHtml(s.description || s.name)}</span>
+                    <span class="text-[10px] text-gray-400 ml-auto">${(s.duration_ms || 0).toFixed(0)}ms</span>
+                </div>
+                ${s.details ? `<div class="text-[10px] text-gray-500 mt-1 ml-7">${JSON.stringify(s.details)}</div>` : ''}
+            </div>
+        `).join('');
+    }
+
+    // 初始化
+    if (document.getElementById('tab-codekb')) {
+        const origSwitchTab = window.switchTab || switchTab;
+        const _origSwitch = typeof switchTab === 'function' ? switchTab : null;
+        // 扩展 switchTab 以加载代码知识库数据
+        const origFunc = switchTab;
+        switchTab = function(tab) {
+            origFunc(tab);
+            if (tab === 'codekb') codeLoadRepos();
+        };
+    }
     </script>
 </body>
 </html>
