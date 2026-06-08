@@ -73,11 +73,11 @@ def get_sqlite() -> sqlite3.Connection:
         try:
             _sqlite_conn.execute("SELECT 1")
             return _sqlite_conn
-        except sqlite3.ProgrammingError:
+        except (sqlite3.ProgrammingError, Exception):
             _sqlite_conn = None
 
     os.makedirs(os.path.dirname(SQLITE_PATH), exist_ok=True)
-    _sqlite_conn = sqlite3.connect(SQLITE_PATH)
+    _sqlite_conn = sqlite3.connect(SQLITE_PATH, check_same_thread=False)
     _sqlite_conn.execute("PRAGMA journal_mode=WAL")
 
     # FTS5 虚拟表
@@ -209,25 +209,23 @@ def insert_chunks(chunks: list[dict]):
 
 def delete_by_repo(repo_name: str) -> int:
     """删除指定仓库的所有 chunks, 返回删除数量"""
+    # ── SQLite 先查 count (避免 LanceDB to_pandas) ──
+    conn = get_sqlite()
+    count = conn.execute("SELECT COUNT(*) FROM code_meta WHERE repo_name = ?", (repo_name,)).fetchone()[0]
+
     # ── LanceDB 删除 ──
-    table = get_table()
-    try:
-        df = table.to_pandas()
-        count = len(df[df['repo_name'] == repo_name])
-        if count > 0:
-            table.delete(f"repo_name = '{_esc(repo_name)}'")
-    except Exception:
-        count = 0
+    if count > 0:
+        try:
+            get_table().delete(f"repo_name = '{_esc(repo_name)}'")
+        except Exception:
+            pass
 
     # ── SQLite 删除 ──
-    conn = get_sqlite()
-    # 先删 FTS (依赖 code_meta 的子查询), 再删 meta
     conn.execute("DELETE FROM code_fts WHERE repo_name = ?", (repo_name,))
-    cur = conn.execute("DELETE FROM code_meta WHERE repo_name = ?", (repo_name,))
-    meta_deleted = cur.rowcount
+    conn.execute("DELETE FROM code_meta WHERE repo_name = ?", (repo_name,))
     conn.commit()
 
-    return max(count, meta_deleted)
+    return count
 
 
 def delete_by_file(repo_name: str, file_path: str) -> int:
@@ -375,7 +373,23 @@ def search_keyword(
             ORDER BY rank LIMIT ?
         """
         try:
-            rows = conn.execute(sql, [f'{safe_query}*', top_k]).fetchall()
+            fb_params = [f'{safe_query}*']
+            fb_sql = (
+                "SELECT fts.chunk_id, fts.content, fts.symbol_name, fts.file_path, "
+                "fts.language, fts.repo_name, rank "
+                "FROM code_fts fts JOIN code_meta meta ON fts.chunk_id = meta.chunk_id "
+                "WHERE code_fts MATCH ?"
+            )
+            if repo_name:
+                fb_sql += " AND fts.repo_name = ?"; fb_params.append(repo_name)
+            if language:
+                fb_sql += " AND fts.language = ?"; fb_params.append(language)
+            if chunk_type:
+                fb_sql += " AND meta.chunk_type = ?"; fb_params.append(chunk_type)
+            if file_path:
+                fb_sql += " AND fts.file_path LIKE ?"; fb_params.append(f"{file_path}%")
+            fb_sql += " ORDER BY rank LIMIT ?"; fb_params.append(top_k)
+            rows = conn.execute(fb_sql, fb_params).fetchall()
         except sqlite3.OperationalError:
             return []
 
