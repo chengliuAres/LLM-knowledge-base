@@ -71,6 +71,22 @@ TOOLS = [
             "required": ["repo", "file_path"],
         },
     },
+    {
+        "name": "code_trace",
+        "description": "追踪符号的调用链：谁调用了它 / 它调用了谁。用于快速理清跨文件业务逻辑链路。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "符号名或搜索查询（如方法名、类名）"},
+                "repo": {"type": "string", "description": "仓库名过滤 (可选)"},
+                "direction": {"type": "string", "enum": ["callers", "callees", "both"], "default": "both",
+                              "description": "callers=谁调我, callees=我调谁, both=双向"},
+                "depth": {"type": "integer", "default": 2, "minimum": 1, "maximum": 3,
+                          "description": "追踪跳数 (1-3)"},
+            },
+            "required": ["symbol"],
+        },
+    },
 ]
 
 
@@ -169,6 +185,18 @@ async def execute_tool(name: str, arguments: dict) -> dict:
             "total_chunks": len(chunks),
             "truncated": truncated,
         }
+
+    elif name == "code_trace":
+        from code_search import trace_code
+        result = trace_code(
+            symbol_name=arguments["symbol"],
+            repo_name=arguments.get("repo", ""),
+            direction=arguments.get("direction", "both"),
+            depth=arguments.get("depth", 2),
+        )
+        # 精简返回：去掉 steps（MCP 响应不需展示）
+        result.pop("steps", None)
+        return result
 
     return {"error": f"未知工具: {name}"}
 

@@ -254,3 +254,130 @@ def search_code(
         "results": results,
         "steps": tracker.to_list() if tracker else [],
     }
+
+
+# ── 调用链追踪 ──────────────────────────────────────────────────────
+
+def trace_code(
+    symbol_name: str,
+    repo_name: str = "",
+    direction: str = "both",
+    depth: int = 2,
+    tracker: Optional[StepTracker] = None,
+) -> dict:
+    """追踪符号的调用链
+
+    先混搜定位符号 → 再查 code_relations 表做多跳追踪。
+    搜索找到的每个相关符号都会做一次 trace_chain。
+
+    Args:
+        symbol_name: 要追踪的符号名或搜索查询
+        repo_name: 仓库名过滤
+        direction: "callers" / "callees" / "both"
+        depth: 追踪跳数 (1-3)
+        tracker: 步骤追踪器
+
+    Returns:
+        {"query": str, "matched_symbols": [...], "traces": [...], "steps": [...]}
+    """
+    from code_db import trace_chain, get_callees
+
+    if tracker:
+        step_search = tracker.add_step("trace_search", f"搜索起始符号: {symbol_name}")
+        step_search.start()
+
+    # 1. 混搜定位符号 (找前 5 个匹配的 chunk 作为起始入口)
+    search_result = search_code(
+        query=symbol_name,
+        mode="hybrid",
+        top_k=5,
+        repo_name=repo_name or None,
+        tracker=None,  # 避免嵌套 tracker
+    )
+
+    if tracker:
+        step_search.complete({"hits": len(search_result["results"])})
+
+    if not search_result["results"]:
+        return {
+            "query": symbol_name,
+            "matched_symbols": [],
+            "traces": [],
+            "steps": tracker.to_list() if tracker else [],
+        }
+
+    # 2. 对每个匹配的符号做调用链追踪（去重，同一符号名只 trace 一次）
+    if tracker:
+        step_trace = tracker.add_step("trace_chain", f"追踪调用链: depth={depth}, direction={direction}")
+        step_trace.start()
+
+    traced_symbols = set()
+    traces = []
+    matched_symbols = []
+
+    for r in search_result["results"]:
+        sym = r.get("symbol_name", "")
+        if not sym or sym in traced_symbols:
+            continue
+        # 过滤掉文件名被设为 symbol_name 的 file 类型 chunk（非符号）
+        if r.get("chunk_type") == "file":
+            # file 类型没有具体符号，直接查它的 callee 列表
+            callee_list = get_callees(r["id"])
+            if callee_list:
+                traces.append({
+                    "entry_symbol": sym,
+                    "entry_file": r["file_path"],
+                    "entry_type": "file",
+                    "entry_chunk_id": r["id"],
+                    "chain": {"nodes": [], "edges": []},
+                    "callee_list": callee_list[:20],
+                })
+                matched_symbols.append({
+                    "symbol": sym,
+                    "file_path": r["file_path"],
+                    "line_start": r.get("line_start", 0),
+                    "chunk_type": r.get("chunk_type", ""),
+                })
+                traced_symbols.add(sym)
+            continue
+
+        traced_symbols.add(sym)
+
+        # 执行调用链追踪
+        chain = trace_chain(
+            symbol_name=sym,
+            repo_name=repo_name or r.get("repo_name", ""),
+            direction=direction,
+            depth=depth,
+        )
+
+        traces.append({
+            "entry_symbol": sym,
+            "entry_file": r["file_path"],
+            "entry_type": r.get("chunk_type", ""),
+            "entry_chunk_id": r.get("chunk_id", r["id"]),
+            "chain": chain.get("chain", {"nodes": [], "edges": []}),
+            "direct_callers": chain.get("direct_callers", []),
+            "direct_callees": chain.get("direct_callees", []),
+        })
+
+        matched_symbols.append({
+            "symbol": sym,
+            "file_path": r["file_path"],
+            "line_start": r.get("line_start", 0),
+            "chunk_type": r.get("chunk_type", ""),
+            "match_reason": r.get("match_reason", ""),
+        })
+
+    if tracker:
+        step_trace.complete({"traced": len(traces)})
+        tracker.flush()
+
+    return {
+        "query": symbol_name,
+        "depth": depth,
+        "direction": direction,
+        "matched_symbols": matched_symbols,
+        "traces": traces,
+        "steps": tracker.to_list() if tracker else [],
+    }

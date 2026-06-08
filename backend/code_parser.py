@@ -173,6 +173,223 @@ FUNCTION_NODE_TYPES = {
     'json': set(),
 }
 
+# ── 调用关系提取 ──────────────────────────────────────────────────
+
+# 每种语言的"调用表达式"节点类型
+CALL_NODE_TYPES = {
+    'objc': {'message_expression'},
+    'swift': {'call_expression', 'simple_identifier'},  # simple_identifier 需配合 call_suffix 判断
+    'java': {'method_invocation'},
+    'kotlin': {'call_expression'},
+    'dart': {'method_invocation', 'function_invocation'},
+    'cpp': {'call_expression'},
+    'python': {'call'},
+    'ruby': {'call', 'method_call'},
+    'javascript': {'call_expression'},
+    'typescript': {'call_expression'},
+    'go': {'call_expression'},
+    'rust': {'call_expression'},
+    'shell': set(),
+    'yaml': set(),
+    'json': set(),
+}
+
+# 系统/框架方法名黑名单 — 调用图中过滤掉，避免噪音淹没业务调用
+_SYSTEM_CALL_BLACKLIST = {
+    # ObjC 系统方法
+    'init', 'alloc', 'dealloc', 'release', 'retain', 'autorelease',
+    'copy', 'mutableCopy', 'new', 'class', 'superclass', 'description',
+    'hash', 'isEqual', 'isKindOfClass', 'isMemberOfClass', 'respondsToSelector',
+    'performSelector', 'self', 'super',
+    # UIKit/Foundation
+    'addSubview', 'removeFromSuperview', 'layoutSubviews', 'setNeedsLayout',
+    'layoutIfNeeded', 'setNeedsDisplay', 'setNeedsUpdateConstraints',
+    'updateConstraints', 'didReceiveMemoryWarning', 'viewDidLoad',
+    'viewWillAppear', 'viewDidAppear', 'viewWillDisappear', 'viewDidDisappear',
+    'viewWillLayoutSubviews', 'viewDidLayoutSubviews',
+    'initWithNibName', 'initWithCoder', 'awakeFromNib', 'prepareForSegue',
+    'setBackgroundColor', 'setFrame', 'setHidden', 'setAlpha', 'setTransform',
+    'setText', 'setFont', 'setTextColor', 'setImage', 'setTitle',
+    # GCD/Threading
+    'dispatch_async', 'dispatch_sync', 'dispatch_once', 'dispatch_after',
+    'dispatch_get_main_queue', 'dispatch_get_global_queue',
+    'NSLog', 'printf', 'print', 'NSAssert', 'NSCAssert',
+    # ObjC 属性访问 (setter/getter via dot syntax)
+    'count', 'length', 'firstObject', 'lastObject', 'objectAtIndex',
+    'setObject', 'removeObject', 'addObject', 'containsObject',
+    # Swift 系统方法
+    'append', 'remove', 'insert', 'contains', 'filter', 'map', 'reduce',
+    'sorted', 'forEach', 'compactMap', 'flatMap', 'joined', 'split',
+    'isEmpty', 'hasPrefix', 'hasSuffix', 'lowercased', 'uppercased',
+    'trimmingCharacters', 'components', 'replacingOccurrences',
+    # Python 内置
+    'len', 'range', 'enumerate', 'isinstance', 'hasattr', 'getattr', 'setattr',
+    'type', 'str', 'int', 'float', 'bool', 'list', 'dict', 'set', 'tuple',
+    'super', 'format', 'join', 'split', 'strip', 'replace',
+    # JS/TS 内置
+    'console.log', 'console.error', 'console.warn', 'console.info', 'console.debug',
+    'JSON.parse', 'JSON.stringify', 'Object.keys', 'Object.values', 'Object.entries',
+    'Array.isArray', 'Array.from', 'setTimeout', 'setInterval', 'clearTimeout',
+    'parseInt', 'parseFloat', 'Promise.resolve', 'Promise.reject', 'Promise.all',
+    # 通用
+    'assert', 'throw', 'raise', 'return', 'break', 'continue',
+    'get', 'set', 'update', 'delete', 'create',  # 过于泛化
+}
+
+# 接收器黑名单 (self / this / super 调用的系统方法也跳过)
+_RECEIVER_BLACKLIST = {'self', 'this', 'super', '_'}
+
+
+def _extract_call_name(node, code_bytes: bytes, language: str) -> str:
+    """从调用节点中提取被调用的方法/函数名"""
+    if language == 'objc':
+        # tree-sitter-objc 的 message_expression 没有统一的 message_selector 节点；
+        # selector 各部分分散为 identifier + : 对。
+        # 策略: 收集所有后面紧跟 ':' 的 identifier，拼成完整 selector。
+        # 对于简单调用 [self foo:bar]，self 后面是 identifier(foo) 而非 :，所以被正确过滤。
+        # 对于嵌套调用 [[Obj method] foo:bar]，第一个 identifier 是 foo（后面是 :），也不会误判。
+        children = list(node.children)
+        selector_parts = []
+        for i, child in enumerate(children):
+            if child.type == 'identifier':
+                if i + 1 < len(children) and children[i + 1].type == ':':
+                    name = code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
+                    selector_parts.append(f"{name}:")
+        if selector_parts:
+            return ''.join(selector_parts)
+        return ''
+
+    elif language == 'swift':
+        # call_expression: 前缀 + call_suffix; simple_identifier + call_suffix 在后面过滤
+        for child in node.children:
+            if child.type == 'simple_identifier':
+                return code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
+            if child.type == 'navigation_expression':
+                nav = code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
+                return nav.split('.')[-1] if '.' in nav else nav
+        return ''
+
+    elif language in ('java', 'kotlin', 'dart', 'cpp'):
+        for child in node.children:
+            if child.type in ('identifier', 'template_function'):
+                return code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
+        return ''
+
+    elif language == 'python':
+        for child in node.children:
+            if child.type == 'attribute':
+                raw = code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
+                return raw.split('.')[-1] if '.' in raw else raw
+            if child.type == 'identifier':
+                return code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
+        return ''
+
+    elif language in ('javascript', 'typescript'):
+        for child in node.children:
+            if child.type == 'member_expression':
+                for sub in child.children:
+                    if sub.type == 'property_identifier':
+                        return code_bytes[sub.start_byte:sub.end_byte].decode('utf-8', errors='replace')
+            if child.type == 'identifier':
+                return code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
+            if child.type == 'super':
+                return 'super'
+        return ''
+
+    elif language == 'go':
+        for child in node.children:
+            if child.type == 'identifier':
+                return code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
+            if child.type == 'selector_expression':
+                raw = code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
+                return raw.split('.')[-1] if '.' in raw else raw
+        return ''
+
+    elif language == 'rust':
+        for child in node.children:
+            if child.type == 'identifier':
+                return code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
+            if child.type == 'field_expression':
+                raw = code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
+                return raw.split('.')[-1] if '.' in raw else raw
+            if child.type == 'scoped_identifier':
+                raw = code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
+                return raw.split('::')[-1] if '::' in raw else raw
+        return ''
+
+    elif language == 'ruby':
+        for child in node.children:
+            if child.type == 'identifier':
+                return code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
+        return ''
+
+    return ''
+
+
+def _is_call_node(node, language: str) -> bool:
+    """判断是否是有效的调用节点（含 Swift simple_identifier 特殊处理）"""
+    call_types = CALL_NODE_TYPES.get(language, set())
+    if node.type in call_types:
+        if language == 'swift' and node.type == 'simple_identifier':
+            # Swift 中 simple_identifier 只有紧跟 call_suffix 才是调用
+            next_sibling = node.next_named_sibling
+            if next_sibling and next_sibling.type == 'call_suffix':
+                return True
+            return False
+        return True
+    return False
+
+
+def _extract_calls_in_range(code_bytes: bytes, language: str,
+                             start_byte: int, end_byte: int) -> list[dict]:
+    """提取指定字节范围内的所有方法/函数调用
+
+    Returns:
+        [{"name": "callee_name", "receiver": "self/ClassName/...", "line": N}, ...]
+        去重 + 上限 30 条 + 系统方法黑名单过滤
+    """
+    try:
+        parser = _get_cached_parser(language)
+        tree = parser.parse(code_bytes)
+        return _extract_calls_from_tree(tree.root_node, code_bytes, language, start_byte, end_byte)
+    except Exception:
+        return []
+
+
+def _extract_calls_from_tree(root_node, code_bytes: bytes, language: str,
+                              start_byte: int, end_byte: int) -> list[dict]:
+    """从已解析的 AST root_node 中提取调用（复用 tree，避免重复解析）"""
+    call_types = CALL_NODE_TYPES.get(language, set())
+    if not call_types:
+        return []
+
+    calls = []
+    seen = set()  # (name, line) 去重
+
+    def _walk(node):
+        if _is_call_node(node, language):
+            if start_byte <= node.start_byte <= end_byte:
+                name = _extract_call_name(node, code_bytes, language)
+                if name and len(name) >= 1:
+                    # 跳过单字符 + 系统黑名单
+                    if name.lower() in _SYSTEM_CALL_BLACKLIST:
+                        pass  # 系统方法，跳过
+                    else:
+                        line = node.start_point[0] + 1
+                        key = (name, line)
+                        if key not in seen:
+                            seen.add(key)
+                            calls.append({
+                                'name': name,
+                                'line': line,
+                            })
+        for child in node.children:
+            _walk(child)
+
+    _walk(root_node)
+    return calls[:30]
+
+
 # chunk_type 判断
 def _get_chunk_type(node_type: str, language: str, code_bytes: bytes, node) -> str:
     """根据 AST 节点类型判断 chunk_type"""
@@ -720,12 +937,17 @@ def chunk_code(
     result = []
     lines = code_text.split('\n')
 
-    # 提取 imports
+    # 提取 imports + 全文件调用关系（复用同一次 tree-sitter parse）
     try:
         _tree = _get_cached_parser(language).parse(code_bytes)
         imports = _extract_imports(_tree.root_node, code_bytes, language)
+        # 复用 root_node 提取全文件调用（避免二次 parse）
+        all_file_calls = _extract_calls_from_tree(
+            _tree.root_node, code_bytes, language, 0, len(code_bytes)
+        )
     except Exception:
         imports = []
+        all_file_calls = []
     base_meta['imports_count'] = len(imports)
     if imports:
         base_meta['imports'] = imports[:20]  # 限制数量
@@ -741,12 +963,18 @@ def chunk_code(
         if sym['parent_class']:
             sym_meta['parent_class'] = sym['parent_class']
 
+        # 过滤归属当前符号的调用（只保留符号体内的调用，排除子符号体内的）
+        sym_calls = [c for c in all_file_calls
+                     if sym['start_byte'] <= _estimate_byte_pos(code_text, c['line'])
+                     <= sym['end_byte']]
+        if sym_calls:
+            sym_meta['calls'] = sym_calls[:20]  # 每个符号最多保留 20 条调用
+
         # 超长符号二次切分
         if len(chunk_content) > MAX_CHUNK_SIZE:
             sub_chunks = _sub_chunk(chunk_content)
             for sub_idx, sub_text in enumerate(sub_chunks):
                 sub_id = f"{chunk_id}_{sub_idx}"
-                # 估算子 chunk 行号 (不精确但合理)
                 result.append({
                     'id': sub_id,
                     'repo_name': repo_name,
@@ -780,6 +1008,19 @@ def chunk_code(
             })
 
     return result
+
+
+def _estimate_byte_pos(code_text: str, line_number: int) -> int:
+    """估算第 N 行的起始字节位置（用于调用归属过滤）
+
+    tree-sitter 的 start_byte/end_byte 是 UTF-8 字节偏移，所以必须用
+    编码后字节数计算，不能直接用 Python 字符串 len()（字符数）。
+    """
+    lines = code_text.split('\n')
+    pos = 0
+    for i in range(min(line_number - 1, len(lines))):
+        pos += len(lines[i].encode('utf-8')) + 1  # +1 for \n
+    return pos
 
 
 # ── 主入口: 扫描 + 解析 + 分块 ────────────────────────────────────

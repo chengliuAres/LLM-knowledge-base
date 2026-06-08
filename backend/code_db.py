@@ -141,6 +141,27 @@ def get_sqlite() -> sqlite3.Connection:
     _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_repo ON code_meta(repo_name)")
     _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_lang ON code_meta(language)")
 
+    # 调用关系表 (call graph)
+    _sqlite_conn.execute("""
+        CREATE TABLE IF NOT EXISTS code_relations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            caller_chunk_id TEXT NOT NULL,
+            caller_symbol_name TEXT,
+            caller_file_path TEXT,
+            callee_name TEXT NOT NULL,
+            callee_line INTEGER,
+            repo_name TEXT NOT NULL
+        )
+    """)
+    _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_rel_caller ON code_relations(caller_chunk_id)")
+    _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_rel_callee ON code_relations(callee_name, repo_name)")
+    _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_rel_repo ON code_relations(repo_name)")
+    # 唯一约束: 同一 chunk 内同符号同行的调用只记录一次，支持 INSERT OR IGNORE 去重
+    _sqlite_conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_rel_unique "
+        "ON code_relations(caller_chunk_id, callee_name, callee_line, repo_name)"
+    )
+
     _sqlite_conn.commit()
     return _sqlite_conn
 
@@ -233,6 +254,30 @@ def insert_chunks(chunks: list[dict]):
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         meta_rows
     )
+
+    # ── 写入调用关系 ──
+    rel_rows = []
+    for c in chunks:
+        calls = c.get("metadata", {}).get("calls", [])
+        if isinstance(calls, list):
+            for call in calls:
+                if isinstance(call, dict) and call.get("name"):
+                    rel_rows.append((
+                        c["id"],
+                        c.get("symbol_name", ""),
+                        c["file_path"],
+                        call["name"],
+                        call.get("line", 0),
+                        c["repo_name"],
+                    ))
+    if rel_rows:
+        conn.executemany(
+            "INSERT OR IGNORE INTO code_relations "
+            "(caller_chunk_id, caller_symbol_name, caller_file_path, callee_name, callee_line, repo_name) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            rel_rows
+        )
+
     conn.commit()
 
 
@@ -254,6 +299,7 @@ def delete_by_repo(repo_name: str) -> int:
     # ── SQLite 删除 ──
     conn.execute("DELETE FROM code_fts WHERE repo_name = ?", (repo_name,))
     conn.execute("DELETE FROM code_meta WHERE repo_name = ?", (repo_name,))
+    conn.execute("DELETE FROM code_relations WHERE repo_name = ?", (repo_name,))
     conn.commit()
 
     return count
@@ -274,6 +320,7 @@ def delete_by_file(repo_name: str, file_path: str) -> int:
     conn = get_sqlite()
     conn.execute("DELETE FROM code_meta WHERE repo_name = ? AND file_path = ?", (repo_name, file_path))
     conn.execute("DELETE FROM code_fts WHERE repo_name = ? AND file_path = ?", (repo_name, file_path))
+    conn.execute("DELETE FROM code_relations WHERE repo_name = ? AND caller_file_path = ?", (repo_name, file_path))
     conn.commit()
 
     return count
@@ -564,6 +611,7 @@ def clear_all() -> int:
     total = conn.execute("SELECT COUNT(*) FROM code_meta").fetchone()[0]
     conn.execute("DELETE FROM code_fts")
     conn.execute("DELETE FROM code_meta")
+    conn.execute("DELETE FROM code_relations")
     conn.commit()
 
     # LanceDB: 删除并重建表
@@ -575,3 +623,201 @@ def clear_all() -> int:
         pass
 
     return total
+
+
+# ── 调用关系查询 ─────────────────────────────────────────────────
+
+def get_callees(chunk_id: str) -> list[dict]:
+    """查询某个 chunk 调用了哪些符号
+
+    Returns:
+        [{"callee_name": str, "callee_line": int, "caller_symbol_name": str, "caller_file_path": str}, ...]
+    """
+    conn = get_sqlite()
+    rows = conn.execute(
+        "SELECT DISTINCT callee_name, callee_line, caller_symbol_name, caller_file_path "
+        "FROM code_relations WHERE caller_chunk_id = ? ORDER BY callee_line",
+        (chunk_id,)
+    ).fetchall()
+    return [
+        {"callee_name": r[0], "callee_line": r[1],
+         "caller_symbol_name": r[2], "caller_file_path": r[3]}
+        for r in rows
+    ]
+
+
+def find_callers(symbol_name: str, repo_name: str = "", top_n: int = 30) -> list[dict]:
+    """反向查找：谁调用了指定符号
+
+    Args:
+        symbol_name: 被调用的符号名
+        repo_name: 可选，限制仓库
+        top_n: 最多返回条数
+
+    Returns:
+        [{"caller_chunk_id": str, "caller_symbol_name": str, "caller_file_path": str, "callee_line": int}, ...]
+    """
+    conn = get_sqlite()
+    if repo_name:
+        rows = conn.execute(
+            "SELECT DISTINCT caller_chunk_id, caller_symbol_name, caller_file_path, callee_line "
+            "FROM code_relations WHERE callee_name = ? AND repo_name = ? "
+            "ORDER BY callee_line LIMIT ?",
+            (symbol_name, repo_name, top_n)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT DISTINCT caller_chunk_id, caller_symbol_name, caller_file_path, callee_line "
+            "FROM code_relations WHERE callee_name = ? "
+            "ORDER BY callee_line LIMIT ?",
+            (symbol_name, top_n)
+        ).fetchall()
+    return [
+        {"caller_chunk_id": r[0], "caller_symbol_name": r[1],
+         "caller_file_path": r[2], "callee_line": r[3]}
+        for r in rows
+    ]
+
+
+def trace_chain(
+    symbol_name: str,
+    repo_name: str = "",
+    direction: str = "both",
+    depth: int = 2,
+) -> dict:
+    """多跳追踪调用链
+
+    Args:
+        symbol_name: 起始符号名
+        repo_name: 仓库名过滤
+        direction: "callers"（谁调我）/ "callees"（我调谁）/ "both"（双向）
+        depth: 追踪跳数 (1-3)
+
+    Returns:
+        {"symbol": str, "callers": [...], "callees": [...], "chain": [...]}
+        其中 chain 包含每跳的节点和边
+    """
+    depth = max(1, min(depth, 3))
+    conn = get_sqlite()
+
+    visited = set()
+    nodes = {}     # symbol_name → {"symbol": str, "file": str, "chunk_id": str}
+    edges = []     # [{"from": str, "to": str, "line": int}]
+
+    # BFS / 受限深度遍历
+    from collections import deque
+
+    # 初始化: 找到起始符号对应的 chunk
+    base_filter = "AND repo_name = ?" if repo_name else ""
+    base_params = [symbol_name]
+    if repo_name:
+        base_params.append(repo_name)
+
+    start_rows = conn.execute(
+        f"SELECT DISTINCT caller_chunk_id, caller_symbol_name, caller_file_path "
+        f"FROM code_relations WHERE callee_name = ? {base_filter} LIMIT 1",
+        base_params
+    ).fetchall()
+
+    if not start_rows:
+        # 也许是被调用方，试试作为 caller 搜
+        start_rows = conn.execute(
+            f"SELECT DISTINCT caller_chunk_id, caller_symbol_name, caller_file_path "
+            f"FROM code_relations WHERE caller_symbol_name = ? {base_filter} LIMIT 1",
+            base_params
+        ).fetchall()
+
+    if not start_rows:
+        return {"symbol": symbol_name, "callers": [], "callees": [], "chain": {"nodes": [], "edges": []}}
+
+    # 用第一个匹配的 chunk 作为起始
+    start_chunk_id = start_rows[0][0]
+    start_symbol = start_rows[0][1] or symbol_name
+    start_file = start_rows[0][2] or ""
+
+    nodes[symbol_name] = {"symbol": start_symbol, "file": start_file, "chunk_id": start_chunk_id}
+
+    # BFS 双向遍历
+    queue = deque()
+    queue.append((symbol_name, 0))
+    visited.add(symbol_name)
+
+    while queue:
+        current, current_depth = queue.popleft()
+        if current_depth >= depth:
+            continue
+
+        # ── 查 callees (我调谁) ──
+        if direction in ("callees", "both"):
+            current_cid = nodes[current].get("chunk_id", "")
+            if current_cid:
+                callee_rows = conn.execute(
+                    "SELECT DISTINCT callee_name, callee_line FROM code_relations "
+                    "WHERE caller_chunk_id = ? LIMIT 30",
+                    (current_cid,)
+                ).fetchall()
+                for row in callee_rows:
+                    callee, line = row
+                    if callee not in nodes:
+                        # 回查 callee 的 chunk_id（在 code_meta 或 code_relations 中找）
+                        callee_cid = ""
+                        callee_file = ""
+                        cid_rows = conn.execute(
+                            "SELECT chunk_id, file_path FROM code_meta "
+                            "WHERE symbol_name = ? AND repo_name = ? LIMIT 1",
+                            (callee, nodes[current].get("repo_name", repo_name or ""))
+                        ).fetchall()
+                        if not cid_rows and repo_name:
+                            cid_rows = conn.execute(
+                                "SELECT chunk_id, file_path FROM code_meta "
+                                "WHERE symbol_name = ? LIMIT 1",
+                                (callee,)
+                            ).fetchall()
+                        if cid_rows:
+                            callee_cid = cid_rows[0][0]
+                            callee_file = cid_rows[0][1] or ""
+                        nodes[callee] = {"symbol": callee, "file": callee_file, "chunk_id": callee_cid}
+                    edges.append({"from": current, "to": callee, "line": line, "relation": "calls"})
+                    if callee not in visited:
+                        visited.add(callee)
+                        queue.append((callee, current_depth + 1))
+
+        # ── 查 callers (谁调我) ──
+        if direction in ("callers", "both"):
+            caller_rows = conn.execute(
+                "SELECT DISTINCT caller_symbol_name, callee_line, caller_chunk_id, caller_file_path "
+                "FROM code_relations WHERE callee_name = ? "
+                + (f"AND repo_name = ? " if repo_name else "") + "LIMIT 15",
+                [current] + ([repo_name] if repo_name else [])
+            ).fetchall()
+            for row in caller_rows:
+                caller_sym, line, cid, cfile = row
+                caller_name = caller_sym or f"_caller_{cid[-8:]}"
+                if caller_name not in nodes:
+                    nodes[caller_name] = {"symbol": caller_name, "file": cfile or "", "chunk_id": cid}
+                edges.append({"from": caller_name, "to": current, "line": line, "relation": "called_by"})
+                if caller_name not in visited:
+                    visited.add(caller_name)
+                    queue.append((caller_name, current_depth + 1))
+
+    # 整理结果
+    callers_list = [e for e in edges if e["relation"] == "called_by" and e["to"] == symbol_name]
+    callees_list = [e for e in edges if e["relation"] == "calls" and e["from"] == symbol_name]
+
+    return {
+        "symbol": symbol_name,
+        "depth": depth,
+        "direction": direction,
+        "direct_callers": [
+            {"symbol": e["from"], "file": nodes.get(e["from"], {}).get("file", ""), "line": e["line"]}
+            for e in callers_list
+        ],
+        "direct_callees": [
+            {"symbol": e["to"], "line": e["line"]}
+            for e in callees_list
+        ],
+        "chain": {
+            "nodes": [{"symbol": k, "file": v["file"], "chunk_id": v["chunk_id"]} for k, v in nodes.items()],
+            "edges": edges,
+        },
+    }

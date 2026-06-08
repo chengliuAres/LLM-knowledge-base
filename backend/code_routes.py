@@ -48,6 +48,13 @@ class ChatRequest(BaseModel):
     stream: bool = False
 
 
+class TraceRequest(BaseModel):
+    symbol: str = Field(..., min_length=1, description="符号名或搜索查询")
+    repo_name: str = ""
+    direction: str = "both"  # callers / callees / both
+    depth: int = Field(default=2, ge=1, le=3)
+
+
 # ── 扫描任务管理 ─────────────────────────────────────────────────
 
 import uuid
@@ -326,6 +333,8 @@ def _cleanup_scan(job: ScanJob):
                      [(cid,) for cid in job._written_chunk_ids])
     conn.executemany("DELETE FROM code_meta WHERE chunk_id = ?",
                      [(cid,) for cid in job._written_chunk_ids])
+    conn.executemany("DELETE FROM code_relations WHERE caller_chunk_id = ?",
+                     [(cid,) for cid in job._written_chunk_ids])
     conn.commit()
 
     # LanceDB 批量删除 (用 OR 条件一次删完)
@@ -592,6 +601,31 @@ async def chat_endpoint(req: ChatRequest):
             "steps": tracker.to_list(),
         }
 
+    except Exception as e:
+        tracker.flush(status="error")
+        raise HTTPException(500, detail=str(e))
+
+
+# ── POST /api/code/trace ──────────────────────────────────────────
+
+@router.post("/trace")
+async def trace_endpoint(req: TraceRequest):
+    """调用链追踪：追踪符号的调用者和被调用者"""
+    from code_search import trace_code
+
+    if not req.symbol.strip():
+        raise HTTPException(400, detail="symbol 不能为空")
+
+    tracker = StepTracker(operation_type="code_trace")
+    try:
+        result = trace_code(
+            symbol_name=req.symbol,
+            repo_name=req.repo_name,
+            direction=req.direction,
+            depth=req.depth,
+            tracker=tracker,
+        )
+        return result
     except Exception as e:
         tracker.flush(status="error")
         raise HTTPException(500, detail=str(e))
