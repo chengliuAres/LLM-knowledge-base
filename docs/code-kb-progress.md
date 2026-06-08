@@ -7,7 +7,7 @@
 
 | # | 里程碑 | 状态 | 说明 |
 |---|--------|------|------|
-| M1 | 代码解析器 | ⬜ 待开始 | tree-sitter AST 解析 + 混合分块 |
+| M1 | 代码解析器 | ✅ 已完成 | tree-sitter AST 解析 + 混合分块 + 增量扫描 |
 | M2 | 存储层 | ⬜ 待开始 | LanceDB + SQLite FTS 双写 |
 | M3 | 搜索层 | ⬜ 待开始 | 混合搜索 + RRF 融合排序 |
 | M4 | REST API | ⬜ 待开始 | 7 个接口 + step_tracker |
@@ -21,13 +21,13 @@
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|------|------|------|------|
-| 1.1 | 安装 tree-sitter-language-pack | requirements.txt | ⬜ | |
-| 1.2 | 实现目录扫描器 | code_parser.py | ⬜ | 递归遍历 + 跳过规则 |
-| 1.3 | 实现 tree-sitter AST 解析 | code_parser.py | ⬜ | 支持 objc/swift/java/kotlin/dart/cpp |
-| 1.4 | 实现混合分块策略 | code_parser.py | ⬜ | 短文件整文件/长文件按函数/超长二次切 |
-| 1.5 | 实现 .h/.m 配对逻辑 | code_parser.py | ⬜ | paired_file 互相引用 |
-| 1.6 | 实现降级策略 | code_parser.py | ⬜ | AST 失败降级为整文件 chunk |
-| 1.7 | 实现增量扫描逻辑 | code_config.py | ⬜ | 基于 mtime 对比, 跳过未变化文件 |
+| 1.1 | 安装 tree-sitter-language-pack | requirements.txt | ✅ | v0.9.1 |
+| 1.2 | 实现目录扫描器 | code_parser.py | ✅ | 递归遍历 + 跳过规则 |
+| 1.3 | 实现 tree-sitter AST 解析 | code_parser.py | ✅ | 支持 objc/swift/java/kotlin/dart/cpp |
+| 1.4 | 实现混合分块策略 | code_parser.py | ✅ | 短文件整文件/长文件按函数/超长二次切 |
+| 1.5 | 实现 .h/.m 配对逻辑 | code_parser.py | ✅ | paired_file 互相引用 |
+| 1.6 | 实现降级策略 | code_parser.py | ✅ | AST 失败降级为整文件 chunk |
+| 1.7 | 实现增量扫描逻辑 | code_config.py | ✅ | 基于 mtime 对比, 跳过未变化文件 |
 
 ### M2: 存储层
 
