@@ -332,9 +332,10 @@
                                     <code class="text-xs bg-gray-200 px-2 py-1 rounded block mt-1">uploads/</code>
                                 </div>
                                 <div>
-                                    <p class="font-medium text-gray-700">Embedding 模型缓存</p>
-                                    <code class="text-xs bg-gray-200 px-2 py-1 rounded block mt-1">models/</code>
-                                    <p id="embedderInfo" class="text-[10px] text-gray-400 mt-1">-</p>
+                                    <p class="font-medium text-gray-700">Embedding 模型</p>
+                                    <code class="text-xs bg-gray-200 px-2 py-1 rounded block mt-1">~/.cache/huggingface/hub/</code>
+                                    <p id="embedderInfo" class="text-[10px] text-gray-400 mt-1">文档: -</p>
+                                    <p id="codeEmbedderInfo" class="text-[10px] text-gray-400">代码: -</p>
                                 </div>
                                 <div>
                                     <p class="font-medium text-gray-700">测试文档</p>
@@ -761,8 +762,14 @@
             const emb = stats.embedder || {};
             const embEl = document.getElementById('embedderInfo');
             if (embEl && emb.model_name) {
-                const sizeMb = emb.model_size_mb ? `~${Math.round(emb.model_size_mb)}MB` : '';
-                embEl.textContent = `${emb.model_name} · ${emb.dimension}维 ${sizeMb}`.trim();
+                const shortName = emb.model_name.split('/').pop();
+                embEl.textContent = `文档: ${shortName} · ${emb.dimension}维`;
+            }
+            const cemb = stats.code_embedder || {};
+            const cembEl = document.getElementById('codeEmbedderInfo');
+            if (cembEl && cemb.model_name) {
+                const shortName = cemb.model_name.split('/').pop();
+                cembEl.textContent = `代码: ${shortName} · ${cemb.dimension}维`;
             }
 
             const perf = stats.performance || {};
@@ -1770,9 +1777,13 @@
             const statsEl = document.getElementById('codeStats');
             if (statsRes.total_chunks > 0) {
                 const langTags = Object.entries(statsRes.by_language || {}).map(([k, v]) => `<span class="bg-gray-100 px-1 rounded">${k}:${v}</span>`).join(' ');
-                statsEl.innerHTML = `<div>总 chunks: <b>${statsRes.total_chunks}</b></div><div>仓库: ${statsRes.total_repos}</div><div class="mt-1">${langTags}</div>`;
+                const cemb = statsRes.code_embedder || {};
+                const embLine = cemb.model_name ? `<div class="text-[10px] text-blue-500 mt-1">🧠 ${cemb.model_name.split('/').pop()} · ${cemb.dimension}维</div>` : '';
+                statsEl.innerHTML = `<div>总 chunks: <b>${statsRes.total_chunks}</b></div><div>仓库: ${statsRes.total_repos}</div><div class="mt-1">${langTags}</div>${embLine}`;
             } else {
-                statsEl.innerHTML = '<div class="text-gray-400">暂无数据</div>';
+                const cemb = statsRes.code_embedder || {};
+                const embLine = cemb.model_name ? `<div class="text-[10px] text-blue-500 mt-1">🧠 ${cemb.model_name.split('/').pop()} · ${cemb.dimension}维</div>` : '';
+                statsEl.innerHTML = `<div class="text-gray-400">暂无数据</div>${embLine}`;
             }
 
             // 过滤器选项

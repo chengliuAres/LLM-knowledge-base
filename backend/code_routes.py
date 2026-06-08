@@ -600,7 +600,10 @@ async def list_repos_endpoint():
 @router.get("/stats")
 async def stats_endpoint():
     """索引统计信息"""
-    return get_stats()
+    from code_embedder import get_code_model_info
+    db_stats = get_stats()
+    db_stats["code_embedder"] = get_code_model_info()
+    return db_stats
 
 
 # ── POST /api/code/fts/migrate-chinese ─────────────────────────────

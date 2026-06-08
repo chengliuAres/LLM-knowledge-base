@@ -28,6 +28,15 @@ from pydantic import BaseModel
 
 from parser import process_file
 from embedder import embed_text, embed_query, embed_batch, _model_name as EMBED_MODEL_NAME, get_model_info
+
+
+def _get_code_embedder_info() -> dict:
+    """延迟加载代码 embedder 信息，避免 import 时触发模型加载"""
+    try:
+        from code_embedder import get_code_model_info
+        return get_code_model_info()
+    except Exception:
+        return {"model_name": "nomic-ai/CodeRankEmbed", "dimension": 768}
 from db import insert_documents, search_similar, list_documents, delete_document, get_stats
 from email_db import init_db, get_all_emails, get_stats as get_email_stats, search_emails, init_sample_data
 from email_parser import email_to_chunks, batch_convert_emails
@@ -649,6 +658,7 @@ async def stats():
         "documents": doc_stats,
         "emails": email_stats,
         "embedder": get_model_info(),
+        "code_embedder": _get_code_embedder_info(),
         "performance": {
             "lancedb_disk_bytes": metrics_db.get_disk_usage(lancedb_path),
             "search": search_summary,
