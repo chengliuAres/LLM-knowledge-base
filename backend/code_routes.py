@@ -132,7 +132,17 @@ def _run_scan(job: ScanJob):
     log.info(f"[scan:{job.scan_id}] 后台线程启动: {req.repo_name}")
 
     try:
-        # 0. 自动检测工程类型
+        # 0. 检查 embedding 模型是否就绪
+        from code_embedder import check_model_available
+        model_ok, model_msg = check_model_available()
+        if not model_ok:
+            job.status = "error"
+            job.error = model_msg
+            job.update("error", model_msg)
+            log.error(f"[scan:{job.scan_id}] {model_msg}")
+            return
+
+        # 0.1 自动检测工程类型
         from code_parser import auto_detect_project_type
         effective_type = req.project_type or auto_detect_project_type(repo_path)
 

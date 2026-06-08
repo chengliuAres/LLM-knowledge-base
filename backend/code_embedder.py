@@ -99,6 +99,36 @@ def get_dimension() -> int:
 embed_code_batch = embed_batch
 
 
+def check_model_available() -> tuple[bool, str]:
+    """检查代码 embedding 模型是否可用，返回 (ok, message)"""
+    from pathlib import Path
+
+    # 检查 HuggingFace 缓存目录
+    hf_cache = Path.home() / ".cache" / "huggingface" / "hub"
+    model_dir_pattern = hf_cache / "models--nomic-ai--CodeRankEmbed"
+    if model_dir_pattern.is_dir():
+        # 检查是否有 snapshots 且包含模型文件
+        snapshots = model_dir_pattern / "snapshots"
+        if snapshots.is_dir():
+            for snap in snapshots.iterdir():
+                if snap.is_dir() and any(snap.glob("*.safetensors")):
+                    return True, "模型已就绪"
+
+    # 检查项目 models 目录（HF 格式缓存）
+    local_model = Path(MODEL_CACHE_DIR)
+    if local_model.is_dir():
+        # HF cache 格式: models/models--nomic-ai--CodeRankEmbed/snapshots/<hash>/*.safetensors
+        for safetensor in local_model.rglob("*.safetensors"):
+            return True, "模型已就绪（本地缓存）"
+
+    return False, (
+        f"代码 Embedding 模型 {_model_name} 未下载。"
+        f"请先运行: python3 -c \"from sentence_transformers import SentenceTransformer; "
+        f"SentenceTransformer('{_model_name}', trust_remote_code=True, "
+        f"cache_folder='{MODEL_CACHE_DIR}')\""
+    )
+
+
 def get_code_model_info() -> dict:
     return {
         "model_name": _MODEL_NAME,
