@@ -8,9 +8,9 @@
 | # | 里程碑 | 状态 | 说明 |
 |---|--------|------|------|
 | M1 | 代码解析器 | ✅ 已完成 | tree-sitter AST 解析 + 混合分块 + 增量扫描 |
-| M2 | 存储层 | ⬜ 待开始 | LanceDB + SQLite FTS 双写 |
-| M3 | 搜索层 | ⬜ 待开始 | 混合搜索 + RRF 融合排序 |
-| M4 | REST API | ⬜ 待开始 | 7 个接口 + step_tracker |
+| M2 | 存储层 | ✅ 已完成 | LanceDB + SQLite FTS 双写 |
+| M3 | 搜索层 | ✅ 已完成 | 混合搜索 + RRF 融合排序 |
+| M4 | REST API | ✅ 已完成 | 7 个接口 + step_tracker |
 | M5 | MCP Server | ⬜ 待开始 | 4 个 tools + SSE 传输 |
 | M6 | 前端 | ⬜ 待开始 | 代码知识库 tab |
 | M7 | 集成测试 | ⬜ 待开始 | 全链路自测验证 |
@@ -33,35 +33,35 @@
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|------|------|------|------|
-| 2.1 | 实现 LanceDB code_chunks 表 | code_db.py | ⬜ | 独立数据库目录, id 含 parent_class |
-| 2.2 | 实现 SQLite FTS5 code_fts 表 | code_db.py | ⬜ | 全文检索 |
-| 2.3 | 实现双写逻辑 | code_db.py | ⬜ | insert 同时写两个库 |
-| 2.4 | 实现双删逻辑 | code_db.py | ⬜ | delete 同时删两个库 |
-| 2.5 | 实现仓库配置管理 | code_config.py | ⬜ | code_repos.json 读写 |
-| 2.6 | 实现扫描并发控制 | code_config.py | ⬜ | 同仓库加锁, 409 |
+| 2.1 | 实现 LanceDB code_chunks 表 | code_db.py | ✅ | 独立数据库目录, id 含 parent_class |
+| 2.2 | 实现 SQLite FTS5 code_fts 表 | code_db.py | ✅ | 全文检索 |
+| 2.3 | 实现双写逻辑 | code_db.py | ✅ | insert 同时写两个库 |
+| 2.4 | 实现双删逻辑 | code_db.py | ✅ | delete 同时删两个库 |
+| 2.5 | 实现仓库配置管理 | code_config.py | ✅ | code_repos.json 读写 |
+| 2.6 | 实现扫描并发控制 | code_config.py | ✅ | 同仓库加锁, 409 |
 
 ### M3: 搜索层
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|------|------|------|------|
-| 3.1 | 实现向量搜索 | code_search.py | ⬜ | LanceDB cosine |
-| 3.2 | 实现关键词搜索 | code_search.py | ⬜ | SQLite FTS5 MATCH |
-| 3.3 | 实现结构化过滤 | code_search.py | ⬜ | repo/language/type/path/symbol |
-| 3.4 | 实现 RRF 融合排序 | code_search.py | ⬜ | k=60, 每路各自 top_k, 融合后取 top_k |
-| 3.5 | 实现搜索结果 match_reason | code_search.py | ⬜ | 标注匹配原因 |
+| 3.1 | 实现向量搜索 | code_search.py | ✅ | LanceDB cosine |
+| 3.2 | 实现关键词搜索 | code_search.py | ✅ | SQLite FTS5 MATCH |
+| 3.3 | 实现结构化过滤 | code_search.py | ✅ | repo/language/type/path/symbol |
+| 3.4 | 实现 RRF 融合排序 | code_search.py | ✅ | k=60, 每路各自 top_k, 融合后取 top_k |
+| 3.5 | 实现搜索结果 match_reason | code_search.py | ✅ | 标注匹配原因 |
 
 ### M4: REST API
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|------|------|------|------|
-| 4.1 | POST /api/code/scan | code_routes.py | ⬜ | 含 step_tracker |
-| 4.2 | POST /api/code/search | code_routes.py | ⬜ | 含 step_tracker |
-| 4.3 | POST /api/code/chat | code_routes.py | ⬜ | RAG + 流式 |
-| 4.4 | GET /api/code/repos | code_routes.py | ⬜ | |
-| 4.5 | GET /api/code/stats | code_routes.py | ⬜ | |
-| 4.6 | DELETE /api/code/repos/{name} | code_routes.py | ⬜ | |
-| 4.7 | POST /api/code/repos/{name}/refresh | code_routes.py | ⬜ | 幂等 |
-| 4.8 | 注册路由到 main.py | main.py | ⬜ | |
+| 4.1 | POST /api/code/scan | code_routes.py | ✅ | 含 step_tracker |
+| 4.2 | POST /api/code/search | code_routes.py | ✅ | 含 step_tracker |
+| 4.3 | POST /api/code/chat | code_routes.py | ✅ | RAG + 流式 |
+| 4.4 | GET /api/code/repos | code_routes.py | ✅ | |
+| 4.5 | GET /api/code/stats | code_routes.py | ✅ | |
+| 4.6 | DELETE /api/code/repos/{name} | code_routes.py | ✅ | |
+| 4.7 | POST /api/code/repos/{name}/refresh | code_routes.py | ✅ | 幂等 |
+| 4.8 | 注册路由到 main.py | main.py | ✅ | |
 
 ### M5: MCP Server
 
