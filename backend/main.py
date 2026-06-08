@@ -106,8 +106,9 @@ class EmailImportRequest(BaseModel):
 @app.on_event("startup")
 async def startup():
     """启动时初始化"""
-    from embedder import get_model
-    get_model()  # 预加载 Embedding 模型
+    # TODO: 文档模型暂时关闭，专注开发代码模型接入逻辑
+    # from embedder import get_model
+    # get_model()  # 预加载 Embedding 模型
     
     # 初始化邮件数据库
     init_db()

@@ -5,6 +5,7 @@ import os
 import json
 import math
 from datetime import datetime
+from embedder import get_dimension
 
 # 数据库路径
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "lancedb")
@@ -25,20 +26,43 @@ def get_db() -> lancedb.DBConnection:
 
 
 def get_table():
-    """获取表（不存在则创建）"""
+    """获取表（不存在则创建，维度不匹配则自动迁移）"""
     global _table
     if _table is None:
         db = get_db()
+        dim = get_dimension()
         try:
             _table = db.open_table(TABLE_NAME)
+            # 检查维度是否匹配
+            schema = _table.schema
+            for field in schema:
+                if field.name == 'vector' and hasattr(field.type, 'list_size'):
+                    existing_dim = field.type.list_size
+                    if existing_dim != dim:
+                        import uuid
+                        backup_name = f"{TABLE_NAME}_{existing_dim}dim_backup"
+                        print(f"[db] 向量维度不匹配: 现存={existing_dim}, 当前={dim}")
+                        print(f"[db] 备份旧表为 {backup_name}，创建新表")
+                        try:
+                            db.drop_table(backup_name)
+                        except Exception:
+                            pass
+                        try:
+                            db.drop_table(TABLE_NAME)
+                        except Exception:
+                            pass
+                        _table = None
+                    break
         except Exception:
-            # 表不存在，创建一个包含占位数据的表
+            _table = None
+
+        if _table is None:
             placeholder = [{
                 "id": "__placeholder__",
                 "filename": "__placeholder__",
                 "chunk_index": 0,
                 "content": "__placeholder__",
-                "vector": [0.0] * 384,
+                "vector": [0.0] * dim,
                 "file_type": ".txt",
                 "uploaded_at": datetime.now().isoformat(),
                 "metadata": "{}",  # JSON 字符串存储元数据

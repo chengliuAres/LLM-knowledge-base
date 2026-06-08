@@ -4,21 +4,35 @@
 """
 
 import os
-import hashlib
 from pathlib import Path
 from typing import Optional
 
+# ── tree-sitter Parser 全局缓存 ─────────────────────────────────────
+# tree_sitter_language_pack 的 get_parser() 每次创建全新的 Language+Parser
+# 不缓存会导致 3773 个文件 = 3773 个 Language(含完整语法) + 3773 个 Parser → 内存爆炸
+_PARSER_CACHE = {}
+
+def _get_cached_parser(language: str):
+    """获取缓存的 tree-sitter Parser（每种语言只创建一个，复用）"""
+    if language not in _PARSER_CACHE:
+        from tree_sitter_language_pack import get_parser
+        _PARSER_CACHE[language] = get_parser(language)
+    return _PARSER_CACHE[language]
 
 # ── 语言 ↔ 扩展名映射 ──────────────────────────────────────────────
 
 EXTENSION_MAP = {
+    # ObjC / Swift
     '.m': 'objc',
     '.h': 'objc',
     '.swift': 'swift',
+    # Java / Kotlin
     '.java': 'java',
     '.kt': 'kotlin',
     '.kts': 'kotlin',
+    # Dart
     '.dart': 'dart',
+    # C / C++ / ObjC++
     '.cpp': 'cpp',
     '.cc': 'cpp',
     '.cxx': 'cpp',
@@ -26,6 +40,29 @@ EXTENSION_MAP = {
     '.hpp': 'cpp',
     '.hxx': 'cpp',
     '.mm': 'cpp',  # ObjC++ 用 cpp parser
+    # Python
+    '.py': 'python',
+    '.pyi': 'python',
+    # Ruby
+    '.rb': 'ruby',
+    # JavaScript / TypeScript
+    '.js': 'javascript',
+    '.jsx': 'javascript',
+    '.ts': 'typescript',
+    '.tsx': 'typescript',
+    # Go
+    '.go': 'go',
+    # Rust
+    '.rs': 'rust',
+    # Shell
+    '.sh': 'shell',
+    '.bash': 'shell',
+    '.zsh': 'shell',
+    # YAML
+    '.yml': 'yaml',
+    '.yaml': 'yaml',
+    # JSON
+    '.json': 'json',
 }
 
 # ── 各项目类型默认跳过规则 ─────────────────────────────────────────
@@ -40,8 +77,12 @@ DEFAULT_SKIP_DIRS = {
     'flutter': {'.git', '.ios', '.android', 'build', '.dart_tool'},
     'rn': {'.git', 'node_modules', 'build'},
     'kmp': {'.git', 'build', '.gradle', 'ohosApp'},
+    'python': {'.git', '__pycache__', '.venv', 'venv', '.tox', '.eggs',
+               'build', 'dist', '.mypy_cache', '.pytest_cache', '.ruff_cache'},
+    'javascript': {'.git', 'node_modules', 'dist', 'build', '.next', '.nuxt'},
     'generic': {'.git', 'node_modules', 'build', 'dist', '__pycache__',
-                'venv', '.venv', 'target'},
+                'venv', '.venv', 'target', 'vendor', '.idea', '.vscode',
+                'coverage', '.nyc_output'},
 }
 
 DEFAULT_SKIP_EXTS = {
@@ -53,8 +94,32 @@ DEFAULT_SKIP_EXTS = {
     'flutter': {'.png', '.jpg', '.jpeg', '.gif', '.json'},
     'rn': {'.png', '.jpg', '.jpeg', '.gif'},
     'kmp': {'.png', '.jpg', '.jpeg', '.gif', '.ets'},
+    'python': {},   # 脚本文件通常无资源
+    'javascript': {'.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg',
+                   '.woff', '.woff2', '.ttf', '.eot'},
     'generic': {'.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff',
                 '.woff2', '.ttf', '.eot'},
+}
+
+# 通用跳过目录 — project_type 为空时使用，合并所有工程类型的规则
+UNIVERSAL_SKIP_DIRS = {
+    '.git', '.svn', '.hg',
+    'node_modules', 'bower_components',
+    '__pycache__', '.mypy_cache', '.pytest_cache', '.ruff_cache',
+    'venv', '.venv', 'virtualenv', 'env', '.tox',
+    'build', 'dist', 'target', 'out',
+    '.gradle', '.idea', '.vscode',
+    'Pods', 'Carthage', '.build',
+    'DerivedData', '.xcodeproj', '.xcworkspace',
+    '.dart_tool', '.packages',
+    '.next', '.nuxt', '.cache',
+    'vendor', 'bundle',
+    'coverage', '.nyc_output',
+    '.xcassets', '.xcframework', '.lproj', 'lottie', 'third',
+    'Assets.xcassets', 'Resource', 'third_party',
+    'buildSrc', 'keystore', 'gradleScripts',
+    '.ios', '.android',
+    'ohosApp',
 }
 
 # ── AST 节点类型 → chunk_type 映射 ──────────────────────────────────
@@ -76,6 +141,17 @@ SYMBOL_NODE_TYPES = {
     'kotlin': {'class_declaration', 'function_declaration', 'object_declaration'},
     'dart': {'class_definition', 'mixin_definition', 'function_declaration'},
     'cpp': {'class_specifier', 'function_definition', 'struct_specifier'},
+    'python': {'class_definition', 'function_definition'},
+    'ruby': {'class', 'module', 'method', 'singleton_method'},
+    'javascript': {'class_declaration', 'function_declaration', 'method_definition',
+                   'arrow_function'},
+    'typescript': {'class_declaration', 'function_declaration', 'method_definition',
+                   'interface_declaration', 'type_alias_declaration'},
+    'go': {'type_declaration', 'function_declaration', 'method_declaration'},
+    'rust': {'struct_item', 'function_item', 'impl_item', 'trait_item', 'enum_item'},
+    'shell': set(),   # 无结构化符号
+    'yaml': set(),
+    'json': set(),
 }
 
 # 函数/方法级别节点 (用于"长文件按函数拆分")
@@ -86,6 +162,15 @@ FUNCTION_NODE_TYPES = {
     'kotlin': {'function_declaration'},
     'dart': {'method_declaration', 'function_declaration'},
     'cpp': {'function_definition'},
+    'python': {'function_definition'},
+    'ruby': {'method', 'singleton_method'},
+    'javascript': {'function_declaration', 'method_definition', 'arrow_function'},
+    'typescript': {'function_declaration', 'method_definition'},
+    'go': {'function_declaration', 'method_declaration'},
+    'rust': {'function_item'},
+    'shell': set(),
+    'yaml': set(),
+    'json': set(),
 }
 
 # chunk_type 判断
@@ -140,7 +225,87 @@ def _get_chunk_type(node_type: str, language: str, code_bytes: bytes, node) -> s
             return 'struct'
         if node_type == 'function_definition':
             return 'function'
+    elif language in ('python', 'ruby'):
+        if node_type in ('class_definition', 'class', 'module'):
+            return 'class'
+        if node_type in ('function_definition', 'method', 'singleton_method'):
+            return 'function'
+    elif language in ('javascript', 'typescript'):
+        if node_type in ('class_declaration', 'interface_declaration', 'type_alias_declaration'):
+            return 'class'
+        if node_type in ('function_declaration', 'method_definition', 'arrow_function'):
+            return 'function'
+    elif language == 'go':
+        if node_type == 'type_declaration':
+            return 'class'
+        if node_type in ('function_declaration', 'method_declaration'):
+            return 'function'
+    elif language == 'rust':
+        if node_type in ('struct_item', 'impl_item', 'trait_item', 'enum_item'):
+            return 'class'
+        if node_type == 'function_item':
+            return 'function'
     return 'file'
+
+
+# ── 工程类型自动检测 ───────────────────────────────────────────────
+
+# 工程类型标志文件
+_PROJECT_INDICATORS = {
+    ('Podfile', '*.xcodeproj'): 'ios',
+    ('Package.swift',): 'macos',
+    ('build.gradle', 'build.gradle.kts', 'settings.gradle', 'settings.gradle.kts'): 'android',
+    ('pubspec.yaml',): 'flutter',
+    ('package.json',): 'javascript',
+    ('Cargo.toml',): 'rust',
+    ('go.mod',): 'go',
+    ('CMakeLists.txt', 'Makefile'): 'generic',
+    ('setup.py', 'pyproject.toml'): 'python',
+    ('Gemfile',): 'ruby',
+}
+
+
+def auto_detect_project_type(repo_path: str) -> str:
+    """根据目录下的标志文件自动判断工程类型。
+
+    检查根目录下的标志文件，返回匹配的工程类型。
+    无匹配时返回 'generic'。
+    """
+    if not os.path.isdir(repo_path):
+        return 'generic'
+
+    try:
+        entries = set(os.listdir(repo_path))
+    except (OSError, PermissionError):
+        return 'generic'
+
+    # 递归检查一级子目录中的标志文件 (用于 *.xcodeproj 等)
+    try:
+        for entry in os.listdir(repo_path):
+            full = os.path.join(repo_path, entry)
+            if os.path.isdir(full) and not entry.startswith('.'):
+                entries.add(entry)
+    except (OSError, PermissionError):
+        pass
+
+    best_type = 'generic'
+    best_matched = 0  # 匹配的标志文件数，越多越可靠
+
+    for indicators, ptype in _PROJECT_INDICATORS.items():
+        matched = 0
+        for ind in indicators:
+            if ind.startswith('*.'):
+                # 通配符：检查是否存在该后缀名的条目
+                suffix = ind[1:]  # e.g. '.xcodeproj'
+                if any(e.endswith(suffix) for e in entries):
+                    matched += 1
+            elif ind in entries:
+                matched += 1
+        if matched > best_matched:
+            best_type = ptype
+            best_matched = matched
+
+    return best_type
 
 
 # ── 目录扫描 ──────────────────────────────────────────────────────
@@ -161,12 +326,15 @@ def scan_directory(
     if not os.path.isdir(repo_path):
         raise ValueError(f"目录不存在: {repo_path}")
 
-    # 合并跳过规则
-    effective_skip_dirs = DEFAULT_SKIP_DIRS.get(project_type, DEFAULT_SKIP_DIRS['generic']).copy()
+    # 合并跳过规则 — project_type 为空时使用通用规则
+    if project_type:
+        effective_skip_dirs = DEFAULT_SKIP_DIRS.get(project_type, DEFAULT_SKIP_DIRS['generic']).copy()
+        effective_skip_exts = DEFAULT_SKIP_EXTS.get(project_type, DEFAULT_SKIP_EXTS['generic']).copy()
+    else:
+        effective_skip_dirs = UNIVERSAL_SKIP_DIRS.copy()
+        effective_skip_exts = DEFAULT_SKIP_EXTS['generic'].copy()
     if skip_dirs:
         effective_skip_dirs |= skip_dirs
-
-    effective_skip_exts = DEFAULT_SKIP_EXTS.get(project_type, DEFAULT_SKIP_EXTS['generic']).copy()
     if skip_extensions:
         effective_skip_exts |= skip_extensions
 
@@ -301,6 +469,26 @@ def _extract_imports(node, code_bytes: bytes, language: str) -> list[str]:
             if child.type in ('import_specification', 'import_spec'):
                 text = code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
                 imports.append(text.strip())
+    elif language == 'python':
+        for child in node.children:
+            if child.type in ('import_statement', 'import_from_statement'):
+                text = code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
+                imports.append(text.strip())
+    elif language in ('javascript', 'typescript'):
+        for child in node.children:
+            if child.type == 'import_statement':
+                text = code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
+                imports.append(text.strip())
+    elif language == 'go':
+        for child in node.children:
+            if child.type == 'import_declaration':
+                text = code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
+                imports.append(text.strip())
+    elif language == 'rust':
+        for child in node.children:
+            if child.type == 'use_declaration':
+                text = code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
+                imports.append(text.strip())
     return imports
 
 
@@ -311,10 +499,8 @@ def _extract_symbols(code_bytes: bytes, language: str) -> list[dict]:
         [{"name": str, "chunk_type": str, "line_start": int, "line_end": int,
           "start_byte": int, "end_byte": int, "node_type": str, "children": [...]}]
     """
-    from tree_sitter_language_pack import get_parser
-
     try:
-        parser = get_parser(language)
+        parser = _get_cached_parser(language)
     except Exception:
         return []
 
@@ -391,7 +577,7 @@ SUB_CHUNK_SIZE = 500    # 超长 chunk 二次切分大小
 
 
 def _sub_chunk(text: str, size: int = SUB_CHUNK_SIZE) -> list[str]:
-    """超长 chunk 二次切分 (按行边界)"""
+    """超长 chunk 二次切分 (按行边界，超长行按字符位置硬切)"""
     if len(text) <= size:
         return [text]
 
@@ -402,7 +588,13 @@ def _sub_chunk(text: str, size: int = SUB_CHUNK_SIZE) -> list[str]:
         if len(current) + len(line) + 1 > size:
             if current:
                 chunks.append(current)
-            current = line
+            # 单行超长(如 573KB 单行 JSON): 按字符位置硬切
+            if len(line) > size:
+                for k in range(0, len(line), size):
+                    chunks.append(line[k:k+size])
+                current = ''
+            else:
+                current = line
         else:
             current = current + '\n' + line if current else line
     if current:
@@ -463,8 +655,13 @@ def chunk_code(
             'metadata': {**base_meta},
         }]
 
-    # ── 尝试 AST 解析 ──
-    symbols = _extract_symbols(code_bytes, language)
+    # ── 尝试 AST 解析（仅对注册了符号类型的语言，如 JSON 直接走降级分块）──
+    symbol_types = SYMBOL_NODE_TYPES.get(language, set())
+    func_types = FUNCTION_NODE_TYPES.get(language, set())
+    if symbol_types or func_types:
+        symbols = _extract_symbols(code_bytes, language)
+    else:
+        symbols = []  # 无符号类型 → 跳过 tree-sitter 解析，避免海量 Node 引用环堆积
 
     # ── AST 解析失败/无符号: 降级为整文件 chunk ──
     if not symbols:
@@ -496,9 +693,8 @@ def chunk_code(
     lines = code_text.split('\n')
 
     # 提取 imports
-    from tree_sitter_language_pack import get_parser as _get_parser
     try:
-        _tree = _get_parser(language).parse(code_bytes)
+        _tree = _get_cached_parser(language).parse(code_bytes)
         imports = _extract_imports(_tree.root_node, code_bytes, language)
     except Exception:
         imports = []
@@ -561,20 +757,20 @@ def chunk_code(
 def parse_repo(
     repo_name: str,
     repo_path: str,
-    project_type: str = 'generic',
+    project_type: str = '',
     languages: Optional[list[str]] = None,
     skip_dirs: Optional[set[str]] = None,
     skip_extensions: Optional[set[str]] = None,
 ) -> tuple[list[dict], dict]:
     """扫描仓库并解析所有代码文件
 
-    Returns:
-        (chunks, stats)
-        chunks: LanceDB-ready 的 chunk 列表
-        stats: {"total_files": int, "total_chunks": int, "by_language": {}, "by_chunk_type": {},
-                "skipped_files": [], "parse_warnings": int}
+    project_type 为空时自动检测。
     """
     repo_path = os.path.abspath(repo_path)
+
+    # 自动检测工程类型
+    if not project_type:
+        project_type = auto_detect_project_type(repo_path)
 
     # 1. 扫描文件
     files = scan_directory(repo_path, project_type, languages, skip_dirs, skip_extensions)

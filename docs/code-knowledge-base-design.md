@@ -12,20 +12,25 @@
 
 | 项目 | 路径 | 类型 | 语言 | 文件数 | 代码行 |
 |------|------|------|------|--------|--------|
-| ghmail | /Users/admin/MailProject/ghmail | iOS | ObjC/Swift | 950 | 112K |
+| ghmail | /Users/admin/MailProject/ghmail | iOS (自动检测) | ObjC/Swift/C++/Python/Ruby/Dart/Kotlin | 950 | 112K |
 | macmail | /Users/admin/MailProject/macmail | macOS | Swift/ObjC++/C++ | 2,350 | 248K |
 | MailAndroidG | /Users/admin/MailProject/MailAndroidG | Android | Java/Kotlin | ~4,000+ | 713K |
 | mailflutter | /Users/admin/MailProject/ghmail/mailflutter | Flutter | Dart | 197 | - |
 | rnbase-for-native | /Users/admin/MailProject/ghmail/rnbase-for-native | RN | JS/TS | 5 | 极少 |
 | mmsharedkmp | /Users/admin/MailProject/ghmail/mmsharedkmp | KMP | Kotlin | 71 | - |
 
-**合计: ~7,500+ 文件, ~1.1M 行代码, 8 种语言, 6 个仓库**
+**合计: ~7,500+ 文件, ~1.1M 行代码, 13 种语言, 6 个仓库**
+
+> **工程类型自动检测**：`project_type` 改为可选参数，留空时系统根据目录标志文件自动判断（Podfile→iOS, build.gradle→Android, pubspec.yaml→Flutter 等）。
+> 
+> **语言支持**：从 6 种扩至 13 种（新增 Python, Ruby, JavaScript, TypeScript, Go, Rust, Shell）。混合工程（如 iOS 含 Python 脚本 + Ruby CocoaPods + Flutter 模块）自动识别所有语言。
 
 ### 核心能力
 
 - 指定本地目录路径，自动扫描索引代码
 - 混合分块: AST 解析 + 按函数/类/文件智能切分
 - 语义搜索 + 关键词搜索 + 结构化过滤
+- **FTS5 中文分词**：jieba 分词解决 unicode61 无法切分中文的问题
 - RAG 代码问答 (需配置 LLM)
 - MCP 协议暴露 AI 工具 (Hermes/Claude 可直接调用)
 
@@ -58,7 +63,8 @@
 ### 设计原则
 
 - 代码知识库作为**独立子系统**, 有自己的 LanceDB 表 + SQLite FTS
-- 复用现有 embedder (同一个 embedding 模型)
+- **Embedding 模型**: BAAI/bge-m3（1024 维，8192-token 上下文，中英文+代码混合训练）
+- **中文分词**: jieba 分词解决 FTS5 unicode61 无法切分中文的问题（写入时分词，查询时分词+短语匹配）
 - 复用现有 step_tracker
 - 新增独立路由模块 `code_routes.py`, 不污染现有 main.py
 - 前端加一个 tab, 代码知识库有自己的搜索/问答界面
@@ -242,16 +248,16 @@ scan 接口基于文件 `mtime` 实现增量更新:
 |------|------|------|
 | id | str | 主键 `{repo}_{file}_{parent_class}_{symbol}_{idx}` (parent_class 无值时用 `_`) |
 | repo_name | str | 仓库名 |
-| project_type | str | ios/android/flutter/rn/kmp/macos |
+| project_type | str | 自动检测（ios/android/flutter/rn/kmp/macos/generic） |
 | file_path | str | 相对路径 |
 | file_name | str | 文件名 |
-| language | str | objc/swift/java/kotlin/dart/cpp/... |
+| language | str | objc/swift/java/kotlin/dart/cpp/python/ruby/javascript/typescript/go/rust/shell/yaml/json |
 | chunk_type | str | interface/class/function/... |
 | symbol_name | str | 函数/类名 |
 | content | str | 代码文本 |
 | line_start | int | 起始行 |
 | line_end | int | 结束行 |
-| vector | float[384] | embedding 向量 |
+| vector | float[1024] | embedding 向量 (BAAI/bge-m3, 1024-dim, 8192-token 上下文) |
 | metadata | str | JSON (imports, annotations 等) |
 
 ### 4.3 SQLite FTS5 表结构 (code_fts)

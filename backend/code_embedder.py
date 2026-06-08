@@ -13,7 +13,7 @@ MODEL_CACHE_DIR = os.path.join(PROJECT_ROOT, "models")
 
 _model = None
 _model_name = "nomic-ai/CodeRankEmbed"  # 代码专用，768-dim，8192-token，137M
-_MAX_CHARS = 6000  # 8192 tokens 安全余量（代码 token 密度低，正常 chunk ≤1000 字符）
+_MAX_CHARS = 2000  # 代码 chunk 上限 1000 字符，2x 安全余量。过大值会导致 MPS attention 矩阵 OOM
 
 # CodeRankEmbed 要求查询加此前缀
 _QUERY_PREFIX = "Represent this query for searching relevant code: "
@@ -67,7 +67,7 @@ def embed_code_batch(texts: list[str]) -> list[list[float]]:
     """批量代码 embedding（索引阶段用）"""
     model = get_code_model()
     safe_texts = [t[:_MAX_CHARS] if len(t) > _MAX_CHARS else t for t in texts]
-    embeddings = model.encode(safe_texts, normalize_embeddings=True, batch_size=64)
+    embeddings = model.encode(safe_texts, normalize_embeddings=True, batch_size=32)  # 32 避免 MPS attention OOM
     return embeddings.tolist()
 
 

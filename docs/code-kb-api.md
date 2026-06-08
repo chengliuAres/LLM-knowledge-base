@@ -13,21 +13,21 @@
 {
     "repo_name": "ghmail",
     "repo_path": "/Users/admin/MailProject/ghmail",
-    "project_type": "ios",
-    "languages": ["objc", "swift"],
-    "skip_dirs": [".xcassets", ".xcframework", "lottie", "third"],
-    "skip_extensions": [".png", ".json", ".strings"]
+    "project_type": "",
+    "languages": [],
+    "skip_dirs": [],
+    "skip_extensions": []
 }
 ```
 
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| repo_name | str | ✅ | 仓库名称 (唯一标识) |
-| repo_path | str | ✅ | 本地目录绝对路径 |
-| project_type | str | ✅ | ios/android/flutter/rn/kmp/macos |
-| languages | str[] | ✅ | 语言列表 |
-| skip_dirs | str[] | ❌ | 跳过的目录名 (默认见设计文档) |
-| skip_extensions | str[] | ❌ | 跳过的文件扩展名 |
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| repo_name | str | ✅ | - | 仓库名称 (唯一标识) |
+| repo_path | str | ✅ | - | 本地目录绝对路径 |
+| project_type | str | ❌ | "" | **自动检测** — 空字符串根据目录标志文件自动判断 (Podfile→ios, build.gradle→android, pubspec.yaml→flutter 等)。也可手动指定: ios/macos/android/flutter/rn/kmp/generic |
+| languages | str[] | ❌ | [] | 空数组=自动扫描所有支持的语言 (13种: objc/swift/java/kotlin/dart/cpp/python/ruby/javascript/typescript/go/rust/shell) |
+| skip_dirs | str[] | ❌ | [] | 额外跳过的目录 (已内置通用跳过规则) |
+| skip_extensions | str[] | ❌ | [] | 额外跳过的文件扩展名 |
 
 **响应:**
 ```json
@@ -234,6 +234,34 @@ data: [DONE]
 
 **错误:**
 - 404: 仓库不存在
+
+---
+
+## POST /api/code/fts/migrate-chinese
+
+对已有 FTS5 索引进行中文分词迁移 (jieba 分词重建)。
+
+新索引写入时已自动分词，此端点用于迁移历史数据。
+
+**请求:**
+```json
+{
+    "repo_name": "ghmail"
+}
+```
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| repo_name | str | ❌ | "" | 仓库名 (空字符串=迁移所有仓库) |
+
+**响应:**
+```json
+{
+    "status": "ok",
+    "total": 1000,
+    "updated": 45
+}
+```
 
 ---
 

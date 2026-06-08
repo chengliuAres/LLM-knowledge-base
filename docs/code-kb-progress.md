@@ -7,13 +7,14 @@
 
 | # | 里程碑 | 状态 | 说明 |
 |---|--------|------|------|
-| M1 | 代码解析器 | ✅ 已完成 | tree-sitter AST 解析 + 混合分块 + 增量扫描 |
-| M2 | 存储层 | ✅ 已完成 | LanceDB + SQLite FTS 双写 |
-| M3 | 搜索层 | ✅ 已完成 | 混合搜索 + RRF 融合排序 |
-| M4 | REST API | ✅ 已完成 | 7 个接口 + step_tracker |
+| M1 | 代码解析器 | ✅ 已完成 | tree-sitter AST 解析 + 混合分块 + 增量扫描 + 13种语言支持 + 自动工程类型检测 |
+| M2 | 存储层 | ✅ 已完成 | LanceDB + SQLite FTS 双写 + FTS5 中文分词 |
+| M3 | 搜索层 | ✅ 已完成 | 混合搜索 + RRF 融合排序 + 中文查询关键词加权 + 相似度阈值 |
+| M4 | REST API | ✅ 已完成 | 8 个接口 (含 FTS5 中文迁移) + step_tracker |
 | M5 | MCP Server | ✅ 已完成 | 4 个 tools + SSE 传输 |
 | M6 | 前端 | ✅ 已完成 | 代码知识库 tab |
-| M7 | 集成测试 | ✅ 已完成 | 全链路自测验证 |
+| M7 | 集成测试 | ✅ 已完成 | 全链路自测验证 + Chrome 实测 |
+| M8 | Embedding 模型升级 | ✅ 已完成 | bge-m3 (1024-dim, 8192-token) |
 
 ## 详细任务
 
@@ -91,12 +92,27 @@
 
 | # | 任务 | 状态 | 备注 |
 |---|------|------|------|
-| 7.1 | 扫描 iOS 仓库 (ghmail) | ✅ | ObjC 7397文件+Swift 66文件, 62839 chunks |
-| 7.2 | 扫描 macOS 仓库 (macmail) | ⬜ | 验证 Swift/ObjC++ 解析 |
-| 7.3 | 扫描 Android 仓库 | ⬜ | 验证 Java/Kotlin 解析 |
-| 7.4 | 搜索 + RAG 问答全链路 | ✅ | API 端点全部验证通过 |
-| 7.5 | MCP 远程连接测试 | ✅ | SSE 连接正常, endpoint 事件正确 |
-| 7.6 | 前端功能验证 | ✅ | 代码知识库 tab 可访问 |
+| 7.1 | 扫描 iOS 仓库 (ghmail) | ✅ | ObjC+Swift+Cpp, 1000 chunks |
+| 7.2 | Chrome 实测搜索验证 | ✅ | "登录" 关键词返回 2 条精准，混合模式 10 条相关 |
+| 7.3 | 搜索 + RAG 问答全链路 | ✅ | API 端点全部验证通过 |
+| 7.4 | MCP 远程连接测试 | ✅ | SSE 连接正常, endpoint 事件正确 |
+| 7.5 | 前端功能验证 | ✅ | 代码知识库 tab 可访问 |
+
+### M8: 搜索优化 + 模型升级 (2026-06-08)
+
+| # | 任务 | 文件 | 状态 | 备注 |
+|---|------|------|------|------|
+| 8.1 | 新增中文分词工具模块 | text_utils.py | ✅ | jieba 分词 + FTS5 查询适配 |
+| 8.2 | FTS5 写入时分词 | code_db.py | ✅ | segment_for_fts() |
+| 8.3 | FTS5 搜索时分词查询 | code_db.py | ✅ | segment_query_for_match() |
+| 8.4 | FTS5 中文迁移端点 | code_db.py + code_routes.py | ✅ | POST /api/code/fts/migrate-chinese |
+| 8.5 | 相似度阈值 + 中文关键词加权 | code_search.py | ✅ | MIN_VECTOR_SIMILARITY=0.3, 1.8x boost |
+| 8.6 | 扩展语言支持 (6→13种) | code_parser.py | ✅ | Python/Ruby/JS/TS/Go/Rust/Shell |
+| 8.7 | 自动检测工程类型 | code_parser.py | ✅ | auto_detect_project_type() |
+| 8.8 | project_type 改为可选 | code_routes.py | ✅ | 空白自动检测 |
+| 8.9 | Embedding 模型升级 | embedder.py | ✅ | bge-m3: 1024-dim, 8192-token |
+| 8.10 | LanceDB 维度自动迁移 | db.py + code_db.py | ✅ | 维度不匹配自动备份+重建 |
+| 8.11 | 查询使用 bge 前缀 | 多处 | ✅ | embed_query() 替代 embed_text() 用于搜索 |
 
 ## 变更记录
 
@@ -104,3 +120,4 @@
 |------|------|
 | 2026-06-05 | 设计完成, 创建进度文档 |
 | 2026-06-08 | 设计细化: metadata 语义/RRF 细节/scan 增量/chunk id/MCP 参数/top_k 限流/parent_symbol_id |
+| 2026-06-08 | M8: Embedding 模型升级 bge-m3 + FTS5 jieba 中文分词 + 自动工程类型检测 + 语言扩展 6→13 |
