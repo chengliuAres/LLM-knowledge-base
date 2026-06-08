@@ -13,7 +13,7 @@ MODEL_CACHE_DIR = os.path.join(PROJECT_ROOT, "models")
 
 _model = None
 _model_name = "BAAI/bge-base-zh-v1.5"  # 中文优化，768-dim，512-token，102M
-_MAX_CHARS = 1500  # 512 tokens ≈ 1500 字符，安全余量
+_MAX_CHARS = 1500  # 512 tokens ≈ 1500 字符，安全兜底（实际 chunk 上限 500 字符，正常不会触发）
 
 # bge 系列查询前缀（可选，但能提升检索质量）
 _QUERY_PROMPT = "为这个句子生成表示以用于检索相关文章："
@@ -27,7 +27,10 @@ def get_model() -> SentenceTransformer:
         print(f"正在加载 Embedding 模型: {_model_name} ...")
         print(f"模型缓存目录: {MODEL_CACHE_DIR}")
 
-        _model = SentenceTransformer(_model_name)
+        _model = SentenceTransformer(
+            _model_name,
+            model_kwargs={"torch_dtype": "float16"},  # fp16: MPS 上 ~2x 加速 + 省一半显存
+        )
         # MPS 加速
         if hasattr(torch, 'backends') and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             try:
