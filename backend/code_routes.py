@@ -1,9 +1,12 @@
 """代码知识库 REST API 路由"""
 
 import os
+import logging
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, HTTPException
+
+log = logging.getLogger("code_kb")
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -107,12 +110,14 @@ def _run_scan(job: ScanJob):
     req = job.req
     repo_path = os.path.abspath(req.repo_path)
     job.status = "running"
+    log.info(f"[scan:{job.scan_id}] 后台线程启动: {req.repo_name}")
 
     try:
         # 1. 扫描目录
         job.update("scan_files", "扫描目录文件...")
         if job.is_cancelled():
             return
+        log.info(f"[scan:{job.scan_id}] 开始扫描目录: {repo_path}")
         files = scan_directory(
             repo_path, req.project_type,
             req.languages or None,
@@ -125,6 +130,7 @@ def _run_scan(job: ScanJob):
         job.update("compute_diff", "计算增量差异 (比对 mtime)...")
         if job.is_cancelled():
             return
+        log.info(f"[scan:{job.scan_id}] 计算增量: {len(files)} files")
         incremental = compute_incremental(req.repo_name, files)
         added_n = len(incremental["added"])
         updated_n = len(incremental["updated"])
@@ -153,6 +159,7 @@ def _run_scan(job: ScanJob):
             _finalize_scan(job, files)
             return
 
+        log.info(f"[scan:{job.scan_id}] 开始解析 {len(files_to_parse)} 个文件")
         from code_parser import chunk_code, pair_header_impl
         from embedder import embed_batch
 
@@ -247,6 +254,7 @@ def _run_scan(job: ScanJob):
                 job._written_chunk_ids.append(c["id"])
 
         job.update("store_done", f"写入完成: {len(all_batch_chunks)} chunks")
+        log.info(f"[scan:{job.scan_id}] 写入完成: {len(all_batch_chunks)} chunks")
 
         # 6. 更新配置
         _finalize_scan(job, files)
@@ -255,8 +263,10 @@ def _run_scan(job: ScanJob):
         job.status = "error"
         job.error = str(e)
         job.update("error", f"扫描失败: {e}")
+        log.exception(f"[scan:{job.scan_id}] 扫描异常: {e}")
     finally:
         release_scan_lock(req.repo_name)
+        log.info(f"[scan:{job.scan_id}] 锁已释放, 最终状态={job.status}")
 
 
 def _finalize_scan(job: ScanJob, files: list):
@@ -315,13 +325,18 @@ def get_table_from_db():
 async def scan_repo_endpoint(req: ScanRequest):
     """启动异步扫描, 返回 scan_id"""
     repo_path = os.path.abspath(req.repo_path)
+    log.info(f"[scan] 启动扫描: repo={req.repo_name}, path={repo_path}, type={req.project_type}, langs={req.languages}")
+
     if not os.path.isdir(repo_path):
+        log.warning(f"[scan] 目录不存在: {repo_path}")
         raise HTTPException(400, detail=f"目录不存在: {repo_path}")
 
     if not try_acquire_scan_lock(req.repo_name):
+        log.warning(f"[scan] 锁冲突: {req.repo_name} 正在扫描中")
         raise HTTPException(409, detail=f"仓库 {req.repo_name} 正在扫描中")
 
     scan_id = str(uuid.uuid4())[:8]
+    log.info(f"[scan] 分配 scan_id={scan_id}")
     job = ScanJob(scan_id, req)
     _scan_jobs[scan_id] = job
 
@@ -400,6 +415,7 @@ async def cancel_scan(scan_id: str):
     if job.status not in ("pending", "running"):
         raise HTTPException(400, detail=f"任务状态为 {job.status}，无法取消")
 
+    log.info(f"[scan:{scan_id}] 用户取消扫描")
     # 设置取消标志
     job.cancel_event.set()
     job.status = "cancelled"
@@ -412,9 +428,10 @@ async def cancel_scan(scan_id: str):
             break
         time.sleep(0.1)
 
-    # 清理已写入数据
+    log.info(f"[scan:{scan_id}] 开始清理, 已写入 {len(job._written_chunk_ids)} chunks")
     _cleanup_scan(job)
     job.update("cleanup_done", f"已清理 {len(job._written_chunk_ids)} 个 chunks")
+    log.info(f"[scan:{scan_id}] 清理完成")
 
     return {
         "status": "cancelled",
@@ -570,11 +587,15 @@ async def stats_endpoint():
 @router.delete("/repos/{name}")
 async def delete_repo_endpoint(name: str):
     """删除仓库索引"""
+    log.info(f"[delete] 开始删除仓库: {name}")
     if not get_repo_config(name):
+        log.warning(f"[delete] 仓库不存在: {name}")
         raise HTTPException(404, detail=f"仓库 {name} 不存在")
 
     deleted = delete_by_repo(name)
     remove_repo(name)
+    release_scan_lock(name)  # 释放可能残留的扫描锁
+    log.info(f"[delete] 完成: {name}, 删除 {deleted} chunks")
 
     return {
         "status": "ok",

@@ -1,6 +1,15 @@
 """FastAPI 主入口 - 文档知识库"""
 
 import os
+import logging
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+
 import shutil
 import time
 import json
