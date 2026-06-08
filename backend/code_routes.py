@@ -278,6 +278,16 @@ def _run_scan(job: ScanJob):
             job.update("cleanup_done", f"已清理 {len(job._written_chunk_ids)} 个 chunks")
             log.info(f"[scan:{job.scan_id}] 取消清理完成: {len(job._written_chunk_ids)} chunks")
 
+        # 释放 MPS GPU 缓冲区 + Python 循环引用（tree-sitter Node 环）
+        import gc
+        gc.collect()
+        try:
+            import torch
+            if hasattr(torch, 'backends') and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+        except Exception:
+            pass
+
         release_scan_lock(req.repo_name)
         log.info(f"[scan:{job.scan_id}] 锁已释放, 最终状态={job.status}")
 
