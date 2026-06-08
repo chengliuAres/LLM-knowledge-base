@@ -11,7 +11,7 @@ import lancedb
 from datetime import datetime
 from typing import Optional
 
-from embedder import get_dimension
+from code_embedder import get_code_dimension
 from text_utils import segment_for_fts, segment_query_for_match
 
 # ── 路径配置 ──────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ def get_table():
     global _table
     if _table is None:
         db = get_db()
-        dim = get_dimension()
+        dim = get_code_dimension()
         try:
             _table = db.open_table(TABLE_NAME)
             # 检查维度是否匹配

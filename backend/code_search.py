@@ -12,19 +12,35 @@ from step_tracker import StepTracker
 from code_db import search_vector, search_keyword
 
 
+# ── 中文检测 ───────────────────────────────────────────────────────
+
+_CN_PATTERN = re.compile(r'[一-龥㐀-䶿豈-﫿]+')
+
+
+def _has_chinese(text: str) -> bool:
+    """检测文本是否包含中文"""
+    return bool(_CN_PATTERN.search(text)) if text else False
+
+
 # ── RRF 融合 ─────────────────────────────────────────────────────
 
 RRF_K = 60  # RRF 公式常量
+MIN_VECTOR_SIMILARITY = 0.3  # 向量搜索结果最低相似度阈值
 
 
-def rrf_fusion(vector_results: list[dict], keyword_results: list[dict], top_k: int = 10) -> list[dict]:
+def rrf_fusion(vector_results: list[dict], keyword_results: list[dict],
+                top_k: int = 10, query: Optional[str] = None) -> list[dict]:
     """RRF (Reciprocal Rank Fusion) 融合排序
 
     score = 1 / (k + rank), k=60
-    同一 chunk_id 两路都命中则分数相加
+    同一 chunk_id 两路都命中则分数相加。
+    中文查询时关键词结果获得 1.8x 权重（补偿向量模型对中文代码效果差的问题）。
     """
     scores = {}   # chunk_id → rrf_score
     items = {}    # chunk_id → item_dict
+
+    # 中文查询：关键词加权 1.8x
+    keyword_weight = 1.8 if (query and _has_chinese(query)) else 1.0
 
     # 向量搜索结果
     for rank, item in enumerate(vector_results, start=1):
@@ -33,10 +49,10 @@ def rrf_fusion(vector_results: list[dict], keyword_results: list[dict], top_k: i
         scores[cid] = scores.get(cid, 0) + rrf
         items[cid] = item
 
-    # 关键词搜索结果
+    # 关键词搜索结果 (中文查询加权)
     for rank, item in enumerate(keyword_results, start=1):
         cid = item["id"]
-        rrf = 1.0 / (RRF_K + rank)
+        rrf = keyword_weight / (RRF_K + rank)
         scores[cid] = scores.get(cid, 0) + rrf
         if cid not in items:
             items[cid] = item
@@ -114,8 +130,8 @@ def search_code(
             step = tracker.add_step("vector_search", "向量搜索 (LanceDB cosine)")
             step.start()
 
-        from embedder import embed_text
-        query_vec = embed_text(query)
+        from code_embedder import embed_code_query
+        query_vec = embed_code_query(query)
 
         results = search_vector(
             query_vector=query_vec,
@@ -125,6 +141,9 @@ def search_code(
             chunk_type=chunk_type,
             file_path=file_path,
         )
+
+        # 过滤低质量向量结果
+        results = [r for r in results if r.get("score", 0) >= MIN_VECTOR_SIMILARITY]
 
         if tracker:
             step.complete({"results_count": len(results)})
@@ -150,14 +169,14 @@ def search_code(
     else:
         # hybrid: 两路并行 + RRF
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        from embedder import embed_text
+        from code_embedder import embed_code_query
 
         if tracker:
             step_hybrid = tracker.add_step("hybrid_search", "混合搜索 (向量+关键词 并行)")
             step_hybrid.start()
 
         def _vector_search():
-            query_vec = embed_text(query)
+            query_vec = embed_code_query(query)
             return search_vector(
                 query_vector=query_vec, top_k=top_k,
                 repo_name=repo_name, language=language,
@@ -192,11 +211,12 @@ def search_code(
             step_rrf = tracker.add_step("rrf_fusion", "RRF 融合排序")
             step_rrf.start()
 
-        results = rrf_fusion(vector_results, keyword_results, top_k=top_k)
+        results = rrf_fusion(vector_results, keyword_results, top_k=top_k, query=query)
 
         # 标注来源: 在融合结果中判断每个 chunk 是哪路命中的
         vec_ids = {r["id"] for r in vector_results}
         kw_ids = {r["id"] for r in keyword_results}
+        filtered = []
         for r in results:
             cid = r["id"]
             if cid in vec_ids and cid in kw_ids:
@@ -205,6 +225,11 @@ def search_code(
                 r["source"] = "vector"
             else:
                 r["source"] = "keyword"
+            # 过滤仅向量命中且低相似度的结果
+            if r["source"] == "vector" and r.get("score", 0) < MIN_VECTOR_SIMILARITY:
+                continue
+            filtered.append(r)
+        results = filtered
 
         if tracker:
             step_rrf.complete({

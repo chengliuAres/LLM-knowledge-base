@@ -165,7 +165,7 @@ def _run_scan(job: ScanJob):
 
         log.info(f"[scan:{job.scan_id}] 解析 {len(files_to_parse)} 个文件...")
         from code_parser import chunk_code, pair_header_impl
-        from embedder import embed_batch
+        from code_embedder import embed_code_batch
 
         # 删除更新文件的旧 chunks
         for f in incremental["updated"]:
@@ -178,18 +178,54 @@ def _run_scan(job: ScanJob):
         parse_warnings = 0
         total_chunks = 0
         BATCH = 64
-        WRITE_BATCH = 200
+        FILE_BATCH = 200  # 每批累积约 200 * 5 = 1000 chunks → embed → 写入
 
-        all_batch_chunks = []
-        all_batch_texts = []
+        # 流式处理: 分批解析 → 分批 embedding → 分批写入 (避免全部载入内存)
+        batch_chunks = []
+        batch_texts = []
+        batch_seq = 0  # 批次序号
+
+        def _process_batch():
+            """对当前累积的 chunks 做 embedding + 写入，然后清空"""
+            nonlocal total_chunks, batch_seq
+            if not batch_chunks:
+                return
+
+            n = len(batch_chunks)
+            batch_seq += 1
+
+            # embedding
+            job.update("embedding",
+                       f"向量化 第{batch_seq}批 ({n} chunks，累计 {total_chunks + n})",
+                       batch=batch_seq, chunks_this_batch=n, chunks_total=total_chunks + n)
+            for i in range(0, len(batch_texts), BATCH):
+                if job.is_cancelled():
+                    return
+                sub = batch_texts[i:i+BATCH]
+                vectors = embed_code_batch(sub)
+                for j, v in enumerate(vectors):
+                    batch_chunks[i+j]["vector"] = v
+
+            # 写入
+            job.update("storing",
+                       f"写入 第{batch_seq}批 ({n} chunks)",
+                       batch=batch_seq, stored=total_chunks + n)
+            insert_chunks(batch_chunks)
+
+            # 记录写入的 chunk ids (用于取消回滚)
+            for c in batch_chunks:
+                job._written_chunk_ids.append(c["id"])
+
+            total_chunks += n
+            batch_chunks.clear()
+            batch_texts.clear()
 
         for file_idx, f in enumerate(files_to_parse):
             if job.is_cancelled():
                 return
 
-            # 每 10% 报告一次进度 (最少每500个文件)
-            report_interval = max(500, total // 10)
-            if file_idx % report_interval == 0 or file_idx == total - 1:
+            # 每 500 个文件报告一次进度
+            if file_idx % 500 == 0 or file_idx == total - 1:
                 pct = round((file_idx + 1) / total * 100)
                 job.update("parsing",
                            f"解析中: {file_idx + 1}/{total} ({pct}%)",
@@ -212,53 +248,20 @@ def _run_scan(job: ScanJob):
             for c in chunks:
                 if c["metadata"].get("parse_warning"):
                     parse_warnings += 1
-                all_batch_texts.append(c["content"])
-                all_batch_chunks.append(c)
-                total_chunks += 1
+                batch_texts.append(c["content"])
+                batch_chunks.append(c)
+
+            # 每累积 ~2500 chunks 处理一批 (约 500 文件 * 5 chunks/file)
+            if len(batch_chunks) >= FILE_BATCH * 5:  # ~500 files * ~5 chunks each
+                _process_batch()
+
+        # 处理最后一批
+        _process_batch()
 
         job.update("parse_done", f"解析完成: {total_chunks} chunks (⚠️ {parse_warnings} 降级)",
                    total_chunks=total_chunks, parse_warnings=parse_warnings)
-
-        if not all_batch_chunks:
-            job.update("done", "无可索引内容")
-            _finalize_scan(job, files, effective_type)
-            return
-
-        # 5. 分批 embedding + 写入
-        for batch_start in range(0, len(all_batch_chunks), WRITE_BATCH):
-            if job.is_cancelled():
-                return
-
-            batch_end = min(batch_start + WRITE_BATCH, len(all_batch_chunks))
-            batch_chunks = all_batch_chunks[batch_start:batch_end]
-            batch_texts = all_batch_texts[batch_start:batch_end]
-
-            # embedding
-            pct = round(batch_end / len(all_batch_chunks) * 100)
-            job.update("embedding",
-                       f"向量化 {batch_end}/{len(all_batch_chunks)} ({pct}%)",
-                       embedded=batch_end, total=len(all_batch_chunks), pct=pct)
-            for i in range(0, len(batch_texts), BATCH):
-                if job.is_cancelled():
-                    return
-                sub = batch_texts[i:i+BATCH]
-                vectors = embed_batch(sub)
-                for j, v in enumerate(vectors):
-                    batch_chunks[i+j]["vector"] = v
-
-            # 写入
-            pct = round(batch_end / len(all_batch_chunks) * 100)
-            job.update("storing",
-                       f"写入 {batch_end}/{len(all_batch_chunks)} ({pct}%)",
-                       stored=batch_end, total=len(all_batch_chunks), pct=pct)
-            insert_chunks(batch_chunks)
-
-            # 记录写入的 chunk ids (用于取消回滚)
-            for c in batch_chunks:
-                job._written_chunk_ids.append(c["id"])
-
-        job.update("store_done", f"写入完成: {len(all_batch_chunks)} chunks")
-        log.info(f"[scan:{job.scan_id}] 写入完成: {len(all_batch_chunks)} chunks")
+        job.update("store_done", f"写入完成: {total_chunks} chunks")
+        log.info(f"[scan:{job.scan_id}] 写入完成: {total_chunks} chunks")
 
         # 6. 更新配置
         _finalize_scan(job, files, effective_type)
