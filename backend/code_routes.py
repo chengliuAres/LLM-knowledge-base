@@ -179,10 +179,11 @@ def _run_scan(job: ScanJob):
 
             # 每 50 个文件报告一次进度
             if file_idx % 50 == 0 or file_idx == total - 1:
+                pct = round((file_idx + 1) / total * 100)
                 job.update("parsing",
                            f"解析中: {file_idx + 1}/{total} ({f['rel_path']})",
                            file_idx=file_idx + 1, total_files=total,
-                           chunks_so_far=total_chunks)
+                           chunks_so_far=total_chunks, pct=pct)
 
             try:
                 with open(f["path"], "rb") as fh:
@@ -222,9 +223,10 @@ def _run_scan(job: ScanJob):
             batch_texts = all_batch_texts[batch_start:batch_end]
 
             # embedding
+            pct = round(batch_end / len(all_batch_chunks) * 100)
             job.update("embedding",
-                       f"向量化 {batch_start + 1}-{batch_end}/{len(all_batch_chunks)}...",
-                       embedded=batch_start, total=len(all_batch_chunks))
+                       f"向量化 {batch_end}/{len(all_batch_chunks)} ({pct}%)",
+                       embedded=batch_end, total=len(all_batch_chunks), pct=pct)
             for i in range(0, len(batch_texts), BATCH):
                 if job.is_cancelled():
                     return
@@ -234,9 +236,10 @@ def _run_scan(job: ScanJob):
                     batch_chunks[i+j]["vector"] = v
 
             # 写入
+            pct = round(batch_end / len(all_batch_chunks) * 100)
             job.update("storing",
-                       f"写入 {batch_start + 1}-{batch_end}/{len(all_batch_chunks)}...",
-                       stored=batch_start, total=len(all_batch_chunks))
+                       f"写入 {batch_end}/{len(all_batch_chunks)} ({pct}%)",
+                       stored=batch_end, total=len(all_batch_chunks), pct=pct)
             insert_chunks(batch_chunks)
 
             # 记录写入的 chunk ids (用于取消回滚)

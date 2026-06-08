@@ -1869,13 +1869,41 @@
             const icon = stepIcons[s.step] || '⚙️';
             const isLast = i === steps.length - 1;
             const bg = s.step === 'error' ? 'bg-red-50' : s.step === 'cancelled' ? 'bg-yellow-50' : isLast ? 'bg-blue-50' : '';
+
+            // 进度条
+            let progressBar = '';
+            if (s.pct !== undefined && s.pct < 100) {
+                progressBar = `
+                    <div class="mt-1.5 w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                        <div class="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style="width: ${s.pct}%"></div>
+                    </div>
+                    <div class="flex justify-between text-[10px] text-gray-400 mt-0.5">
+                        <span>${s.detail}</span>
+                        <span class="font-mono">${s.pct}%</span>
+                    </div>`;
+            }
+
+            // 次要信息 (已完成步骤不显示)
+            let subInfo = '';
+            if (isLast && !progressBar) {
+                if (s.file_idx) {
+                    subInfo = `<div class="text-[10px] text-gray-400 mt-0.5">文件 ${s.file_idx}/${s.total_files} · ${s.chunks_so_far || 0} chunks</div>`;
+                } else if (s.total_chunks) {
+                    subInfo = `<div class="text-[10px] text-gray-400 mt-0.5">${s.total_chunks} chunks</div>`;
+                } else if (s.embedded) {
+                    subInfo = `<div class="text-[10px] text-gray-400 mt-0.5">${s.embedded}/${s.total} chunks</div>`;
+                } else if (s.stored) {
+                    subInfo = `<div class="text-[10px] text-gray-400 mt-0.5">${s.stored}/${s.total} chunks</div>`;
+                }
+            }
+
             return `<div class="border rounded p-2 ${bg}">
                 <div class="flex items-start gap-1.5">
                     <span class="shrink-0">${icon}</span>
                     <div class="flex-1 min-w-0">
-                        <div class="text-xs ${isLast ? 'font-medium text-gray-800' : 'text-gray-600'}">${s.detail || s.step}</div>
-                        ${s.file_idx ? `<div class="text-[10px] text-gray-400 mt-0.5">文件 ${s.file_idx}/${s.total_files} · ${s.chunks_so_far || 0} chunks</div>` : ''}
-                        ${s.total_chunks ? `<div class="text-[10px] text-gray-400 mt-0.5">${s.total_chunks} chunks</div>` : ''}
+                        ${progressBar ? '' : `<div class="text-xs ${isLast ? 'font-medium text-gray-800' : 'text-gray-600'}">${s.detail || s.step}</div>`}
+                        ${progressBar}
+                        ${subInfo}
                     </div>
                 </div>
             </div>`;
