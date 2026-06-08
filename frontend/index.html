@@ -1626,8 +1626,19 @@
                 <!-- 扫描新仓库 -->
                 <div class="bg-white rounded-lg shadow-sm border p-4">
                     <h3 class="font-semibold text-gray-700 text-sm mb-3">📂 扫描新仓库</h3>
-                    <input id="codeRepoName" type="text" placeholder="仓库名 (如 ghmail)" class="w-full border rounded px-2 py-1.5 text-sm mb-2">
-                    <input id="codeRepoPath" type="text" placeholder="本地路径" class="w-full border rounded px-2 py-1.5 text-sm mb-2">
+                    <input id="codeRepoName" type="text" placeholder="仓库名 (自动填入)" class="w-full border rounded px-2 py-1.5 text-sm mb-2">
+                    <div class="flex gap-1 mb-2">
+                        <input id="codeRepoPath" type="text" placeholder="粘贴路径或点下方快捷入口" class="flex-1 border rounded px-2 py-1.5 text-sm" oninput="codeAutoFillName(this.value)">
+                        <button onclick="codeBrowseFolder()" class="shrink-0 bg-gray-100 hover:bg-gray-200 border rounded px-2 py-1.5 text-sm" title="浏览目录">📂</button>
+                    </div>
+                    <!-- 快捷路径 -->
+                    <div id="codeQuickPaths" class="flex flex-wrap gap-1 mb-2">
+                        <button onclick="codeQuickPath('/Users/admin/Desktop')" class="text-[10px] bg-gray-50 border rounded px-1.5 py-0.5 hover:bg-blue-50">Desktop</button>
+                        <button onclick="codeQuickPath('/Users/admin/Documents')" class="text-[10px] bg-gray-50 border rounded px-1.5 py-0.5 hover:bg-blue-50">Documents</button>
+                        <button onclick="codeQuickPath('/Users/admin/MailProject')" class="text-[10px] bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 hover:bg-blue-100 font-medium">MailProject</button>
+                    </div>
+                    <!-- 目录浏览器 -->
+                    <div id="codeFolderBrowser" class="hidden border rounded max-h-48 overflow-y-auto bg-gray-50 text-sm mb-2"></div>
                     <select id="codeProjectType" class="w-full border rounded px-2 py-1.5 text-sm mb-2">
                         <option value="ios">iOS</option>
                         <option value="macos">macOS</option>
@@ -1773,26 +1784,104 @@
 
         const btn = document.getElementById('codeScanBtn');
         btn.disabled = true;
-        btn.textContent = '⏳ 扫描中...';
+        btn.innerHTML = '⏳ 扫描中... <span onclick="event.stopPropagation(); codeCancelScan()" class="text-red-300 hover:text-red-100 cursor-pointer ml-1">✕ 终止</span>';
 
         try {
+            // 1. 启动异步扫描
             const res = await fetch('/api/code/scan', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({repo_name: name, repo_path: path, project_type: type, languages: []}),
             });
             const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || '扫描失败');
+            if (!res.ok) throw new Error(data.detail || '扫描启动失败');
 
-            codeRenderSteps(data.steps || []);
-            alert(`扫描完成: ${data.total_chunks} chunks`);
-            codeLoadRepos();
+            window._currentScanId = data.scan_id;
+
+            // 2. SSE 订阅实时进度
+            const stepsEl = document.getElementById('codeSteps');
+            stepsEl.innerHTML = '';
+
+            const evtSource = new EventSource(`/api/code/scan/${data.scan_id}/sse`);
+            let steps = [];
+
+            evtSource.addEventListener('progress', (e) => {
+                const entry = JSON.parse(e.data);
+                steps.push(entry);
+                codeRenderScanProgress(steps);
+            });
+
+            evtSource.addEventListener('done', (e) => {
+                const result = JSON.parse(e.data);
+                evtSource.close();
+                window._currentScanId = null;
+                btn.disabled = false;
+                btn.innerHTML = '🔍 开始扫描';
+
+                if (result.status === 'completed') {
+                    codeLoadRepos();
+                } else if (result.status === 'cancelled') {
+                    codeRenderScanProgress([...steps, {step: 'cancelled', detail: '已终止并清理'}]);
+                } else if (result.status === 'error') {
+                    alert('扫描出错: ' + result.error);
+                }
+            });
+
+            evtSource.addEventListener('heartbeat', () => {});
+
+            evtSource.onerror = () => {
+                evtSource.close();
+                btn.disabled = false;
+                btn.innerHTML = '🔍 开始扫描';
+                window._currentScanId = null;
+            };
+
         } catch (e) {
             alert('扫描失败: ' + e.message);
-        } finally {
             btn.disabled = false;
-            btn.textContent = '🔍 开始扫描';
+            btn.innerHTML = '🔍 开始扫描';
         }
+    }
+
+    async function codeCancelScan() {
+        const scanId = window._currentScanId;
+        if (!scanId) return;
+        if (!confirm('确认终止扫描？已写入的数据将被清理。')) return;
+        try {
+            await fetch(`/api/code/scan/${scanId}/cancel`, {method: 'POST'});
+        } catch (e) {
+            console.error('Cancel failed:', e);
+        }
+    }
+
+    function codeRenderScanProgress(steps) {
+        const el = document.getElementById('codeSteps');
+        const stepIcons = {
+            scan_files: '📂', scan_files_done: '✅',
+            compute_diff: '🔄', compute_diff_done: '✅',
+            delete_removed: '🗑️', delete_removed_done: '✅',
+            parsing: '📝', parse_done: '✅',
+            embedding: '🧠', storing: '💾', store_done: '✅',
+            done: '🎉', cancelled: '🛑', error: '❌', cleanup_done: '🧹',
+        };
+
+        el.innerHTML = steps.map((s, i) => {
+            const icon = stepIcons[s.step] || '⚙️';
+            const isLast = i === steps.length - 1;
+            const bg = s.step === 'error' ? 'bg-red-50' : s.step === 'cancelled' ? 'bg-yellow-50' : isLast ? 'bg-blue-50' : '';
+            return `<div class="border rounded p-2 ${bg}">
+                <div class="flex items-start gap-1.5">
+                    <span class="shrink-0">${icon}</span>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-xs ${isLast ? 'font-medium text-gray-800' : 'text-gray-600'}">${s.detail || s.step}</div>
+                        ${s.file_idx ? `<div class="text-[10px] text-gray-400 mt-0.5">文件 ${s.file_idx}/${s.total_files} · ${s.chunks_so_far || 0} chunks</div>` : ''}
+                        ${s.total_chunks ? `<div class="text-[10px] text-gray-400 mt-0.5">${s.total_chunks} chunks</div>` : ''}
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+
+        el.scrollTop = el.scrollHeight;
     }
 
     async function codeRefreshRepo(name) {
@@ -1956,14 +2045,79 @@
 
     // 初始化
     if (document.getElementById('tab-codekb')) {
-        const origSwitchTab = window.switchTab || switchTab;
-        const _origSwitch = typeof switchTab === 'function' ? switchTab : null;
-        // 扩展 switchTab 以加载代码知识库数据
         const origFunc = switchTab;
         switchTab = function(tab) {
             origFunc(tab);
             if (tab === 'codekb') codeLoadRepos();
         };
+    }
+
+    function codeAutoFillName(pathVal) {
+        const nameEl = document.getElementById('codeRepoName');
+        if (nameEl.value.trim()) return;
+        const parts = pathVal.replace(/\/+$/, '').split('/');
+        const folder = parts[parts.length - 1];
+        if (folder && folder !== '.' && folder.length < 50) {
+            nameEl.value = folder;
+        }
+    }
+
+    function codeQuickPath(path) {
+        // 快捷路径：填入路径 + 打开目录浏览器
+        document.getElementById('codeRepoPath').value = path;
+        codeLoadDirs(path);
+    }
+
+    async function codeBrowseFolder() {
+        const browser = document.getElementById('codeFolderBrowser');
+        if (!browser.classList.contains('hidden')) {
+            browser.classList.add('hidden');
+            return;
+        }
+        const currentPath = document.getElementById('codeRepoPath').value.trim() || '/Users/admin/MailProject';
+        await codeLoadDirs(currentPath);
+    }
+
+    async function codeLoadDirs(dirPath) {
+        const browser = document.getElementById('codeFolderBrowser');
+        browser.classList.remove('hidden');
+        browser.innerHTML = '<div class="p-2 text-center text-gray-400 text-xs">加载中...</div>';
+        try {
+            const res = await fetch(`/api/code/browse?path=${encodeURIComponent(dirPath)}`);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail);
+
+            let html = `<div class="sticky top-0 bg-gray-100 px-2 py-1.5 border-b flex items-center gap-2">
+                <span class="text-xs text-gray-600 truncate flex-1 font-mono">${data.current}</span>
+                ${data.parent ? `<button onclick="codeLoadDirs('${data.parent.replace(/'/g, "\\'")}')" class="text-xs bg-white border rounded px-2 py-0.5 hover:bg-gray-50 shrink-0">⬆ 上级</button>` : ''}
+            </div>`;
+
+            if (data.dirs.length === 0) {
+                html += '<div class="p-3 text-center text-gray-400 text-xs">无子目录</div>';
+            } else {
+                for (const d of data.dirs) {
+                    const escaped = d.path.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                    const escapedName = d.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                    html += `<div class="flex items-center hover:bg-blue-50 cursor-pointer px-2 py-1.5 border-b border-gray-100" 
+                                onclick="codeSelectDir('${escaped}', '${escapedName}')">
+                                <span class="mr-2">📁</span>
+                                <span class="truncate">${d.name}</span>
+                                <button onclick="event.stopPropagation(); codeLoadDirs('${escaped}')" 
+                                    class="ml-auto text-[10px] text-gray-400 hover:text-blue-600 shrink-0">进入 →</button>
+                             </div>`;
+                }
+            }
+
+            browser.innerHTML = html;
+        } catch (e) {
+            browser.innerHTML = `<div class="p-2 text-red-500 text-xs">⚠ ${e.message}</div>`;
+        }
+    }
+
+    function codeSelectDir(fullPath, name) {
+        document.getElementById('codeRepoPath').value = fullPath;
+        document.getElementById('codeRepoName').value = name;
+        document.getElementById('codeFolderBrowser').classList.add('hidden');
     }
     </script>
 </body>

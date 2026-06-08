@@ -45,167 +45,379 @@ class ChatRequest(BaseModel):
     stream: bool = False
 
 
-# ── POST /api/code/scan ──────────────────────────────────────────
+# ── 扫描任务管理 ─────────────────────────────────────────────────
 
-@router.post("/scan")
-async def scan_repo_endpoint(req: ScanRequest):
-    """增量扫描目录, 建立代码索引"""
+import uuid
+import threading
+import asyncio
+import json as _json
+from typing import Dict, List
+
+class ScanJob:
+    """单个扫描任务的状态管理"""
+
+    def __init__(self, scan_id: str, req: ScanRequest):
+        self.scan_id = scan_id
+        self.req = req
+        self.status = "pending"  # pending / running / completed / cancelled / error
+        self.cancel_event = threading.Event()
+        self.progress: List[dict] = []  # 步骤列表 (SSE 推送用)
+        self.current_step = ""
+        self.current_detail = ""
+        self.stats = {}
+        self.error = ""
+        self._written_chunk_ids: List[str] = []  # 本次写入的 chunk id (用于回滚)
+        self._old_mtimes: dict = {}  # 扫描前的 mtime 快照 (用于回滚)
+        self._subscribers: List[asyncio.Queue] = []  # SSE 订阅者
+
+    def update(self, step: str, detail: str = "", **extra):
+        """更新进度并通知所有 SSE 订阅者"""
+        self.current_step = step
+        self.current_detail = detail
+        entry = {"step": step, "detail": detail, **extra}
+        self.progress.append(entry)
+        # 通知 SSE 订阅者
+        for q in list(self._subscribers):
+            try:
+                q.put_nowait(entry)
+            except asyncio.QueueFull:
+                pass
+
+    def is_cancelled(self) -> bool:
+        return self.cancel_event.is_set()
+
+    def subscribe(self) -> asyncio.Queue:
+        q: asyncio.Queue = asyncio.Queue(maxsize=100)
+        self._subscribers.append(q)
+        return q
+
+    def unsubscribe(self, q: asyncio.Queue):
+        if q in self._subscribers:
+            self._subscribers.remove(q)
+
+
+# scan_id → ScanJob
+_scan_jobs: Dict[str, ScanJob] = {}
+
+
+# ── 后台扫描线程 ─────────────────────────────────────────────────
+
+def _run_scan(job: ScanJob):
+    """在后台线程中执行扫描"""
+    req = job.req
     repo_path = os.path.abspath(req.repo_path)
-    if not os.path.isdir(repo_path):
-        raise HTTPException(400, detail=f"目录不存在: {repo_path}")
+    job.status = "running"
 
-    # 并发锁
-    if not try_acquire_scan_lock(req.repo_name):
-        raise HTTPException(409, detail=f"仓库 {req.repo_name} 正在扫描中")
-
-    tracker = StepTracker(operation_type="code_scan")
     try:
-        # 1. 扫描文件
-        step = tracker.add_step("scan_files", "扫描目录文件")
-        step.start()
+        # 1. 扫描目录
+        job.update("scan_files", "扫描目录文件...")
+        if job.is_cancelled():
+            return
         files = scan_directory(
             repo_path, req.project_type,
             req.languages or None,
             set(req.skip_dirs) if req.skip_dirs else None,
             set(req.skip_extensions) if req.skip_extensions else None,
         )
-        step.complete({"total_files": len(files)})
+        job.update("scan_files_done", f"发现 {len(files)} 个文件", total_files=len(files))
 
         # 2. 计算增量
-        step = tracker.add_step("compute_diff", "计算增量差异")
-        step.start()
+        job.update("compute_diff", "计算增量差异 (比对 mtime)...")
+        if job.is_cancelled():
+            return
         incremental = compute_incremental(req.repo_name, files)
-        step.complete({
-            "added": len(incremental["added"]),
-            "updated": len(incremental["updated"]),
-            "deleted": len(incremental["deleted"]),
-            "skipped": len(incremental["skipped"]),
-        })
+        added_n = len(incremental["added"])
+        updated_n = len(incremental["updated"])
+        deleted_n = len(incremental["deleted"])
+        skipped_n = len(incremental["skipped"])
+        job.update("compute_diff_done",
+                   f"新增 {added_n} / 更新 {updated_n} / 删除 {deleted_n} / 跳过 {skipped_n}",
+                   added=added_n, updated=updated_n, deleted=deleted_n, skipped=skipped_n)
 
-        # 3. 处理删除的文件
-        if incremental["deleted"]:
-            step = tracker.add_step("delete_removed", "删除已移除文件的索引")
-            step.start()
-            for rel_path in incremental["deleted"]:
+        # 保存 mtime 快照 (用于取消时回滚)
+        job._old_mtimes = get_file_mtimes(req.repo_name)
+
+        # 3. 删除已移除文件
+        if deleted_n > 0:
+            job.update("delete_removed", f"删除 {deleted_n} 个已移除文件的索引...")
+            for i, rel_path in enumerate(incremental["deleted"]):
+                if job.is_cancelled():
+                    return
                 delete_by_file(req.repo_name, rel_path)
-            step.complete({"deleted_files": len(incremental["deleted"])})
+            job.update("delete_removed_done", f"已删除 {deleted_n} 个文件索引")
 
-        # 4. 解析新增/修改的文件
+        # 4. 解析 + embedding + 写入 (分批)
         files_to_parse = incremental["added"] + incremental["updated"]
-        all_chunks = []
+        if not files_to_parse:
+            job.update("done", "无新增/更新文件，扫描完成")
+            _finalize_scan(job, files)
+            return
+
+        from code_parser import chunk_code, pair_header_impl
+        from embedder import embed_batch
+
+        # 删除更新文件的旧 chunks
+        for f in incremental["updated"]:
+            if job.is_cancelled():
+                return
+            delete_by_file(req.repo_name, f["rel_path"])
+
+        pairs = pair_header_impl(files_to_parse)
+        total = len(files_to_parse)
         parse_warnings = 0
+        total_chunks = 0
+        BATCH = 64  # 每批 embedding 数量
+        WRITE_BATCH = 200  # 每批写入数量
 
-        if files_to_parse:
-            step = tracker.add_step("parse_files", f"解析 {len(files_to_parse)} 个文件")
-            step.start()
+        # 收集所有 chunks
+        all_batch_chunks = []
+        all_batch_texts = []
 
-            # 删除更新文件的旧 chunks
-            for f in incremental["updated"]:
-                delete_by_file(req.repo_name, f["rel_path"])
+        for file_idx, f in enumerate(files_to_parse):
+            if job.is_cancelled():
+                return
 
-            # 逐文件解析
-            from code_parser import chunk_code, pair_header_impl
-            from embedder import embed_batch
+            # 每 50 个文件报告一次进度
+            if file_idx % 50 == 0 or file_idx == total - 1:
+                job.update("parsing",
+                           f"解析中: {file_idx + 1}/{total} ({f['rel_path']})",
+                           file_idx=file_idx + 1, total_files=total,
+                           chunks_so_far=total_chunks)
 
-            pairs = pair_header_impl(files_to_parse)
-            batch_texts = []
-            batch_chunks = []
+            try:
+                with open(f["path"], "rb") as fh:
+                    code_bytes = fh.read()
+            except (OSError, PermissionError):
+                continue
+            if not code_bytes.strip():
+                continue
 
-            for f in files_to_parse:
-                try:
-                    with open(f["path"], "rb") as fh:
-                        code_bytes = fh.read()
-                except (OSError, PermissionError):
-                    continue
-                if not code_bytes.strip():
-                    continue
+            paired = pairs.get(f["rel_path"], "")
+            chunks = chunk_code(
+                code_bytes, f["language"], f["rel_path"],
+                req.repo_name, req.project_type, repo_path, paired or "",
+            )
+            for c in chunks:
+                if c["metadata"].get("parse_warning"):
+                    parse_warnings += 1
+                all_batch_texts.append(c["content"])
+                all_batch_chunks.append(c)
+                total_chunks += 1
 
-                paired = pairs.get(f["rel_path"], "")
-                chunks = chunk_code(
-                    code_bytes, f["language"], f["rel_path"],
-                    req.repo_name, req.project_type, repo_path, paired or "",
-                )
+        job.update("parse_done", f"解析完成: {total_chunks} chunks (⚠️ {parse_warnings} 降级)",
+                   total_chunks=total_chunks, parse_warnings=parse_warnings)
 
-                for c in chunks:
-                    if c["metadata"].get("parse_warning"):
-                        parse_warnings += 1
-                    batch_texts.append(c["content"])
-                    batch_chunks.append(c)
+        if not all_batch_chunks:
+            job.update("done", "无可索引内容")
+            _finalize_scan(job, files)
+            return
 
-            step.complete({"parsed_chunks": len(batch_chunks), "parse_warnings": parse_warnings})
+        # 5. 分批 embedding + 写入
+        for batch_start in range(0, len(all_batch_chunks), WRITE_BATCH):
+            if job.is_cancelled():
+                return
 
-            # 5. 批量 embedding
-            if batch_chunks:
-                step = tracker.add_step("embedding", f"向量化 {len(batch_chunks)} 个 chunks")
-                step.start()
+            batch_end = min(batch_start + WRITE_BATCH, len(all_batch_chunks))
+            batch_chunks = all_batch_chunks[batch_start:batch_end]
+            batch_texts = all_batch_texts[batch_start:batch_end]
 
-                # 分批 embedding (每批 64)
-                BATCH = 64
-                for i in range(0, len(batch_texts), BATCH):
-                    batch_t = batch_texts[i:i+BATCH]
-                    vectors = embed_batch(batch_t)
-                    for j, v in enumerate(vectors):
-                        batch_chunks[i+j]["vector"] = v
+            # embedding
+            job.update("embedding",
+                       f"向量化 {batch_start + 1}-{batch_end}/{len(all_batch_chunks)}...",
+                       embedded=batch_start, total=len(all_batch_chunks))
+            for i in range(0, len(batch_texts), BATCH):
+                if job.is_cancelled():
+                    return
+                sub = batch_texts[i:i+BATCH]
+                vectors = embed_batch(sub)
+                for j, v in enumerate(vectors):
+                    batch_chunks[i+j]["vector"] = v
 
-                step.complete({"embedded": len(batch_chunks)})
+            # 写入
+            job.update("storing",
+                       f"写入 {batch_start + 1}-{batch_end}/{len(all_batch_chunks)}...",
+                       stored=batch_start, total=len(all_batch_chunks))
+            insert_chunks(batch_chunks)
 
-                # 6. 双写入库
-                step = tracker.add_step("store", "写入 LanceDB + SQLite")
-                step.start()
-                insert_chunks(batch_chunks)
-                step.complete({"stored": len(batch_chunks)})
+            # 记录写入的 chunk ids (用于取消回滚)
+            for c in batch_chunks:
+                job._written_chunk_ids.append(c["id"])
 
-                all_chunks = batch_chunks
+        job.update("store_done", f"写入完成: {len(all_batch_chunks)} chunks")
 
-        # 7. 更新配置
-        step = tracker.add_step("update_config", "更新仓库配置")
-        step.start()
+        # 6. 更新配置
+        _finalize_scan(job, files)
 
-        # 从 DB 获取真实统计 (避免增量扫描虚增)
-        from code_db import get_stats as get_code_stats
-        db_stats = get_code_stats()
-        total_stats = {
-            "total_files": len(files),
-            "total_chunks": db_stats.get("total_chunks", 0),
-            "by_language": db_stats.get("by_language", {}),
-            "by_chunk_type": db_stats.get("by_chunk_type", {}),
-        }
-
-        register_repo(req.repo_name, repo_path, req.project_type, req.languages, total_stats)
-
-        # 更新 mtime 记录
-        new_mtimes = {f["rel_path"]: f["mtime"] for f in files}
-        update_file_mtimes(req.repo_name, new_mtimes)
-
-        step.complete()
-
-        tracker.flush()
-
-        return {
-            "status": "ok",
-            "repo_name": req.repo_name,
-            "total_files": len(files),
-            "total_chunks": len(all_chunks),
-            "by_language": total_stats["by_language"],
-            "by_chunk_type": total_stats["by_chunk_type"],
-            "parse_warnings": parse_warnings,
-            "incremental": {
-                "added": len(incremental["added"]),
-                "updated": len(incremental["updated"]),
-                "deleted": len(incremental["deleted"]),
-                "skipped": len(incremental["skipped"]),
-            },
-            "elapsed_seconds": round(tracker.get_total_duration() / 1000, 2),
-            "steps": tracker.to_list(),
-        }
-
-    except HTTPException:
-        raise
     except Exception as e:
-        tracker.flush(status="error")
-        raise HTTPException(500, detail=str(e))
+        job.status = "error"
+        job.error = str(e)
+        job.update("error", f"扫描失败: {e}")
     finally:
         release_scan_lock(req.repo_name)
+
+
+def _finalize_scan(job: ScanJob, files: list):
+    """扫描完成后更新配置"""
+    req = job.req
+    from code_db import get_stats as get_code_stats
+    db_stats = get_code_stats()
+    register_repo(req.repo_name, os.path.abspath(req.repo_path),
+                  req.project_type, req.languages, db_stats)
+    new_mtimes = {f["rel_path"]: f["mtime"] for f in files}
+    update_file_mtimes(req.repo_name, new_mtimes)
+    job.stats = db_stats
+    job.status = "completed"
+    job.update("done", f"扫描完成 ✅ — {db_stats.get('total_chunks', 0)} chunks")
+
+
+def _cleanup_scan(job: ScanJob):
+    """取消后清理已写入的数据"""
+    req = job.req
+    # 删除本次写入的 chunks
+    if job._written_chunk_ids:
+        try:
+            table = get_table_from_db()
+            for cid in job._written_chunk_ids:
+                try:
+                    table.delete(f"id = '{cid}'")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # SQLite 也清理
+        from code_db import get_sqlite
+        conn = get_sqlite()
+        for cid in job._written_chunk_ids:
+            conn.execute("DELETE FROM code_fts WHERE chunk_id = ?", (cid,))
+            conn.execute("DELETE FROM code_meta WHERE chunk_id = ?", (cid,))
+        conn.commit()
+
+    # 恢复 mtime 到扫描前
+    if job._old_mtimes:
+        update_file_mtimes(req.repo_name, job._old_mtimes)
+
+    # 如果是全新仓库 (之前没数据), 删除仓库配置
+    if not job._old_mtimes:
+        remove_repo(req.repo_name)
+
+
+def get_table_from_db():
+    from code_db import get_table
+    return get_table()
+
+
+# ── POST /api/code/scan (启动后台任务) ───────────────────────────
+
+@router.post("/scan")
+async def scan_repo_endpoint(req: ScanRequest):
+    """启动异步扫描, 返回 scan_id"""
+    repo_path = os.path.abspath(req.repo_path)
+    if not os.path.isdir(repo_path):
+        raise HTTPException(400, detail=f"目录不存在: {repo_path}")
+
+    if not try_acquire_scan_lock(req.repo_name):
+        raise HTTPException(409, detail=f"仓库 {req.repo_name} 正在扫描中")
+
+    scan_id = str(uuid.uuid4())[:8]
+    job = ScanJob(scan_id, req)
+    _scan_jobs[scan_id] = job
+
+    # 启动后台线程
+    thread = threading.Thread(target=_run_scan, args=(job,), daemon=True)
+    thread.start()
+
+    return {
+        "status": "started",
+        "scan_id": scan_id,
+        "repo_name": req.repo_name,
+        "message": "扫描已启动，通过 SSE 获取实时进度",
+    }
+
+
+# ── GET /api/code/scan/{scan_id}/sse (进度 SSE) ─────────────────
+
+@router.get("/scan/{scan_id}/sse")
+async def scan_progress_sse(scan_id: str):
+    """SSE 实时推送扫描进度"""
+    if scan_id not in _scan_jobs:
+        raise HTTPException(404, detail="扫描任务不存在")
+
+    job = _scan_jobs[scan_id]
+
+    async def event_generator():
+        # 先发送已有进度
+        for entry in job.progress:
+            yield {"event": "progress", "data": _json.dumps(entry, ensure_ascii=False)}
+
+        # 如果已完成/取消/出错，发送最终状态
+        if job.status in ("completed", "cancelled", "error"):
+            yield {"event": "done", "data": _json.dumps({
+                "status": job.status,
+                "error": job.error,
+                "stats": job.stats,
+            }, ensure_ascii=False)}
+            return
+
+        # 订阅后续更新
+        queue = job.subscribe()
+        try:
+            while True:
+                try:
+                    entry = await asyncio.wait_for(queue.get(), timeout=60)
+                    yield {"event": "progress", "data": _json.dumps(entry, ensure_ascii=False)}
+
+                    if job.status in ("completed", "cancelled", "error"):
+                        yield {"event": "done", "data": _json.dumps({
+                            "status": job.status,
+                            "error": job.error,
+                            "stats": job.stats,
+                        }, ensure_ascii=False)}
+                        return
+                except asyncio.TimeoutError:
+                    # 心跳
+                    yield {"event": "heartbeat", "data": ""}
+                    if job.status in ("completed", "cancelled", "error"):
+                        break
+        finally:
+            job.unsubscribe(queue)
+
+    from sse_starlette.sse import EventSourceResponse
+    return EventSourceResponse(event_generator())
+
+
+# ── POST /api/code/scan/{scan_id}/cancel (取消扫描) ──────────────
+
+@router.post("/scan/{scan_id}/cancel")
+async def cancel_scan(scan_id: str):
+    """取消扫描 + 清理已写入数据"""
+    if scan_id not in _scan_jobs:
+        raise HTTPException(404, detail="扫描任务不存在")
+
+    job = _scan_jobs[scan_id]
+    if job.status not in ("pending", "running"):
+        raise HTTPException(400, detail=f"任务状态为 {job.status}，无法取消")
+
+    # 设置取消标志
+    job.cancel_event.set()
+    job.status = "cancelled"
+    job.update("cancelled", "用户取消扫描，正在清理...")
+
+    # 等待后台线程结束 (最多 5 秒)
+    import time
+    for _ in range(50):
+        if not any(t.name.startswith("Thread") and t.is_alive() for t in threading.enumerate() if t != threading.current_thread()):
+            break
+        time.sleep(0.1)
+
+    # 清理已写入数据
+    _cleanup_scan(job)
+    job.update("cleanup_done", f"已清理 {len(job._written_chunk_ids)} 个 chunks")
+
+    return {
+        "status": "cancelled",
+        "scan_id": scan_id,
+        "cleaned_chunks": len(job._written_chunk_ids),
+    }
 
 
 # ── POST /api/code/search ────────────────────────────────────────
