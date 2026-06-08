@@ -159,7 +159,7 @@ def _run_scan(job: ScanJob):
             _finalize_scan(job, files)
             return
 
-        log.info(f"[scan:{job.scan_id}] 开始解析 {len(files_to_parse)} 个文件")
+        log.info(f"[scan:{job.scan_id}] 解析 {len(files_to_parse)} 个文件...")
         from code_parser import chunk_code, pair_header_impl
         from embedder import embed_batch
 
@@ -173,10 +173,9 @@ def _run_scan(job: ScanJob):
         total = len(files_to_parse)
         parse_warnings = 0
         total_chunks = 0
-        BATCH = 64  # 每批 embedding 数量
-        WRITE_BATCH = 200  # 每批写入数量
+        BATCH = 64
+        WRITE_BATCH = 200
 
-        # 收集所有 chunks
         all_batch_chunks = []
         all_batch_texts = []
 
@@ -184,11 +183,12 @@ def _run_scan(job: ScanJob):
             if job.is_cancelled():
                 return
 
-            # 每 50 个文件报告一次进度
-            if file_idx % 50 == 0 or file_idx == total - 1:
+            # 每 10% 报告一次进度 (最少每500个文件)
+            report_interval = max(500, total // 10)
+            if file_idx % report_interval == 0 or file_idx == total - 1:
                 pct = round((file_idx + 1) / total * 100)
                 job.update("parsing",
-                           f"解析中: {file_idx + 1}/{total} ({f['rel_path']})",
+                           f"解析中: {file_idx + 1}/{total} ({pct}%)",
                            file_idx=file_idx + 1, total_files=total,
                            chunks_so_far=total_chunks, pct=pct)
 
@@ -299,30 +299,32 @@ def _finalize_scan(job: ScanJob, files: list):
 def _cleanup_scan(job: ScanJob):
     """取消后清理已写入的数据"""
     req = job.req
-    # 删除本次写入的 chunks
-    if job._written_chunk_ids:
-        try:
-            table = get_table_from_db()
-            for cid in job._written_chunk_ids:
-                try:
-                    table.delete(f"id = '{cid}'")
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        # SQLite 也清理
-        from code_db import get_sqlite
-        conn = get_sqlite()
-        for cid in job._written_chunk_ids:
-            conn.execute("DELETE FROM code_fts WHERE chunk_id = ?", (cid,))
-            conn.execute("DELETE FROM code_meta WHERE chunk_id = ?", (cid,))
-        conn.commit()
+    if not job._written_chunk_ids:
+        return
 
-    # 恢复 mtime 到扫描前
+    # SQLite 批量删除
+    from code_db import get_sqlite
+    conn = get_sqlite()
+    conn.executemany("DELETE FROM code_fts WHERE chunk_id = ?",
+                     [(cid,) for cid in job._written_chunk_ids])
+    conn.executemany("DELETE FROM code_meta WHERE chunk_id = ?",
+                     [(cid,) for cid in job._written_chunk_ids])
+    conn.commit()
+
+    # LanceDB 批量删除 (用 OR 条件一次删完)
+    try:
+        table = get_table_from_db()
+        # 分批删 (每批 500)
+        for i in range(0, len(job._written_chunk_ids), 500):
+            batch = job._written_chunk_ids[i:i+500]
+            conditions = " OR ".join(f"id = '{cid}'" for cid in batch)
+            table.delete(conditions)
+    except Exception:
+        pass
+
+    # 恢复 mtime
     if job._old_mtimes:
         update_file_mtimes(req.repo_name, job._old_mtimes)
-
-    # 如果是全新仓库 (之前没数据), 删除仓库配置
     if not job._old_mtimes:
         remove_repo(req.repo_name)
 
