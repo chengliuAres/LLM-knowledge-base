@@ -6,7 +6,7 @@
 
 ## POST /api/code/scan
 
-扫描目录, 建立代码索引。
+增量扫描目录, 建立代码索引 (基于 mtime 跳过未变化文件)。
 
 **请求:**
 ```json
@@ -39,6 +39,12 @@
     "by_language": {"objc": 2800, "swift": 600},
     "by_chunk_type": {"interface": 900, "implementation": 1200, "class": 300, "function": 500, "file": 500},
     "elapsed_seconds": 12.5,
+    "incremental": {
+        "added": 120,
+        "updated": 5,
+        "deleted": 2,
+        "skipped": 693
+    },
     "steps": [...]
 }
 ```
@@ -46,6 +52,7 @@
 **错误:**
 - 400: 目录不存在或无权限
 - 409: 同仓库正在扫描中
+- 422: 参数校验失败 (如 repo_name 为空)
 
 ---
 
@@ -100,6 +107,7 @@
             "line_end": 138,
             "score": 0.87,
             "match_reason": "关键词匹配: markRead",
+            "parent_symbol_id": "ghmail_GHList/GHMailListCellModel.m_GHMailListCellModel__0",
             "metadata": {...}
         }
     ],
@@ -266,14 +274,18 @@ data: [DONE]
 
 ### code_file_context
 
-获取某个文件的完整上下文。
+获取某个文件的上下文 (可指定行号范围)。
 
 **输入:**
 ```json
 {
     "repo": "ghmail",
-    "file_path": "GHList/GHMailListCellModel.m"
+    "file_path": "GHList/GHMailListCellModel.m",
+    "line_start": 100,   // 可选, 起始行
+    "line_end": 150      // 可选, 结束行
 }
 ```
 
-**输出:** 文件完整内容 + 元数据 (最大 5000 字符, 超出截断)。
+**输出:**
+- 无行号参数: 文件完整内容 + 元数据 (最大 5000 字符, 超出截断)
+- 有行号参数: 指定范围 + 前后各 10 行上下文 + 元数据

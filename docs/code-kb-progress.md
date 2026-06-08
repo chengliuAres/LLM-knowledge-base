@@ -27,12 +27,13 @@
 | 1.4 | 实现混合分块策略 | code_parser.py | ⬜ | 短文件整文件/长文件按函数/超长二次切 |
 | 1.5 | 实现 .h/.m 配对逻辑 | code_parser.py | ⬜ | paired_file 互相引用 |
 | 1.6 | 实现降级策略 | code_parser.py | ⬜ | AST 失败降级为整文件 chunk |
+| 1.7 | 实现增量扫描逻辑 | code_config.py | ⬜ | 基于 mtime 对比, 跳过未变化文件 |
 
 ### M2: 存储层
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|------|------|------|------|
-| 2.1 | 实现 LanceDB code_chunks 表 | code_db.py | ⬜ | 独立数据库目录 |
+| 2.1 | 实现 LanceDB code_chunks 表 | code_db.py | ⬜ | 独立数据库目录, id 含 parent_class |
 | 2.2 | 实现 SQLite FTS5 code_fts 表 | code_db.py | ⬜ | 全文检索 |
 | 2.3 | 实现双写逻辑 | code_db.py | ⬜ | insert 同时写两个库 |
 | 2.4 | 实现双删逻辑 | code_db.py | ⬜ | delete 同时删两个库 |
@@ -46,7 +47,7 @@
 | 3.1 | 实现向量搜索 | code_search.py | ⬜ | LanceDB cosine |
 | 3.2 | 实现关键词搜索 | code_search.py | ⬜ | SQLite FTS5 MATCH |
 | 3.3 | 实现结构化过滤 | code_search.py | ⬜ | repo/language/type/path/symbol |
-| 3.4 | 实现 RRF 融合排序 | code_search.py | ⬜ | k=60 |
+| 3.4 | 实现 RRF 融合排序 | code_search.py | ⬜ | k=60, 每路各自 top_k, 融合后取 top_k |
 | 3.5 | 实现搜索结果 match_reason | code_search.py | ⬜ | 标注匹配原因 |
 
 ### M4: REST API
@@ -71,7 +72,7 @@
 | 5.3 | 实现 code_search tool | code_mcp.py | ⬜ | |
 | 5.4 | 实现 code_chat tool | code_mcp.py | ⬜ | |
 | 5.5 | 实现 code_list_repos tool | code_mcp.py | ⬜ | |
-| 5.6 | 实现 code_file_context tool | code_mcp.py | ⬜ | 5000 字符限制 |
+| 5.6 | 实现 code_file_context tool | code_mcp.py | ⬜ | 支持 line_start/line_end, 5000 字符限制 |
 | 5.7 | 实现 token 认证 | code_mcp.py | ⬜ | MCP_AUTH_TOKEN |
 | 5.8 | 注册 MCP 端点到 main.py | main.py | ⬜ | /mcp/sse |
 
@@ -102,3 +103,4 @@
 | 日期 | 内容 |
 |------|------|
 | 2026-06-05 | 设计完成, 创建进度文档 |
+| 2026-06-08 | 设计细化: metadata 语义/RRF 细节/scan 增量/chunk id/MCP 参数/top_k 限流/parent_symbol_id |

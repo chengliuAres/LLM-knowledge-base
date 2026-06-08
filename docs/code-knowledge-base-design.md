@@ -117,7 +117,7 @@ parser = get_parser('cpp')     # C++ / ObjC++ (.mm)
 
 ```python
 {
-    "id": "{repo}_{filepath}_{symbol}_{index}",
+    "id": "{repo}_{filepath}_{parent_class}_{symbol}_{index}",  // parent_class 无值时用 "_"
     "repo_name": "ghmail",
     "project_type": "ios",
     "file_path": "GHList/GHMailListCellModel.h",
@@ -130,29 +130,22 @@ parser = get_parser('cpp')     # C++ / ObjC++ (.mm)
     "line_end": 142,
     "vector": [float; 384],
     "metadata": {
-        # === 通用 ===
+        // === 通用 (所有语言必填) ===
         "parent_class": "NSObject",
         "file_size_bytes": 6522,
         "repo_path": "/Users/admin/MailProject/ghmail",
 
-        # === ObjC 专属 ===
+        // === 按语言选填 (只填当前语言相关字段, 不相关的不写) ===
+        // ObjC: protocols, categories, is_header, paired_file
+        // Java/Kotlin: package, is_interface, is_abstract, annotations
+        // Dart: is_mixin, is_extension, widgets_used
+        // 通用: imports_count, imports
+
+        // 示例 (ObjC):
         "protocols": ["GHMailListCellModelDelegate"],
         "categories": [],
         "is_header": true,
         "paired_file": "GHMailListCellModel.m",
-
-        # === Java/Kotlin 专属 ===
-        "package": "com.netease.mail.biz_core",
-        "is_interface": false,
-        "is_abstract": false,
-        "annotations": ["@Override", "@JvmStatic"],
-
-        # === Dart 专属 ===
-        "is_mixin": false,
-        "is_extension": false,
-        "widgets_used": ["StatelessWidget", "BlocProvider"],
-
-        # === 依赖信息 ===
         "imports_count": 19,
         "imports": ["Foundation.h", "GHEntity/MailAbstract2.h"]
     }
@@ -200,6 +193,22 @@ metadata["parse_warning"] = "tree-sitter parse failed, fallback to file chunk"
 
 ---
 
+### 3.9 增量扫描策略
+
+scan 接口基于文件 `mtime` 实现增量更新:
+
+1. 扫描时遍历目录, 获取每个文件的 `os.path.getmtime()`
+2. 与 `code_repos.json` 中记录的上次 mtime 对比:
+   - **新增文件** (不在记录中): 全量解析 + 写入
+   - **已修改文件** (mtime 变化): 删除旧 chunks + 重新解析写入
+   - **未变化文件** (mtime 一致): 跳过
+   - **已删除文件** (在记录中但不存在): 删除对应 chunks
+3. 扫描完成后更新 `code_repos.json` 中的 mtime 记录
+
+> refresh 接口忽略 mtime, 直接清空该仓库全量重建。
+
+---
+
 ## 4. 存储层设计
 
 ### 4.1 双存储架构
@@ -231,7 +240,7 @@ metadata["parse_warning"] = "tree-sitter parse failed, fallback to file chunk"
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| id | str | 主键 `{repo}_{file}_{symbol}_{idx}` |
+| id | str | 主键 `{repo}_{file}_{parent_class}_{symbol}_{idx}` (parent_class 无值时用 `_`) |
 | repo_name | str | 仓库名 |
 | project_type | str | ios/android/flutter/rn/kmp/macos |
 | file_path | str | 相对路径 |
@@ -314,11 +323,18 @@ data/
 
 公式: `score = 1/(k + rank)`, k=60
 
-两路结果按 chunk_id 去重, 同一 chunk 在两路都命中则分数相加, 最终按融合分数排序。
+详细规则:
+- **向量搜索 rank**: 按 LanceDB cosine distance 升序排列后的序号 (1-based), distance 越小 rank 越小
+- **关键词搜索 rank**: 按 SQLite FTS5 BM25 分数降序排列后的序号 (1-based)
+- **top_k 语义**: 每路各自返回 top_k 个结果, 融合后取最终 top_k 个
+- **融合逻辑**: 同一 chunk_id 两路都命中则 RRF 分数相加; 仅单路命中的 chunk 保留该路分数
+- **最终排序**: 按融合分数降序, 取前 top_k 个返回
 
 ### 5.3 结构化过滤
 
 所有搜索类型都支持以下过滤参数:
+
+**top_k 限制**: 1 ≤ top_k ≤ 100, 超出范围返回 400。
 
 | 参数 | 类型 | 说明 | 示例 |
 |------|------|------|------|
@@ -345,6 +361,7 @@ data/
     "line_end": 138,
     "score": 0.87,
     "match_reason": "关键词匹配: markRead",
+    "parent_symbol_id": "ghmail_GHList/GHMailListCellModel.m_GHMailListCellModel__0",  // 所在类/协议的 chunk id, 用于前端跳转
     "metadata": {
         "parent_class": "GHMailListCellModel",
         "paired_file": "GHMailListCellModel.h"
@@ -371,13 +388,13 @@ data/
 
 | 方法 | 路径 | 说明 | 需要 LLM |
 |------|------|------|----------|
-| POST | /api/code/scan | 扫描目录, 建立索引 | ❌ |
+| POST | /api/code/scan | 增量扫描目录 (基于 mtime 跳过未变化文件) | ❌ |
 | POST | /api/code/search | 混合搜索 (向量+关键词) | ❌ |
 | POST | /api/code/chat | RAG 代码问答 | ✅ |
 | GET | /api/code/repos | 已索引的仓库列表 | ❌ |
 | GET | /api/code/stats | 索引统计信息 | ❌ |
 | DELETE | /api/code/repos/{name} | 删除仓库索引 | ❌ |
-| POST | /api/code/repos/{name}/refresh | 全量刷新仓库 (幂等) | ❌ |
+| POST | /api/code/repos/{name}/refresh | 全量刷新仓库 (先清空旧数据再全量重建, 幂等) | ❌ |
 
 ### 6.2 接口详情
 
@@ -414,7 +431,7 @@ MCP server 内嵌到 FastAPI 服务, 使用 HTTP+SSE 传输。
 | code_search | 搜索代码库 | query, repo?, language?, symbol?, mode?, top_k? | 搜索结果列表 |
 | code_chat | RAG 代码问答 | question, repo?, language? | LLM 回答 + 引用 |
 | code_list_repos | 列出已索引仓库 | 无 | 仓库列表 |
-| code_file_context | 获取文件完整上下文 | repo, file_path | 文件内容 (最大 5000 字符) |
+| code_file_context | 获取文件上下文 | repo, file_path, line_start?, line_end? | 文件内容 (无行号参数时返回完整文件, 最大 5000 字符; 有行号参数时返回指定范围 + 前后各 10 行上下文) |
 
 ### 7.3 认证
 
@@ -522,7 +539,8 @@ mcp:
 
 ### 9.2 边界情况
 
-- 重复扫描同一仓库: 先清空该仓库的旧数据, 再全量写入 (幂等)
+- 重复扫描同一仓库 (scan): 增量模式, 基于 mtime 跳过未变化文件, 新增/修改的文件重新解析写入
+- 全量刷新 (refresh): 先清空该仓库的旧数据, 再全量重建 (幂等)
 - 仓库路径变更: 视为新仓库, 旧数据保留 (用户手动删除旧的)
 - 空仓库/无可索引文件: 返回 200 但 chunks=0, 提示无内容
 - .h/.m 配对缺失: 单独存在也正常索引, paired_file 字段为空
