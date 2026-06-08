@@ -474,7 +474,7 @@ def chunk_code(
         for i, chunk_text in enumerate(chunks):
             # 简单计算行号
             prefix = '\n'.join(code_text.split('\n')[:0])  # 不精确但够用
-            chunk_id = f"{repo_name}_{rel_path}__{i}"
+            chunk_id = f"{repo_name}_{rel_path}___{i}"
             result.append({
                 'id': chunk_id,
                 'repo_name': repo_name,
