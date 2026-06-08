@@ -248,7 +248,7 @@ def _run_scan(job: ScanJob):
             for c in chunks:
                 if c["metadata"].get("parse_warning"):
                     parse_warnings += 1
-                batch_texts.append(c["content"])
+                batch_texts.append(c.get("display_text", c["content"]))
                 batch_chunks.append(c)
 
             # 每累积 ~2500 chunks 处理一批 (约 500 文件 * 5 chunks/file)

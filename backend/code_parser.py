@@ -603,6 +603,30 @@ def _sub_chunk(text: str, size: int = SUB_CHUNK_SIZE) -> list[str]:
     return chunks if chunks else [text[:size]]
 
 
+def _make_display_text(
+    rel_path: str,
+    chunk_type: str,
+    symbol_name: str,
+    line_start: int,
+    line_end: int,
+    content: str,
+    language: str,
+) -> str:
+    """构造带上下文头部的 display_text，用于 embedding 提升检索质量"""
+    if language in ('python', 'ruby', 'shell', 'yaml', 'json'):
+        prefix = '#'
+    else:
+        prefix = '//'
+
+    if chunk_type == 'file':
+        type_info = 'file'
+    else:
+        type_info = f"{chunk_type}: {symbol_name}"
+
+    header = f"{prefix} File: {rel_path} | {type_info} | Lines {line_start}-{line_end}"
+    return f"{header}\n{content}"
+
+
 def chunk_code(
     code_bytes: bytes,
     language: str,
@@ -640,6 +664,7 @@ def chunk_code(
     # ── 短文件: 整文件一个 chunk (用字符数判断) ──
     if len(code_text) < 500:
         chunk_id = f"{repo_name}_{rel_path}___0"  # 统一格式: parent=_ , symbol=空
+        line_count = code_text.count('\n') + 1
         return [{
             'id': chunk_id,
             'repo_name': repo_name,
@@ -650,8 +675,9 @@ def chunk_code(
             'chunk_type': 'file',
             'symbol_name': file_name,
             'content': code_text,
+            'display_text': _make_display_text(rel_path, 'file', file_name, 1, line_count, code_text, language),
             'line_start': 1,
-            'line_end': code_text.count('\n') + 1,
+            'line_end': line_count,
             'metadata': {**base_meta},
         }]
 
@@ -672,6 +698,7 @@ def chunk_code(
             # 简单计算行号
             prefix = '\n'.join(code_text.split('\n')[:0])  # 不精确但够用
             chunk_id = f"{repo_name}_{rel_path}___{i}"
+            line_count = code_text.count('\n') + 1
             result.append({
                 'id': chunk_id,
                 'repo_name': repo_name,
@@ -682,8 +709,9 @@ def chunk_code(
                 'chunk_type': 'file',
                 'symbol_name': file_name,
                 'content': chunk_text,
+                'display_text': _make_display_text(rel_path, 'file', file_name, 1, line_count, chunk_text, language),
                 'line_start': 1,  # 降级模式下不精确追踪行号
-                'line_end': code_text.count('\n') + 1,
+                'line_end': line_count,
                 'metadata': {**base_meta},
             })
         return result
@@ -729,6 +757,7 @@ def chunk_code(
                     'chunk_type': sym['chunk_type'],
                     'symbol_name': sym['name'],
                     'content': sub_text,
+                    'display_text': _make_display_text(rel_path, sym['chunk_type'], sym['name'], sym['line_start'], sym['line_end'], sub_text, language),
                     'line_start': sym['line_start'],
                     'line_end': sym['line_end'],
                     'metadata': {**sym_meta},
@@ -744,6 +773,7 @@ def chunk_code(
                 'chunk_type': sym['chunk_type'],
                 'symbol_name': sym['name'],
                 'content': chunk_content,
+                'display_text': _make_display_text(rel_path, sym['chunk_type'], sym['name'], sym['line_start'], sym['line_end'], chunk_content, language),
                 'line_start': sym['line_start'],
                 'line_end': sym['line_end'],
                 'metadata': {**sym_meta},
