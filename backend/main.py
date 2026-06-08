@@ -21,8 +21,12 @@ from step_tracker import StepTracker
 import metrics_db
 import lancedb_inspect
 from match_reasons import annotate_results
+from code_routes import router as code_router
 
 app = FastAPI(title="文档知识库", version="2.0.0")
+
+# 注册代码知识库路由
+app.include_router(code_router)
 
 # 上传目录
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads")
