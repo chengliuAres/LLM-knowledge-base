@@ -281,7 +281,7 @@ def _get_node_name(node, code_bytes: bytes, language: str) -> str:
 def _extract_imports(node, code_bytes: bytes, language: str) -> list[str]:
     """提取 import/include 语句"""
     imports = []
-    if language == 'objc':
+    if language in ('objc', 'cpp'):
         for child in node.children:
             if child.type == 'preproc_include':
                 text = code_bytes[child.start_byte:child.end_byte].decode('utf-8', errors='replace')
@@ -445,9 +445,9 @@ def chunk_code(
     if paired_file:
         base_meta['paired_file'] = paired_file
 
-    # ── 短文件: 整文件一个 chunk ──
-    if file_size < 500:
-        chunk_id = f"{repo_name}_{rel_path}__0"
+    # ── 短文件: 整文件一个 chunk (用字符数判断) ──
+    if len(code_text) < 500:
+        chunk_id = f"{repo_name}_{rel_path}___0"  # 统一格式: parent=_ , symbol=空
         return [{
             'id': chunk_id,
             'repo_name': repo_name,

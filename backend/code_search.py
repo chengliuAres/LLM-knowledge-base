@@ -149,39 +149,46 @@ def search_code(
 
     else:
         # hybrid: 两路并行 + RRF
-        if tracker:
-            step_vec = tracker.add_step("vector_search", "向量搜索 (LanceDB cosine)")
-            step_vec.start()
-
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         from embedder import embed_text
-        query_vec = embed_text(query)
-
-        vector_results = search_vector(
-            query_vector=query_vec,
-            top_k=top_k,
-            repo_name=repo_name,
-            language=language,
-            chunk_type=chunk_type,
-            file_path=file_path,
-        )
 
         if tracker:
-            step_vec.complete({"results_count": len(vector_results)})
-            step_kw = tracker.add_step("keyword_search", "关键词搜索 (SQLite FTS5)")
-            step_kw.start()
+            step_hybrid = tracker.add_step("hybrid_search", "混合搜索 (向量+关键词 并行)")
+            step_hybrid.start()
 
-        keyword_results = search_keyword(
-            query=query,
-            top_k=top_k,
-            repo_name=repo_name,
-            language=language,
-            chunk_type=chunk_type,
-            file_path=file_path,
-            symbol_name=symbol_name,
-        )
+        def _vector_search():
+            query_vec = embed_text(query)
+            return search_vector(
+                query_vector=query_vec, top_k=top_k,
+                repo_name=repo_name, language=language,
+                chunk_type=chunk_type, file_path=file_path,
+            )
+
+        def _keyword_search():
+            return search_keyword(
+                query=query, top_k=top_k,
+                repo_name=repo_name, language=language,
+                chunk_type=chunk_type, file_path=file_path,
+                symbol_name=symbol_name,
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = {
+                executor.submit(_vector_search): "vector",
+                executor.submit(_keyword_search): "keyword",
+            }
+            results_map = {}
+            for future in as_completed(futures):
+                results_map[futures[future]] = future.result()
+
+        vector_results = results_map.get("vector", [])
+        keyword_results = results_map.get("keyword", [])
 
         if tracker:
-            step_kw.complete({"results_count": len(keyword_results)})
+            step_hybrid.complete({
+                "vector_hits": len(vector_results),
+                "keyword_hits": len(keyword_results),
+            })
             step_rrf = tracker.add_step("rrf_fusion", "RRF 融合排序")
             step_rrf.start()
 
@@ -206,12 +213,15 @@ def search_code(
                 "merged": len(results),
             })
 
-    # 后处理: 结构化过滤 + match_reason
-    if project_type:
-        results = [r for r in results if r.get("project_type") == project_type]
-
+    # match_reason
     for r in results:
         r["match_reason"] = _generate_match_reason(r, query, mode)
+        # parent_symbol_id: 所在类/协议的 chunk id
+        parent_class = r.get("metadata", {}).get("parent_class", "")
+        if parent_class:
+            r["parent_symbol_id"] = f"{r['repo_name']}_{r['file_path']}___{parent_class}_0"
+        else:
+            r["parent_symbol_id"] = None
 
     return {
         "query": query,

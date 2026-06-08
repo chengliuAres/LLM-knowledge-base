@@ -155,7 +155,7 @@ def compute_incremental(
         rel = f['rel_path']
         if rel not in old_mtimes:
             added.append(f)
-        elif old_mtimes[rel] != f['mtime']:
+        elif abs(old_mtimes[rel] - f['mtime']) > 0.01:  # 容忍 10ms 精度误差
             updated.append(f)
         else:
             skipped.append(f)

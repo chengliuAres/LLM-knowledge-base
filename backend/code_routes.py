@@ -161,18 +161,15 @@ async def scan_repo_endpoint(req: ScanRequest):
         step = tracker.add_step("update_config", "更新仓库配置")
         step.start()
 
-        # 合并统计
+        # 从 DB 获取真实统计 (避免增量扫描虚增)
+        from code_db import get_stats as get_code_stats
+        db_stats = get_code_stats()
         total_stats = {
             "total_files": len(files),
-            "total_chunks": len(all_chunks) + (get_repo_config(req.repo_name) or {}).get("total_chunks", 0),
-            "by_language": {},
-            "by_chunk_type": {},
+            "total_chunks": db_stats.get("total_chunks", 0),
+            "by_language": db_stats.get("by_language", {}),
+            "by_chunk_type": db_stats.get("by_chunk_type", {}),
         }
-        for c in all_chunks:
-            lang = c["language"]
-            total_stats["by_language"][lang] = total_stats["by_language"].get(lang, 0) + 1
-            ct = c["chunk_type"]
-            total_stats["by_chunk_type"][ct] = total_stats["by_chunk_type"].get(ct, 0) + 1
 
         register_repo(req.repo_name, repo_path, req.project_type, req.languages, total_stats)
 
@@ -393,3 +390,33 @@ async def refresh_repo_endpoint(name: str):
 
     # 直接调用 scan endpoint 逻辑 (不经过 HTTP)
     return await scan_repo_endpoint(req)
+
+
+# ── GET /api/code/browse ─────────────────────────────────────────
+
+@router.get("/browse")
+async def browse_directory(path: str = "/"):
+    """列出指定路径下的子目录 (用于前端文件夹浏览)"""
+    path = os.path.abspath(path)
+
+    if not os.path.isdir(path):
+        raise HTTPException(400, detail=f"目录不存在: {path}")
+
+    try:
+        entries = sorted(os.listdir(path))
+    except PermissionError:
+        raise HTTPException(403, detail=f"无权限访问: {path}")
+
+    dirs = []
+    for name in entries:
+        if name.startswith('.'):
+            continue
+        full = os.path.join(path, name)
+        if os.path.isdir(full):
+            dirs.append({"name": name, "path": full})
+
+    return {
+        "current": path,
+        "parent": os.path.dirname(path) if path != "/" else None,
+        "dirs": dirs,
+    }

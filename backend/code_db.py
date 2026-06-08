@@ -63,14 +63,25 @@ def get_table():
 
 # ── SQLite FTS5 ──────────────────────────────────────────────────
 
+_sqlite_conn = None
+
+
 def get_sqlite() -> sqlite3.Connection:
-    """获取 SQLite 连接 (含 FTS5 表)"""
+    """获取 SQLite 连接 (单例, 含 FTS5 表)"""
+    global _sqlite_conn
+    if _sqlite_conn is not None:
+        try:
+            _sqlite_conn.execute("SELECT 1")
+            return _sqlite_conn
+        except sqlite3.ProgrammingError:
+            _sqlite_conn = None
+
     os.makedirs(os.path.dirname(SQLITE_PATH), exist_ok=True)
-    conn = sqlite3.connect(SQLITE_PATH)
-    conn.execute("PRAGMA journal_mode=WAL")
+    _sqlite_conn = sqlite3.connect(SQLITE_PATH)
+    _sqlite_conn.execute("PRAGMA journal_mode=WAL")
 
     # FTS5 虚拟表
-    conn.execute("""
+    _sqlite_conn.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS code_fts USING fts5(
             chunk_id,
             content,
@@ -83,7 +94,7 @@ def get_sqlite() -> sqlite3.Connection:
     """)
 
     # 元数据表 (用于结构化过滤和统计)
-    conn.execute("""
+    _sqlite_conn.execute("""
         CREATE TABLE IF NOT EXISTS code_meta (
             chunk_id TEXT PRIMARY KEY,
             repo_name TEXT,
@@ -97,11 +108,16 @@ def get_sqlite() -> sqlite3.Connection:
             line_end INTEGER
         )
     """)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_repo ON code_meta(repo_name)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_lang ON code_meta(language)")
+    _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_repo ON code_meta(repo_name)")
+    _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_lang ON code_meta(language)")
 
-    conn.commit()
-    return conn
+    _sqlite_conn.commit()
+    return _sqlite_conn
+
+
+def _esc(val: str) -> str:
+    """转义 LanceDB where 子句中的单引号 (防注入)"""
+    return val.replace("'", "''")
 
 
 # ── 距离转换 ─────────────────────────────────────────────────────
@@ -199,22 +215,16 @@ def delete_by_repo(repo_name: str) -> int:
         df = table.to_pandas()
         count = len(df[df['repo_name'] == repo_name])
         if count > 0:
-            table.delete(f"repo_name = '{repo_name}'")
+            table.delete(f"repo_name = '{_esc(repo_name)}'")
     except Exception:
         count = 0
 
     # ── SQLite 删除 ──
     conn = get_sqlite()
+    # 先删 FTS (依赖 code_meta 的子查询), 再删 meta
+    conn.execute("DELETE FROM code_fts WHERE repo_name = ?", (repo_name,))
     cur = conn.execute("DELETE FROM code_meta WHERE repo_name = ?", (repo_name,))
     meta_deleted = cur.rowcount
-    # FTS5 不支持 WHERE 删除, 需要重建或用辅助表
-    # 简单方案: 删除匹配的 FTS 行
-    conn.execute(
-        "DELETE FROM code_fts WHERE chunk_id IN (SELECT chunk_id FROM code_meta WHERE repo_name = ?)",
-        (repo_name,)
-    )
-    # 上面已经删了 meta, 这里用 chunk_id 前缀匹配
-    conn.execute("DELETE FROM code_fts WHERE repo_name = ?", (repo_name,))
     conn.commit()
 
     return max(count, meta_deleted)
@@ -228,7 +238,7 @@ def delete_by_file(repo_name: str, file_path: str) -> int:
         mask = (df['repo_name'] == repo_name) & (df['file_path'] == file_path)
         count = len(df[mask])
         if count > 0:
-            table.delete(f"repo_name = '{repo_name}' AND file_path = '{file_path}'")
+            table.delete(f"repo_name = '{_esc(repo_name)}' AND file_path = '{_esc(file_path)}'")
     except Exception:
         count = 0
 
@@ -258,13 +268,13 @@ def search_vector(
     # 构造过滤条件
     filters = []
     if repo_name:
-        filters.append(f"repo_name = '{repo_name}'")
+        filters.append(f"repo_name = '{_esc(repo_name)}'")
     if language:
-        filters.append(f"language = '{language}'")
+        filters.append(f"language = '{_esc(language)}'")
     if chunk_type:
-        filters.append(f"chunk_type = '{chunk_type}'")
+        filters.append(f"chunk_type = '{_esc(chunk_type)}'")
     if file_path:
-        filters.append(f"file_path LIKE '{file_path}%'")
+        filters.append(f"file_path LIKE '{_esc(file_path)}%'")
 
     if filters:
         query = query.where(" AND ".join(filters))
@@ -329,6 +339,7 @@ def search_keyword(
         SELECT fts.chunk_id, fts.content, fts.symbol_name, fts.file_path, fts.language, fts.repo_name,
                rank
         FROM code_fts fts
+        JOIN code_meta meta ON fts.chunk_id = meta.chunk_id
         WHERE code_fts MATCH ?
     """
     params: list = [fts_query]
@@ -339,6 +350,12 @@ def search_keyword(
     if language:
         sql += " AND fts.language = ?"
         params.append(language)
+    if chunk_type:
+        sql += " AND meta.chunk_type = ?"
+        params.append(chunk_type)
+    if file_path:
+        sql += " AND fts.file_path LIKE ?"
+        params.append(f"{file_path}%")
 
     sql += " ORDER BY rank LIMIT ?"
     params.append(top_k)
@@ -396,23 +413,26 @@ def search_keyword(
 # ── 统计 ─────────────────────────────────────────────────────────
 
 def get_stats() -> dict:
-    """获取代码知识库统计"""
-    table = get_table()
+    """获取代码知识库统计 (用 SQLite 避免全量加载 LanceDB)"""
+    conn = get_sqlite()
     try:
-        df = table.to_pandas()
+        total = conn.execute("SELECT COUNT(*) FROM code_meta").fetchone()[0]
+        if total == 0:
+            return {"total_chunks": 0, "total_repos": 0, "by_language": {}, "by_chunk_type": {}, "by_repo": {}}
+
+        by_lang = dict(conn.execute("SELECT language, COUNT(*) FROM code_meta GROUP BY language").fetchall())
+        by_type = dict(conn.execute("SELECT chunk_type, COUNT(*) FROM code_meta GROUP BY chunk_type").fetchall())
+        by_repo = dict(conn.execute("SELECT repo_name, COUNT(*) FROM code_meta GROUP BY repo_name").fetchall())
+
+        return {
+            "total_chunks": total,
+            "total_repos": len(by_repo),
+            "by_language": by_lang,
+            "by_chunk_type": by_type,
+            "by_repo": by_repo,
+        }
     except Exception:
         return {"total_chunks": 0, "total_repos": 0, "by_language": {}, "by_chunk_type": {}, "by_repo": {}}
-
-    if df.empty:
-        return {"total_chunks": 0, "total_repos": 0, "by_language": {}, "by_chunk_type": {}, "by_repo": {}}
-
-    return {
-        "total_chunks": len(df),
-        "total_repos": df["repo_name"].nunique(),
-        "by_language": df.groupby("language").size().to_dict(),
-        "by_chunk_type": df.groupby("chunk_type").size().to_dict(),
-        "by_repo": df.groupby("repo_name").size().to_dict(),
-    }
 
 
 def get_chunks_by_file(repo_name: str, file_path: str) -> list[dict]:
