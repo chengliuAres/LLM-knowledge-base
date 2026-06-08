@@ -265,8 +265,21 @@ def _run_scan(job: ScanJob):
         job.update("error", f"扫描失败: {e}")
         log.exception(f"[scan:{job.scan_id}] 扫描异常: {e}")
     finally:
+        # 如果被取消，清理已写入数据
+        if job.is_cancelled():
+            _cleanup_scan(job)
+            job.update("cleanup_done", f"已清理 {len(job._written_chunk_ids)} 个 chunks")
+            log.info(f"[scan:{job.scan_id}] 取消清理完成: {len(job._written_chunk_ids)} chunks")
+
         release_scan_lock(req.repo_name)
         log.info(f"[scan:{job.scan_id}] 锁已释放, 最终状态={job.status}")
+
+        # 通知所有 SSE 订阅者任务结束
+        for q in list(job._subscribers):
+            try:
+                q.put_nowait({"_final": True, "status": job.status})
+            except asyncio.QueueFull:
+                pass
 
 
 def _finalize_scan(job: ScanJob, files: list):
@@ -365,6 +378,8 @@ async def scan_progress_sse(scan_id: str):
     async def event_generator():
         # 先发送已有进度
         for entry in job.progress:
+            if entry.get("_final"):
+                continue
             yield {"event": "progress", "data": _json.dumps(entry, ensure_ascii=False)}
 
         # 如果已完成/取消/出错，发送最终状态
@@ -382,6 +397,16 @@ async def scan_progress_sse(scan_id: str):
             while True:
                 try:
                     entry = await asyncio.wait_for(queue.get(), timeout=60)
+
+                    # 后台线程发来的最终信号
+                    if entry.get("_final"):
+                        yield {"event": "done", "data": _json.dumps({
+                            "status": entry.get("status", job.status),
+                            "error": job.error,
+                            "stats": job.stats,
+                        }, ensure_ascii=False)}
+                        return
+
                     yield {"event": "progress", "data": _json.dumps(entry, ensure_ascii=False)}
 
                     if job.status in ("completed", "cancelled", "error"):
@@ -407,7 +432,7 @@ async def scan_progress_sse(scan_id: str):
 
 @router.post("/scan/{scan_id}/cancel")
 async def cancel_scan(scan_id: str):
-    """取消扫描 + 清理已写入数据"""
+    """取消扫描 (清理由后台线程的 finally 块执行)"""
     if scan_id not in _scan_jobs:
         raise HTTPException(404, detail="扫描任务不存在")
 
@@ -416,28 +441,8 @@ async def cancel_scan(scan_id: str):
         raise HTTPException(400, detail=f"任务状态为 {job.status}，无法取消")
 
     log.info(f"[scan:{scan_id}] 用户取消扫描")
-    # 设置取消标志
     job.cancel_event.set()
-    job.status = "cancelled"
-    job.update("cancelled", "用户取消扫描，正在清理...")
-
-    # 等待后台线程结束 (最多 5 秒)
-    import time
-    for _ in range(50):
-        if not any(t.name.startswith("Thread") and t.is_alive() for t in threading.enumerate() if t != threading.current_thread()):
-            break
-        time.sleep(0.1)
-
-    log.info(f"[scan:{scan_id}] 开始清理, 已写入 {len(job._written_chunk_ids)} chunks")
-    _cleanup_scan(job)
-    job.update("cleanup_done", f"已清理 {len(job._written_chunk_ids)} 个 chunks")
-    log.info(f"[scan:{scan_id}] 清理完成")
-
-    return {
-        "status": "cancelled",
-        "scan_id": scan_id,
-        "cleaned_chunks": len(job._written_chunk_ids),
-    }
+    return {"status": "cancelling", "scan_id": scan_id}
 
 
 # ── POST /api/code/search ────────────────────────────────────────

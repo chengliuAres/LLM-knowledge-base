@@ -1648,7 +1648,16 @@
                         <option value="kmp">KMP</option>
                         <option value="generic">通用</option>
                     </select>
-                    <button onclick="codeScanRepo()" id="codeScanBtn" class="w-full bg-blue-600 text-white rounded py-1.5 text-sm hover:bg-blue-700">🔍 开始扫描</button>
+                    <button onclick="codeScanRepo()" id="codeScanBtn" class="w-full bg-blue-600 text-white rounded py-1.5 text-sm hover:bg-blue-700 transition-colors">🔍 开始扫描</button>
+                    <div id="codeScanProgress" class="hidden mt-2">
+                        <div class="flex items-center gap-2 mb-1">
+                            <div class="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
+                                <div id="codeScanPctBar" class="bg-blue-500 h-2 rounded-full transition-all duration-300" style="width:0%"></div>
+                            </div>
+                            <span id="codeScanPctText" class="text-xs text-gray-500 font-mono shrink-0">0%</span>
+                        </div>
+                        <button onclick="codeCancelScan()" class="w-full bg-red-50 text-red-600 border border-red-200 rounded py-1 text-xs hover:bg-red-100 transition-colors">✕ 终止扫描</button>
+                    </div>
                 </div>
 
                 <!-- 仓库列表 -->
@@ -1783,11 +1792,19 @@
         if (!name || !path) return alert('请填写仓库名和路径');
 
         const btn = document.getElementById('codeScanBtn');
+        const progressEl = document.getElementById('codeScanProgress');
+        const pctBar = document.getElementById('codeScanPctBar');
+        const pctText = document.getElementById('codeScanPctText');
+
         btn.disabled = true;
-        btn.innerHTML = '⏳ 扫描中... <span onclick="event.stopPropagation(); codeCancelScan()" class="text-red-300 hover:text-red-100 cursor-pointer ml-1">✕ 终止</span>';
+        btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+        btn.classList.add('bg-gray-400', 'cursor-not-allowed');
+        btn.textContent = '⏳ 扫描中...';
+        progressEl.classList.remove('hidden');
+        pctBar.style.width = '0%';
+        pctText.textContent = '0%';
 
         try {
-            // 1. 启动异步扫描
             const res = await fetch('/api/code/scan', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -1798,7 +1815,7 @@
 
             window._currentScanId = data.scan_id;
 
-            // 2. SSE 订阅实时进度
+            // SSE 订阅实时进度
             const stepsEl = document.getElementById('codeSteps');
             stepsEl.innerHTML = '';
 
@@ -1809,44 +1826,64 @@
                 const entry = JSON.parse(e.data);
                 steps.push(entry);
                 codeRenderScanProgress(steps);
+                // 更新顶部进度条
+                if (entry.pct !== undefined) {
+                    pctBar.style.width = entry.pct + '%';
+                    pctText.textContent = entry.pct + '%';
+                    pctBar.className = entry.pct >= 100
+                        ? 'bg-green-500 h-2 rounded-full transition-all duration-300'
+                        : 'bg-blue-500 h-2 rounded-full transition-all duration-300';
+                }
             });
 
             evtSource.addEventListener('done', (e) => {
                 const result = JSON.parse(e.data);
                 evtSource.close();
                 window._currentScanId = null;
-                btn.disabled = false;
-                btn.innerHTML = '🔍 开始扫描';
+                _resetScanBtn();
 
                 if (result.status === 'completed') {
+                    pctBar.style.width = '100%';
+                    pctText.textContent = '100%';
+                    pctBar.className = 'bg-green-500 h-2 rounded-full transition-all duration-300';
+                    setTimeout(() => progressEl.classList.add('hidden'), 2000);
                     codeLoadRepos();
                 } else if (result.status === 'cancelled') {
-                    codeRenderScanProgress([...steps, {step: 'cancelled', detail: '已终止并清理'}]);
+                    progressEl.classList.add('hidden');
+                    codeRenderScanProgress([...steps, {step: 'cancelled', detail: '🛑 已终止并清理'}]);
                 } else if (result.status === 'error') {
+                    progressEl.classList.add('hidden');
                     alert('扫描出错: ' + result.error);
                 }
             });
 
-            evtSource.addEventListener('heartbeat', () => {});
-
             evtSource.onerror = () => {
                 evtSource.close();
-                btn.disabled = false;
-                btn.innerHTML = '🔍 开始扫描';
                 window._currentScanId = null;
+                _resetScanBtn();
+                progressEl.classList.add('hidden');
             };
 
         } catch (e) {
             alert('扫描失败: ' + e.message);
-            btn.disabled = false;
-            btn.innerHTML = '🔍 开始扫描';
+            _resetScanBtn();
+            progressEl.classList.add('hidden');
         }
+    }
+
+    function _resetScanBtn() {
+        const btn = document.getElementById('codeScanBtn');
+        btn.disabled = false;
+        btn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+        btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+        btn.textContent = '🔍 开始扫描';
     }
 
     async function codeCancelScan() {
         const scanId = window._currentScanId;
         if (!scanId) return;
-        if (!confirm('确认终止扫描？已写入的数据将被清理。')) return;
+        const btn = document.querySelector('#codeScanProgress button');
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ 终止中...'; }
         try {
             await fetch(`/api/code/scan/${scanId}/cancel`, {method: 'POST'});
         } catch (e) {
@@ -1865,17 +1902,36 @@
             done: '🎉', cancelled: '🛑', error: '❌', cleanup_done: '🧹',
         };
 
-        el.innerHTML = steps.map((s, i) => {
+        // 同类型步骤去重: 只保留最新状态 (parsing 类始终覆盖)
+        const deduped = [];
+        const seen = new Set();
+        for (let i = steps.length - 1; i >= 0; i--) {
+            const s = steps[i];
+            // parsing/embedding/storing 是高频更新，只保留最后一条
+            const key = (['parsing', 'embedding', 'storing'].includes(s.step)) ? s.step : `${s.step}_${i}`;
+            const dedupeKey = ['parsing', 'embedding', 'storing'].includes(s.step) ? s.step : null;
+            if (dedupeKey) {
+                if (!seen.has(dedupeKey)) {
+                    seen.add(dedupeKey);
+                    deduped.unshift(s);
+                }
+            } else {
+                deduped.unshift(s);
+            }
+        }
+
+        el.innerHTML = deduped.map((s, i) => {
             const icon = stepIcons[s.step] || '⚙️';
-            const isLast = i === steps.length - 1;
+            const isLast = i === deduped.length - 1;
             const bg = s.step === 'error' ? 'bg-red-50' : s.step === 'cancelled' ? 'bg-yellow-50' : isLast ? 'bg-blue-50' : '';
 
             // 进度条
             let progressBar = '';
-            if (s.pct !== undefined && s.pct < 100) {
+            if (s.pct !== undefined) {
+                const barColor = s.pct >= 100 ? 'bg-green-500' : 'bg-blue-500';
                 progressBar = `
                     <div class="mt-1.5 w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
-                        <div class="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style="width: ${s.pct}%"></div>
+                        <div class="${barColor} h-1.5 rounded-full transition-all duration-300" style="width: ${s.pct}%"></div>
                     </div>
                     <div class="flex justify-between text-[10px] text-gray-400 mt-0.5">
                         <span>${s.detail}</span>
@@ -1883,17 +1939,13 @@
                     </div>`;
             }
 
-            // 次要信息 (已完成步骤不显示)
+            // 次要信息
             let subInfo = '';
-            if (isLast && !progressBar) {
+            if (!progressBar) {
                 if (s.file_idx) {
                     subInfo = `<div class="text-[10px] text-gray-400 mt-0.5">文件 ${s.file_idx}/${s.total_files} · ${s.chunks_so_far || 0} chunks</div>`;
-                } else if (s.total_chunks) {
+                } else if (s.total_chunks && !s.parse_warnings && s.parse_warnings !== 0) {
                     subInfo = `<div class="text-[10px] text-gray-400 mt-0.5">${s.total_chunks} chunks</div>`;
-                } else if (s.embedded) {
-                    subInfo = `<div class="text-[10px] text-gray-400 mt-0.5">${s.embedded}/${s.total} chunks</div>`;
-                } else if (s.stored) {
-                    subInfo = `<div class="text-[10px] text-gray-400 mt-0.5">${s.stored}/${s.total} chunks</div>`;
                 }
             }
 
