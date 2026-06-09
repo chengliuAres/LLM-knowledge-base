@@ -797,9 +797,11 @@ async def search_email_api(q: str = Query(...), limit: int = 20):
 
 # ========== 静态文件服务 ==========
 
-# 挂载前端静态文件
+# 挂载前端静态文件子目录（不挂 / 避免与 API 路由冲突）
 frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
-app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
+app.mount("/css", StaticFiles(directory=os.path.join(frontend_dir, "css")), name="css")
+app.mount("/js", StaticFiles(directory=os.path.join(frontend_dir, "js")), name="js")
+app.mount("/tabs", StaticFiles(directory=os.path.join(frontend_dir, "tabs")), name="tabs")
 
 
 @app.get("/")
