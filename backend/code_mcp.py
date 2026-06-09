@@ -18,6 +18,10 @@ from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
+from logging_setup import get_logger
+
+log = get_logger("mcp")
+
 router = APIRouter(tags=["mcp"])
 
 # ── MCP 工具定义 ─────────────────────────────────────────────────
@@ -289,6 +293,7 @@ async def mcp_sse(request: Request):
                     # 心跳
                     yield {"event": "ping", "data": ""}
                 except asyncio.CancelledError:
+                    log.info("sse_disconnect")
                     break
         finally:
             _sessions.pop(session_id, None)
@@ -313,6 +318,8 @@ async def mcp_message(request: Request, session_id: str = ""):
         tool_name = body["params"].get("name", "")
         tool_args = body["params"].get("arguments", {})
         req_id = body.get("id")
+
+        log.info(f"tool_call name={tool_name} args={tool_args!r}")
 
         try:
             result = await execute_tool(tool_name, tool_args)
