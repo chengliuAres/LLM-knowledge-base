@@ -1,13 +1,13 @@
 /**
- * Hash-based SPA 路由
+ * Hash-based SPA 路由（带 DOM 缓存）
+ *
+ * 首次访问 tab：fetch HTML → 注入 DOM → 执行 script → 缓存
+ * 再次访问 tab：直接 show 缓存的 DOM（状态保留）
  *
  * 路由表将 hash 键映射到 {file, title, init}：
  *   - file: tabs 目录下要加载的 HTML 文件
  *   - title: 页面标题
- *   - init: 注入完成后要调用的初始化函数（挂在 window 上）
- *
- * navigate(hash) 负责切换路由、刷新 sidebar 高亮、加载 HTML、
- * 触发 Tailwind CDN 重新扫描以及调用 init 函数。
+ *   - init: 注入完成后要调用的初始化函数（挂在 window 上，仅首次调用）
  */
 
 const Routes = {
@@ -25,100 +25,128 @@ const Routes = {
 
 const defaultRoute = "doc/upload";
 
+// DOM 缓存：key → { wrapper: HTMLElement, initialized: boolean }
+const _cache = {};
+let _currentKey = null;
+
 /**
  * 导航到指定 hash 路由。
  * @param {string} hash - 例如 "doc/chat"，可不带 "#"
  */
 async function navigate(hash) {
-  // 去掉前导 "#"
   const key = (hash || "").replace(/^#/, "").trim();
 
-  // 未匹配或缺失时回退到默认路由
   if (!Routes[key]) {
     console.warn(`[router] 未找到路由 "${key}"，回退到默认路由 "${defaultRoute}"`);
     location.hash = `#${defaultRoute}`;
     return;
   }
 
+  // 同一个 tab，不重复加载
+  if (key === _currentKey) return;
+
   const route = Routes[key];
-
-  // 1. 更新 sidebar 高亮
-  document.querySelectorAll(".sidebar-item").forEach((el) => {
-    el.classList.toggle("active", el.dataset.route === key);
-  });
-
-  // 2. 加载 HTML
   const contentArea = document.getElementById("content-area");
   if (!contentArea) {
     console.error('[router] 找不到 #content-area 容器');
     return;
   }
 
-  try {
-    const res = await fetch(route.file);
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} ${res.statusText}`);
-    }
-    const html = await res.text();
-    contentArea.innerHTML = html;
-
-    // 3b. 手动执行注入的 <script> 标签（innerHTML 不会自动执行）
-    const scripts = Array.from(contentArea.querySelectorAll("script"));
-    for (const oldScript of scripts) {
-      if (oldScript.src) {
-        // 外部脚本：动态创建 script 标签加载
-        const newScript = document.createElement("script");
-        newScript.src = oldScript.src;
-        document.head.appendChild(newScript);
-      } else {
-        // 内联脚本：直接 eval（最可靠）
-        try {
-          eval(oldScript.textContent);
-        } catch (err) {
-          console.error("[router] 脚本执行失败:", err);
-        }
-      }
-    }
-  } catch (err) {
-    console.error(`[router] 加载 "${route.file}" 失败:`, err);
-    contentArea.innerHTML = `
-      <div class="p-6">
-        <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-          <p class="font-semibold">页面加载失败</p>
-          <p class="text-sm mt-1">${escapeHtml(err.message || String(err))}</p>
-        </div>
-      </div>`;
-    return;
+  // 1. 隐藏当前 tab
+  if (_currentKey && _cache[_currentKey]) {
+    _cache[_currentKey].wrapper.style.display = "none";
   }
 
-  // 3. 更新页面标题
+  // 2. 获取或创建目标 tab 的 DOM
+  if (!_cache[key]) {
+    // 首次访问：fetch + 注入
+    try {
+      const res = await fetch(route.file);
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+      const html = await res.text();
+
+      // 创建隔离的 wrapper div
+      const wrapper = document.createElement("div");
+      wrapper.id = `tab-${key.replace("/", "-")}`;
+      wrapper.className = "tab-page";
+      wrapper.innerHTML = html;
+      contentArea.appendChild(wrapper);
+
+      _cache[key] = { wrapper, initialized: false };
+
+      // 执行注入的 <script> 标签（仅首次）
+      const scripts = Array.from(wrapper.querySelectorAll("script"));
+      for (const oldScript of scripts) {
+        if (oldScript.src) {
+          const newScript = document.createElement("script");
+          newScript.src = oldScript.src;
+          document.head.appendChild(newScript);
+        } else {
+          try {
+            eval(oldScript.textContent);
+          } catch (err) {
+            console.error("[router] 脚本执行失败:", err);
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`[router] 加载 "${route.file}" 失败:`, err);
+      contentArea.innerHTML = `
+        <div class="p-6">
+          <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+            <p class="font-semibold">页面加载失败</p>
+            <p class="text-sm mt-1">${escapeHtml(err.message || String(err))}</p>
+          </div>
+        </div>`;
+      return;
+    }
+  }
+
+  // 3. 显示目标 tab
+  _cache[key].wrapper.style.display = "";
+  _currentKey = key;
+
+  // 4. 更新 sidebar 高亮
+  document.querySelectorAll(".sidebar-item").forEach((el) => {
+    el.classList.toggle("active", el.dataset.route === key);
+  });
+
+  // 5. 更新页面标题
   if (route.title) {
     document.title = `${route.title} · email-wiki`;
   }
 
-  // 4. 让 Tailwind CDN 重新扫描新注入的 DOM（CDN 模式需要）
+  // 6. Tailwind CDN 重新扫描（首次加载时需要）
   if (window.tailwind && typeof window.tailwind.refresh === "function") {
-    try {
-      window.tailwind.refresh();
-    } catch (err) {
-      console.warn("[router] tailwind.refresh() 调用失败:", err);
-    }
+    try { window.tailwind.refresh(); } catch (e) { /* ignore */ }
   }
 
-  // 5. 调用 init 函数（页面级脚本入口）
-  if (route.init && typeof window[route.init] === "function") {
+  // 7. 调用 init 函数（仅首次）
+  if (!_cache[key].initialized && route.init && typeof window[route.init] === "function") {
+    _cache[key].initialized = true;
     try {
       await window[route.init]();
     } catch (err) {
       console.error(`[router] ${route.init}() 执行失败:`, err);
     }
-  } else if (route.init) {
-    console.warn(`[router] window.${route.init} 不是函数，跳过初始化`);
   }
 }
 
 /**
- * HTML 转义，避免错误信息中混入 markup
+ * 强制重新加载当前 tab（丢弃缓存，用于刷新数据）
+ */
+function reloadCurrentTab() {
+  if (_currentKey && _cache[_currentKey]) {
+    _cache[_currentKey].wrapper.remove();
+    delete _cache[_currentKey];
+    const key = _currentKey;
+    _currentKey = null;
+    navigate(key);
+  }
+}
+
+/**
+ * HTML 转义
  */
 function escapeHtml(str) {
   return String(str)
@@ -130,16 +158,19 @@ function escapeHtml(str) {
 }
 
 /**
- * 初始化路由：监听 hashchange，首次进入时跳到当前 hash 或默认路由
+ * 初始化路由
  */
+let _routerInitialized = false;
 function init() {
+  if (_routerInitialized) return;
+  _routerInitialized = true;
+
   window.addEventListener("hashchange", () => {
     navigate(location.hash);
   });
 
   const initial = (location.hash || "").replace(/^#/, "").trim();
   if (!initial || !Routes[initial]) {
-    // 用 replace 避免污染历史记录
     location.replace(`#${defaultRoute}`);
   } else {
     navigate(initial);
@@ -150,6 +181,7 @@ function init() {
 window.Routes = Routes;
 window.defaultRoute = defaultRoute;
 window.navigate = navigate;
+window.reloadCurrentTab = reloadCurrentTab;
 window.initRouter = init;
 
 // DOM 就绪后自动启动
