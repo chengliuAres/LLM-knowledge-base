@@ -1,31 +1,21 @@
 """FastAPI 主入口 - 文档知识库"""
 
 import os
-import logging
-
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-    datefmt="%H:%M:%S",
-)
-
-# 静音第三方库的 tqdm/进度条/调试日志
-logging.getLogger("jieba").setLevel(logging.WARNING)
-logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
-logging.getLogger("transformers").setLevel(logging.WARNING)
-os.environ["TQDM_DISABLE"] = "1"  # 禁用 tqdm 进度条
-
 import shutil
 import time
 import json
+import uuid
 from typing import Optional
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
+from logging_setup import configure_logging, get_logger, request_id_var
+from log_routes import router as log_router
 from parser import process_file
 from embedder import embed_text, embed_query, embed_batch, _model_name as EMBED_MODEL_NAME, get_model_info
 
@@ -48,12 +38,49 @@ from match_reasons import annotate_results
 from code_routes import router as code_router
 from code_mcp import router as mcp_router
 
-app = FastAPI(title="文档知识库", version="2.0.0")
+log = get_logger("main")
 
-# 注册代码知识库路由
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI 生命周期：启动时配置日志 + 初始化邮件 DB；关闭时无清理。"""
+    configure_logging()
+    log.info("服务启动")
+    init_db()
+    init_sample_data()
+    log.info("服务启动完成")
+    yield
+
+
+app = FastAPI(title="文档知识库", version="2.0.0", lifespan=lifespan)
 app.include_router(code_router)
-# 注册 MCP 端点
 app.include_router(mcp_router)
+app.include_router(log_router)
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """给每个请求注入 request_id（取自 X-Request-ID 头或生成 8 位 UUID），写回响应头。"""
+    rid = request.headers.get("X-Request-ID") or str(uuid.uuid4())[:8]
+    token = request_id_var.set(rid)
+    try:
+        response = await call_next(request)
+    finally:
+        request_id_var.reset(token)
+    response.headers["X-Request-ID"] = rid
+    return response
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """全局兜底：未捕获的 Exception 自动打 stack trace + request_id。"""
+    rid = request_id_var.get()
+    log.exception(f"unhandled path={request.url.path} method={request.method} request_id={rid}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "内部错误", "request_id": rid},
+    )
+
 
 # 上传目录
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads")
@@ -101,27 +128,12 @@ class EmailImportRequest(BaseModel):
     count: int = 50  # 导入数量
 
 
-# ========== 启动事件 ==========
-
-@app.on_event("startup")
-async def startup():
-    """启动时初始化"""
-    # TODO: 文档模型暂时关闭，专注开发代码模型接入逻辑
-    # from embedder import get_model
-    # get_model()  # 预加载 Embedding 模型
-    
-    # 初始化邮件数据库
-    init_db()
-    init_sample_data()
-    
-    print("服务启动完成!")
-
-
 # ========== API 路由 ==========
 
 @app.post("/api/upload", response_model=UploadResponse)
 async def upload_file(file: UploadFile = File(...)):
     """上传并解析文档"""
+    log.info(f"upload_start filename={file.filename}")
     tracker = StepTracker(operation_type="insert_file")
     
     # 检查文件格式
@@ -233,7 +245,10 @@ async def upload_file(file: UploadFile = File(...)):
             steps=tracker.to_list()
         )
     
+    except HTTPException:
+        raise
     except Exception as e:
+        log.error(f"upload_failed filename={file.filename} error={e}")
         tracker.flush(status="error")
         raise HTTPException(500, f"处理失败: {str(e)}")
 
@@ -241,6 +256,7 @@ async def upload_file(file: UploadFile = File(...)):
 @app.post("/api/emails/import")
 async def import_emails(request: EmailImportRequest):
     """从邮件DB导入邮件到 LanceDB"""
+    log.info(f"email_import_start count={request.count}")
     tracker = StepTracker(operation_type="email_import")
     
     try:
@@ -290,6 +306,7 @@ async def import_emails(request: EmailImportRequest):
         step4.complete({"stored_count": len(chunks)})
 
         tracker.set_extra(email_count=len(emails), chunk_count=len(chunks))
+        log.info(f"email_import_done emails={len(emails)} chunks={len(chunks)}")
         tracker.flush()
         
         return {
@@ -299,7 +316,10 @@ async def import_emails(request: EmailImportRequest):
             "steps": tracker.to_list()
         }
     
+    except HTTPException:
+        raise
     except Exception as e:
+        log.error(f"email_import_failed count={request.count} error={e}")
         tracker.flush(status="error")
         raise HTTPException(500, f"导入失败: {str(e)}")
 
@@ -307,6 +327,7 @@ async def import_emails(request: EmailImportRequest):
 @app.post("/api/search", response_model=SearchResponse)
 async def search(request: SearchRequest):
     """向量相似度搜索（带步骤追踪）"""
+    log.info(f"search_start query={request.query!r} top_k={request.top_k} file_type={request.file_type}")
     if not request.query.strip():
         raise HTTPException(400, "查询内容不能为空")
     
@@ -414,6 +435,7 @@ async def search(request: SearchRequest):
         })
 
         tracker.set_extra(returned_count=len(filtered_results), raw_count=len(results))
+        log.info(f"search_done query={request.query!r} returned={len(filtered_results)}")
         tracker.flush()
         
         return SearchResponse(
@@ -422,7 +444,10 @@ async def search(request: SearchRequest):
             steps=tracker.to_list()
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
+        log.error(f"search_failed query={request.query!r} error={e}")
         tracker.flush(status="error")
         raise HTTPException(500, f"搜索失败: {str(e)}")
 
@@ -430,6 +455,7 @@ async def search(request: SearchRequest):
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     """智能问答（RAG）"""
+    log.info(f"chat_start query={request.query!r} top_k={request.top_k} mode={'stream' if request.stream else 'sync'}")
     if not request.query.strip():
         raise HTTPException(400, "查询内容不能为空")
     
@@ -511,7 +537,10 @@ async def chat(request: ChatRequest):
                 steps=tracker.to_list()
             )
     
+    except HTTPException:
+        raise
     except Exception as e:
+        log.error(f"chat_failed query={request.query!r} error={e}")
         tracker.flush(status="error")
         raise HTTPException(500, f"问答失败: {str(e)}")
 
