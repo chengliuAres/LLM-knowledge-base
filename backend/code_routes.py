@@ -1,6 +1,8 @@
 """代码知识库 REST API 路由"""
 
 import os
+import math
+import uuid
 import logging
 from datetime import datetime
 from typing import Optional
@@ -1022,3 +1024,245 @@ async def api_skip_rules_preview(repo_path: str = ""):
         "filtered_files": filtered,
         "skipped_files": total - filtered,
     }
+
+
+# ── LanceDB 原理演示端点 ─────────────────────────────────────────
+
+class DemoInsertRequest(BaseModel):
+    text: str = "def hello():\n    print('hello world')\n\ndef add(a, b):\n    return a + b"
+    language: str = "python"
+    repo_name: str = "demo-repo"
+    file_path: str = "demo.py"
+
+
+@router.post("/lancedb/demo/insert")
+async def demo_insert(req: DemoInsertRequest):
+    """Sandbox 演示：解析→分块→向量化，不真实写入"""
+    from code_parser import chunk_code
+    from code_embedder import embed_batch, get_code_model_info
+    from code_db import get_table
+
+    try:
+        steps = []
+        code_bytes = req.text.encode("utf-8")
+
+        # Step 1: AST 解析 + 分块
+        chunks = chunk_code(code_bytes, req.language, req.file_path, req.repo_name)
+        steps.append({
+            "name": "ast_parse_and_chunk",
+            "description": f"使用 tree-sitter 解析 {req.language} 代码 AST，按顶层符号分块",
+            "output": {
+                "language": req.language,
+                "chunk_count": len(chunks),
+                "chunks": [
+                    {
+                        "index": i,
+                        "chunk_type": c.get("chunk_type", "unknown"),
+                        "symbol_name": c.get("symbol_name") or "(anonymous)",
+                        "line_start": c.get("line_start", 0),
+                        "line_end": c.get("line_end", 0),
+                    }
+                    for i, c in enumerate(chunks)
+                ],
+            },
+        })
+
+        # Step 2: 向量化
+        model_info = get_code_model_info()
+        model_name = model_info["model_name"]
+        texts = [c["content"] for c in chunks]
+        # embed_batch 返回 list[list[float]]（2D），每个元素是一个向量
+        raw = embed_batch(texts)
+        vectors: list[list[float]] = raw if raw and isinstance(raw[0], list) else [raw]  # type: ignore
+        dim = len(vectors[0]) if vectors and vectors[0] else 0
+
+        vec_details = []
+        for i, vec in enumerate(vectors):
+            norm = round(math.sqrt(sum(x * x for x in vec)), 4)
+            vec_details.append({
+                "chunk_index": i,
+                "dim": dim,
+                "norm": str(norm),
+                "min": str(round(min(vec), 4)),
+                "max": str(round(max(vec), 4)),
+                "preview_first16": [round(v, 4) for v in vec[:16]],
+            })
+
+        steps.append({
+            "name": "embed_chunks",
+            "description": f"使用 {model_name} 将每个 chunk 转为 {dim} 维向量",
+            "output": {
+                "model": model_name,
+                "vector_dim": dim,
+                "vectors": vec_details,
+            },
+        })
+
+        # Step 3: Sandbox 不写入
+        table = get_table()
+        current_ver = getattr(table, 'version', getattr(table, '_version', 0))
+        frag_id = uuid.uuid4().hex[:12]
+
+        steps.append({
+            "name": "would_insert",
+            "description": "Sandbox 模式：仅演示，不真实写入数据库",
+            "output": {
+                "would_create_fragment_id": f"fragment_{frag_id}",
+                "current_version": current_ver,
+                "version_after_insert": current_ver + 1,
+                "records_preview": [
+                    {
+                        "id": c.get("id", f"{req.file_path}_{i}"),
+                        "file_path": req.file_path,
+                        "chunk_type": c.get("chunk_type", "unknown"),
+                        "symbol_name": c.get("symbol_name") or "(anonymous)",
+                        "content_preview": c["content"][:80] + ("..." if len(c["content"]) > 80 else ""),
+                    }
+                    for i, c in enumerate(chunks)
+                ],
+            },
+        })
+
+        return {"steps": steps}
+
+    except Exception as e:
+        log.exception("demo_insert failed")
+        raise HTTPException(500, detail=str(e))
+
+
+class DemoSearchRequest(BaseModel):
+    query: str = "hello function"
+    top_k: int = 3
+    score_threshold: float = 0.3
+
+
+@router.post("/lancedb/demo/search")
+async def demo_search(req: DemoSearchRequest):
+    """Sandbox 演示：查询→向量化→扫描→排序→转换"""
+    from code_embedder import embed_query, get_code_model_info
+    from code_db import get_table, search_vector
+
+    try:
+        steps = []
+
+        # Step 1: 向量化查询
+        model_info = get_code_model_info()
+        model_name = model_info["model_name"]
+        query_vec = embed_query(req.query)
+        dim = len(query_vec)
+        norm = round(math.sqrt(sum(x * x for x in query_vec)), 4)
+
+        steps.append({
+            "name": "embed_query",
+            "description": "将查询文本转为向量",
+            "output": {
+                "model": model_name,
+                "dim": dim,
+                "norm": str(norm),
+                "preview_first16": [round(v, 4) for v in query_vec[:16]],
+            },
+        })
+
+        # Step 2: 查询翻译（简化：按空格分词）
+        terms = [t for t in req.query.split() if len(t) > 1]
+        steps.append({
+            "name": "query_translate",
+            "description": "查询翻译（关键词提取）",
+            "output": {
+                "original_query": req.query,
+                "translated_terms": terms,
+                "method": "whitespace_tokenizer",
+            },
+        })
+
+        # Step 3: 扫描策略
+        table = get_table()
+        total_rows = table.count_rows()
+        has_idx = False
+        try:
+            indices = table.list_indices()
+            has_idx = len(indices) > 0
+        except Exception:
+            pass
+
+        flops = total_rows * dim * 2 if total_rows > 0 else 0
+        frag_count = 0
+        try:
+            frag_count = len(table.to_lance().get_fragments())
+        except Exception:
+            pass
+        steps.append({
+            "name": "scan_strategy",
+            "description": "LanceDB 扫描策略分析",
+            "output": {
+                "has_index": has_idx,
+                "strategy": "IVF-PQ 索引检索" if has_idx else "全量余弦距离扫描",
+                "fragments_to_scan": frag_count,
+                "total_rows_to_scan": total_rows,
+                "flops_estimate": flops,
+            },
+        })
+
+        # Step 4: 计算距离
+        candidates = []
+        if total_rows > 0:
+            results = search_vector(query_vec, top_k=req.top_k + 5)
+            for r in results:
+                candidates.append({
+                    "id": r.get("id", ""),
+                    "symbol_name": r.get("symbol_name", ""),
+                    "distance": round(r.get("_distance", 1.0), 4),
+                    "content_preview": (r.get("content", ""))[:80],
+                })
+
+        # 按距离排序
+        candidates.sort(key=lambda c: c["distance"])
+        dist_min = candidates[0]["distance"] if candidates else 0
+        dist_max = candidates[-1]["distance"] if candidates else 0
+
+        steps.append({
+            "name": "compute_distances",
+            "description": "计算查询向量与所有文档向量的余弦距离",
+            "output": {
+                "candidates_returned": len(candidates),
+                "distance_min": dist_min,
+                "distance_max": dist_max,
+                "candidates": candidates[:10],
+            },
+        })
+
+        # Step 5: Top-K 选取
+        selected = candidates[: req.top_k]
+        steps.append({
+            "name": "top_k_selection",
+            "description": f"选取 Top-{req.top_k} 结果",
+            "output": {
+                "k": req.top_k,
+                "selected": selected,
+            },
+        })
+
+        # Step 6: 分数转换
+        examples = []
+        for c in selected[:3]:
+            sim = round(1.0 / (1.0 + c["distance"]), 4)
+            examples.append({
+                "id": c["id"],
+                "distance": c["distance"],
+                "similarity_score": sim,
+            })
+
+        steps.append({
+            "name": "score_conversion",
+            "description": "将距离转换为相似度分数",
+            "output": {
+                "formula": "similarity = 1 / (1 + distance)",
+                "examples": examples,
+            },
+        })
+
+        return {"steps": steps}
+
+    except Exception as e:
+        log.exception("demo_search failed")
+        raise HTTPException(500, detail=str(e))
