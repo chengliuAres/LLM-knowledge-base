@@ -1,0 +1,409 @@
+<!-- 代码知识库看板 tab：仓库概览 + 语言/类型分布 + 仓库明细 + 性能指标 + 趋势/拆解 + 数据目录 -->
+
+<div class="max-w-5xl mx-auto space-y-4">
+    <!-- 顶部：标题 + 刷新 -->
+    <div class="panel">
+        <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold" style="color: var(--color-foreground);">🧬 代码知识库看板</h2>
+            <div class="flex items-center space-x-3">
+                <span id="codeDashLastUpdated" class="text-xs" style="color: var(--color-muted);">尚未加载</span>
+                <button onclick="refreshCodeDashboard()" id="codeDashRefreshBtn"
+                        class="btn"
+                        style="background-color: rgba(168, 85, 247, 0.12); color: #C4B5FD; padding: 6px 12px;">
+                    <span id="codeDashRefreshIcon">🔄</span>
+                    <span>刷新</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 1. 概览卡片 (4) -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="panel" style="background-color: rgba(168, 85, 247, 0.10); border-color: rgba(168, 85, 247, 0.30);">
+            <p class="text-sm" style="color: #D8B4FE;">📦 仓库数</p>
+            <p id="cdStatRepos" class="text-2xl font-bold" style="color: #E9D5FF;">-</p>
+        </div>
+        <div class="panel" style="background-color: rgba(59, 130, 246, 0.10); border-color: rgba(59, 130, 246, 0.30);">
+            <p class="text-sm" style="color: #93C5FD;">🧩 代码块数</p>
+            <p id="cdStatChunks" class="text-2xl font-bold" style="color: #BFDBFE;">-</p>
+        </div>
+        <div class="panel" style="background-color: rgba(34, 197, 94, 0.10); border-color: rgba(34, 197, 94, 0.30);">
+            <p class="text-sm" style="color: #86EFAC;">🔤 语言数</p>
+            <p id="cdStatLangs" class="text-2xl font-bold" style="color: #BBF7D0;">-</p>
+        </div>
+        <div class="panel" style="background-color: rgba(245, 158, 11, 0.10); border-color: rgba(245, 158, 11, 0.30);">
+            <p class="text-sm" style="color: #FCD34D;">📋 Chunk 类型数</p>
+            <p id="cdStatChunkTypes" class="text-2xl font-bold" style="color: #FDE68A;">-</p>
+        </div>
+    </div>
+
+    <!-- 2. 语言分布标签云 + 4. Chunk 类型分布 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="panel">
+            <h3 class="font-semibold text-sm mb-3" style="color: var(--color-foreground);">🌐 语言分布</h3>
+            <div id="cdLangTags" class="flex flex-wrap gap-2">
+                <span class="text-xs" style="color: var(--color-muted);">暂无数据</span>
+            </div>
+        </div>
+        <div class="panel">
+            <h3 class="font-semibold text-sm mb-3" style="color: var(--color-foreground);">🧱 Chunk 类型分布</h3>
+            <div id="cdChunkTypeTags" class="flex flex-wrap gap-2">
+                <span class="text-xs" style="color: var(--color-muted);">暂无数据</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. 仓库明细表 -->
+    <div class="panel">
+        <h3 class="font-semibold text-sm mb-3" style="color: var(--color-foreground);">📦 仓库明细</h3>
+        <div class="overflow-x-auto">
+            <table class="w-full text-xs" style="color: var(--color-foreground);">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--color-border);">
+                        <th class="text-left py-2 px-2 font-medium" style="color: var(--color-muted);">名称</th>
+                        <th class="text-left py-2 px-2 font-medium" style="color: var(--color-muted);">类型</th>
+                        <th class="text-right py-2 px-2 font-medium" style="color: var(--color-muted);">Chunks</th>
+                        <th class="text-left py-2 px-2 font-medium" style="color: var(--color-muted);">语言</th>
+                        <th class="text-left py-2 px-2 font-medium" style="color: var(--color-muted);">最后扫描</th>
+                    </tr>
+                </thead>
+                <tbody id="cdRepoTableBody">
+                    <tr><td colspan="5" class="text-center py-4 text-xs" style="color: var(--color-muted);">暂无仓库</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 5. 性能指标卡片 (4) -->
+    <div class="panel">
+        <h3 class="font-semibold text-sm mb-3" style="color: var(--color-foreground);">⚡ 性能指标</h3>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="panel" style="background-color: rgba(6, 182, 212, 0.10); border-color: rgba(6, 182, 212, 0.30);">
+                <p class="text-sm" style="color: #67E8F9;">💾 Code LanceDB 磁盘</p>
+                <p id="cdPerfDisk" class="text-2xl font-bold" style="color: #A5F3FC;">-</p>
+                <p id="cdPerfDiskMeta" class="text-[10px] mt-1" style="color: rgba(103, 232, 249, 0.7);">-</p>
+            </div>
+            <div class="panel" style="background-color: rgba(99, 102, 241, 0.10); border-color: rgba(99, 102, 241, 0.30);">
+                <p class="text-sm" style="color: #A5B4FC;">🔍 平均代码搜索耗时</p>
+                <p id="cdPerfSearch" class="text-2xl font-bold" style="color: #C7D2FE;">-</p>
+                <p id="cdPerfSearchMeta" class="text-[10px] mt-1" style="color: rgba(165, 180, 252, 0.7);">-</p>
+            </div>
+            <div class="panel" style="background-color: rgba(20, 184, 166, 0.10); border-color: rgba(20, 184, 166, 0.30);">
+                <p class="text-sm" style="color: #5EEAD4;">💬 平均代码问答耗时</p>
+                <p id="cdPerfChat" class="text-2xl font-bold" style="color: #99F6E4;">-</p>
+                <p id="cdPerfChatMeta" class="text-[10px] mt-1" style="color: rgba(94, 234, 212, 0.7);">-</p>
+            </div>
+            <div class="panel" style="background-color: rgba(236, 72, 153, 0.10); border-color: rgba(236, 72, 153, 0.30);">
+                <p class="text-sm" style="color: #F9A8D4;">🔗 平均调用链追踪耗时</p>
+                <p id="cdPerfTrace" class="text-2xl font-bold" style="color: #FBCFE8;">-</p>
+                <p id="cdPerfTraceMeta" class="text-[10px] mt-1" style="color: rgba(249, 168, 212, 0.7);">-</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. 趋势图 + Step 拆解 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="panel">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-sm" style="color: var(--color-foreground);">📈 耗时趋势（按天）</h3>
+                <select id="cdTrendType" onchange="loadCodeTrend()"
+                        class="text-xs px-2 py-1 rounded"
+                        style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground); border: 1px solid var(--color-border);">
+                    <option value="code_search">代码搜索</option>
+                    <option value="code_chat">代码问答</option>
+                    <option value="code_trace">调用链追踪</option>
+                </select>
+            </div>
+            <div class="h-64"><canvas id="cdTrendChart"></canvas></div>
+        </div>
+        <div class="panel">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-sm" style="color: var(--color-foreground);">🔬 Step 耗时拆解</h3>
+                <select id="cdBreakdownType" onchange="loadCodeBreakdown()"
+                        class="text-xs px-2 py-1 rounded"
+                        style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground); border: 1px solid var(--color-border);">
+                    <option value="code_search">代码搜索</option>
+                    <option value="code_chat">代码问答</option>
+                    <option value="code_trace">调用链追踪</option>
+                </select>
+            </div>
+            <div class="h-64"><canvas id="cdBreakdownChart"></canvas></div>
+        </div>
+    </div>
+
+    <!-- 7. 数据存储目录 -->
+    <div class="panel">
+        <h3 class="font-semibold text-sm mb-4" style="color: var(--color-foreground);">📁 数据存储目录</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="space-y-3">
+                <div>
+                    <p class="font-medium text-sm" style="color: var(--color-foreground);">代码向量数据库 (LanceDB)</p>
+                    <code class="text-xs block mt-1 px-2 py-1 rounded"
+                          style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">data/code_lancedb/</code>
+                </div>
+                <div>
+                    <p class="font-medium text-sm" style="color: var(--color-foreground);">代码索引 (SQLite FTS5)</p>
+                    <code class="text-xs block mt-1 px-2 py-1 rounded"
+                          style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">data/code_index.db</code>
+                </div>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <p class="font-medium text-sm" style="color: var(--color-foreground);">仓库配置 (JSON)</p>
+                    <code class="text-xs block mt-1 px-2 py-1 rounded"
+                          style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">data/code_repos.json</code>
+                </div>
+                <div>
+                    <p class="font-medium text-sm" style="color: var(--color-foreground);">跳过规则 (JSON)</p>
+                    <code class="text-xs block mt-1 px-2 py-1 rounded"
+                          style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">data/code_skip_rules.json</code>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+/* ============================================================
+ * 代码知识库看板 tab — 页面脚本
+ *
+ * initCodeDashboard() 由 router.js 路由命中后调用
+ * Chart.js 全局可用（在 index.html 加载）
+ *
+ * 数据源：
+ *   /api/code/stats          → 概览 + by_language + by_chunk_type
+ *   /api/code/repos          → 仓库明细
+ *   /api/performance/trend   → 趋势（type=code_search/code_chat/code_trace）
+ *   /api/performance/breakdown → Step 拆解
+ *   /api/stats?db_type=code  → Code LanceDB 磁盘（待后端扩展，暂显示 -）
+ * ============================================================ */
+
+// Chart 实例引用（避免重复创建）
+let cdTrendChartInstance = null;
+let cdBreakdownChartInstance = null;
+
+// 语言 / 类型标签的调色板（深色主题下区分度高）
+const CD_LANG_PALETTE = ['#60A5FA', '#34D399', '#FBBF24', '#F472B6', '#A78BFA', '#22D3EE', '#FB923C', '#94A3B8', '#F87171', '#4ADE80'];
+const CD_TYPE_PALETTE = ['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#0EA5E9', '#84CC16', '#A855F7'];
+
+// ─── 路由入口 ────────────────────────────────────────────
+window.initCodeDashboard = function () {
+    // 暗色主题下 Chart.js 默认色：文字灰青、网格深蓝灰
+    // 注：每次进入 tab 都重置，确保主题色一致
+    Chart.defaults.color = "#94A3B8";
+    Chart.defaults.borderColor = "#334155";
+    refreshCodeDashboard();
+};
+
+// ─── 刷新看板（拉取 stats + repos + 趋势 + 拆解 + 性能） ─────
+async function refreshCodeDashboard() {
+    const btn = document.getElementById('codeDashRefreshBtn');
+    const icon = document.getElementById('codeDashRefreshIcon');
+    const ts = document.getElementById('codeDashLastUpdated');
+    btn.disabled = true;
+    icon.style.transition = 'transform 0.6s ease';
+    icon.style.transform = 'rotate(360deg)';
+    ts.textContent = '刷新中...';
+    try {
+        const [stats, repos] = await Promise.all([
+            fetch('/api/code/stats').then(r => r.json()),
+            fetch('/api/code/repos').then(r => r.json()),
+        ]);
+        renderCodeOverview(stats);
+        renderCodeLangTags(stats.by_language || {});
+        renderCodeChunkTypeTags(stats.by_chunk_type || {});
+        renderCodeRepoTable(repos.repos || []);
+        await Promise.all([loadCodeTrend(), loadCodeBreakdown()]);
+        await loadCodePerfCards();
+        const now = new Date();
+        const hh = String(now.getHours()).padStart(2, '0');
+        const mm = String(now.getMinutes()).padStart(2, '0');
+        const ss = String(now.getSeconds()).padStart(2, '0');
+        ts.textContent = `更新于 ${hh}:${mm}:${ss}`;
+    } catch (err) {
+        console.error('refreshCodeDashboard failed:', err);
+        ts.textContent = '刷新失败';
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => { icon.style.transform = 'rotate(0)'; }, 50);
+    }
+}
+
+// ─── 概览卡片 ────────────────────────────────────────────
+function renderCodeOverview(stats) {
+    document.getElementById('cdStatRepos').textContent = stats.total_repos || 0;
+    document.getElementById('cdStatChunks').textContent = stats.total_chunks || 0;
+    const langs = stats.by_language || {};
+    const types = stats.by_chunk_type || {};
+    document.getElementById('cdStatLangs').textContent = Object.keys(langs).length;
+    document.getElementById('cdStatChunkTypes').textContent = Object.keys(types).length;
+}
+
+// ─── 语言分布标签云 ──────────────────────────────────────
+function renderCodeLangTags(byLanguage) {
+    const el = document.getElementById('cdLangTags');
+    const entries = Object.entries(byLanguage).sort((a, b) => b[1] - a[1]);
+    if (entries.length === 0) {
+        el.innerHTML = '<span class="text-xs" style="color: var(--color-muted);">暂无数据</span>';
+        return;
+    }
+    el.innerHTML = entries.map(([lang, count], i) => {
+        const color = CD_LANG_PALETTE[i % CD_LANG_PALETTE.length];
+        return `<span class="text-xs px-2 py-1 rounded"
+                      style="background-color: ${color}22; color: ${color}; border: 1px solid ${color}55;">${escapeHtml(lang)}: ${count}</span>`;
+    }).join('');
+}
+
+// ─── Chunk 类型分布标签云 ─────────────────────────────────
+function renderCodeChunkTypeTags(byChunkType) {
+    const el = document.getElementById('cdChunkTypeTags');
+    const entries = Object.entries(byChunkType).sort((a, b) => b[1] - a[1]);
+    if (entries.length === 0) {
+        el.innerHTML = '<span class="text-xs" style="color: var(--color-muted);">暂无数据</span>';
+        return;
+    }
+    el.innerHTML = entries.map(([type, count], i) => {
+        const color = CD_TYPE_PALETTE[i % CD_TYPE_PALETTE.length];
+        return `<span class="text-xs px-2 py-1 rounded"
+                      style="background-color: ${color}22; color: ${color}; border: 1px solid ${color}55;">${escapeHtml(type)}: ${count}</span>`;
+    }).join('');
+}
+
+// ─── 仓库明细表 ──────────────────────────────────────────
+function renderCodeRepoTable(repos) {
+    const tbody = document.getElementById('cdRepoTableBody');
+    if (repos.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-xs" style="color: var(--color-muted);">暂无仓库</td></tr>';
+        return;
+    }
+    tbody.innerHTML = repos.map(r => `
+        <tr style="border-bottom: 1px solid var(--color-border);">
+            <td class="py-2 px-2 font-medium" style="color: var(--color-foreground);">${escapeHtml(r.name)}</td>
+            <td class="py-2 px-2">
+                <span class="text-[10px] px-1.5 py-0.5 rounded" style="background: rgba(34, 197, 94, 0.15); color: var(--color-accent);">${escapeHtml(r.project_type || '-')}</span>
+            </td>
+            <td class="py-2 px-2 text-right font-mono" style="color: var(--color-foreground);">${r.total_chunks || 0}</td>
+            <td class="py-2 px-2" style="color: var(--color-muted);">${(r.languages || []).map(escapeHtml).join(', ')}</td>
+            <td class="py-2 px-2 text-[10px]" style="color: var(--color-muted);">${r.last_scanned ? new Date(r.last_scanned).toLocaleString() : '未扫描'}</td>
+        </tr>
+    `).join('');
+}
+
+// ─── 性能指标卡片（Code LanceDB 磁盘 + 代码搜索/问答/追踪） ──
+// 注：当前 /api/stats 不含 code LanceDB 磁盘，disk 留 - ；其余三个直接从 metrics_db 拉
+async function loadCodePerfCards() {
+    // 磁盘：等后端扩展 /api/stats?db_type=code 后再启用
+    const diskEl = document.getElementById('cdPerfDisk');
+    const diskMetaEl = document.getElementById('cdPerfDiskMeta');
+    if (diskEl) diskEl.textContent = '-';
+    if (diskMetaEl) diskMetaEl.textContent = '待后端扩展 /api/stats?db_type=code';
+
+    // 三个 operation_type 的 summary
+    const types = ['code_search', 'code_chat', 'code_trace'];
+    const elMap = {
+        code_search: { val: 'cdPerfSearch', meta: 'cdPerfSearchMeta' },
+        code_chat:   { val: 'cdPerfChat',   meta: 'cdPerfChatMeta' },
+        code_trace:  { val: 'cdPerfTrace',  meta: 'cdPerfTraceMeta' },
+    };
+    await Promise.all(types.map(async (t) => {
+        try {
+            const res = await fetch(`/api/performance/trend?type=${t}&days=7`);
+            const data = await res.json();
+            const items = data.trend || [];
+            // trend 返回的是按天聚合；主记录(step_name=null) 不会出现在 trend 里
+            // 改用 breakdown 拿到主记录均值的口径更准（overall = breakdown 中求和）
+            const brRes = await fetch(`/api/performance/breakdown?type=${t}`);
+            const br = await brRes.json();
+            const overall = (br.breakdown || []).find(s => !s.step_name) || null;
+            const ids = elMap[t];
+            if (overall && overall.count) {
+                document.getElementById(ids.val).textContent = `${overall.avg_ms} ms`;
+                document.getElementById(ids.meta).textContent = `n=${overall.count} · P95 ${overall.p95_ms}ms · max ${overall.max_ms}ms`;
+            } else {
+                document.getElementById(ids.val).textContent = '-';
+                document.getElementById(ids.meta).textContent = `暂无 ${t} 记录`;
+            }
+        } catch (e) {
+            console.error(`loadCodePerfCards(${t}) failed:`, e);
+        }
+    }));
+}
+
+// ─── 耗时趋势图（折线） ──────────────────────────────────
+async function loadCodeTrend() {
+    const type = document.getElementById('cdTrendType').value;
+    try {
+        const res = await fetch(`/api/performance/trend?type=${type}&days=7`);
+        const data = await res.json();
+        const labels = (data.trend || []).map(d => d.day);
+        const avg = (data.trend || []).map(d => d.avg_ms);
+        const max = (data.trend || []).map(d => d.max_ms);
+        const ctx = document.getElementById('cdTrendChart');
+        if (cdTrendChartInstance) cdTrendChartInstance.destroy();
+        cdTrendChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    { label: 'avg (ms)', data: avg, borderColor: '#A78BFA', backgroundColor: 'rgba(167,139,250,0.15)', tension: 0.3, fill: true },
+                    { label: 'max (ms)', data: max, borderColor: '#F472B6', backgroundColor: 'rgba(244,114,182,0.08)', tension: 0.3, borderDash: [4, 4] },
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
+                scales: {
+                    y: { beginAtZero: true, ticks: { font: { size: 10 } }, grid: { color: 'rgba(148, 163, 184, 0.1)' } },
+                    x: { ticks: { font: { size: 10 } }, grid: { color: 'rgba(148, 163, 184, 0.1)' } }
+                }
+            }
+        });
+    } catch (err) { console.error('code trend load failed:', err); }
+}
+
+// ─── Step 拆解图（水平条形） ──────────────────────────────
+async function loadCodeBreakdown() {
+    const type = document.getElementById('cdBreakdownType').value;
+    try {
+        const res = await fetch(`/api/performance/breakdown?type=${type}`);
+        const data = await res.json();
+        // 排除主记录（step_name=null），只展示 step 子记录
+        const steps = (data.breakdown || []).filter(d => d.step_name);
+        const labels = steps.map(d => d.step_name);
+        const avg = steps.map(d => d.avg_ms);
+        const ctx = document.getElementById('cdBreakdownChart');
+        if (cdBreakdownChartInstance) cdBreakdownChartInstance.destroy();
+        cdBreakdownChartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'avg (ms)', data: avg,
+                    backgroundColor: ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6']
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { beginAtZero: true, ticks: { font: { size: 10 } }, grid: { color: 'rgba(148, 163, 184, 0.1)' } },
+                    y: { ticks: { font: { size: 10 } }, grid: { color: 'rgba(148, 163, 184, 0.1)' } }
+                }
+            }
+        });
+    } catch (err) { console.error('code breakdown load failed:', err); }
+}
+
+// 暴露到 window（路由 / 内联 onclick 用）
+window.refreshCodeDashboard = refreshCodeDashboard;
+window.renderCodeOverview = renderCodeOverview;
+window.renderCodeLangTags = renderCodeLangTags;
+window.renderCodeChunkTypeTags = renderCodeChunkTypeTags;
+window.renderCodeRepoTable = renderCodeRepoTable;
+window.loadCodePerfCards = loadCodePerfCards;
+window.loadCodeTrend = loadCodeTrend;
+window.loadCodeBreakdown = loadCodeBreakdown;
+</script>

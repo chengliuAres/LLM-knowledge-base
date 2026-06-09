@@ -1,0 +1,144 @@
+<!-- 邮件导入 tab：邮件统计、导入设置、进度展示、邮件预览 -->
+
+<div class="max-w-4xl mx-auto space-y-4">
+    <div class="panel">
+        <h2 class="text-xl font-semibold mb-2" style="color: var(--color-foreground);">📧 邮件数据导入</h2>
+        <p class="text-sm mb-6" style="color: var(--color-muted);">从本地邮件数据库导入邮件到向量知识库，支持后续智能检索。</p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div class="panel" style="background: var(--color-secondary);">
+                <h3 class="font-medium mb-2 text-sm" style="color: var(--color-foreground);">📊 邮件数据库统计</h3>
+                <div id="emailStats" class="space-y-1 text-sm" style="color: var(--color-muted);">
+                    <p>加载中...</p>
+                </div>
+                <p class="text-xs mt-3" style="color: var(--color-muted);">💡 线程 = 一组相关邮件的对话</p>
+            </div>
+
+            <div class="panel" style="background: var(--color-secondary);">
+                <h3 class="font-medium mb-2 text-sm" style="color: var(--color-foreground);">⚙️ 导入设置</h3>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm mb-1" style="color: var(--color-muted);">导入数量</label>
+                        <select id="importCount" class="input w-full">
+                            <option value="10">10 封</option>
+                            <option value="50" selected>50 封</option>
+                            <option value="100">100 封</option>
+                        </select>
+                    </div>
+                    <button onclick="importEmails()" id="importBtn"
+                        class="btn w-full bg-[var(--color-accent)] hover:opacity-90 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                        📥 开始导入
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="importProgress" class="hidden" style="border-top: 1px solid var(--color-border); padding-top: 1rem;">
+            <h3 class="font-medium mb-3 text-sm" style="color: var(--color-foreground);">📋 导入进度</h3>
+            <div id="importSteps" class="space-y-3"></div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h3 class="font-medium mb-3 text-sm" style="color: var(--color-foreground);">📬 邮件预览</h3>
+        <div id="emailPreview" class="space-y-2 max-h-60 overflow-y-auto">
+            <p class="text-sm" style="color: var(--color-muted);">加载中...</p>
+        </div>
+    </div>
+</div>
+
+<script>
+// 邮件统计加载
+async function loadEmailStats() {
+    try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        const s = data.emails || {};
+        document.getElementById('emailStats').innerHTML = `
+            <p>📧 总邮件数: <strong>${s.total_emails || 0}</strong></p>
+            <p>🧵 线程数: <strong>${s.total_threads || 0}</strong></p>
+            <p>👤 发件人数: <strong>${s.total_senders || 0}</strong></p>
+            ${s.folders ? Object.entries(s.folders).map(([k, v]) => `<p>📁 ${k}: ${v}</p>`).join('') : ''}
+        `;
+    } catch (err) {
+        // 静默失败：保留加载态
+    }
+}
+
+// 邮件预览加载
+async function loadEmailPreview() {
+    try {
+        const res = await fetch('/api/emails?limit=5');
+        const data = await res.json();
+        const container = document.getElementById('emailPreview');
+        if (data.emails && data.emails.length > 0) {
+            container.innerHTML = data.emails.map(email => `
+                <div class="border rounded-lg p-2 hover:opacity-80 text-sm"
+                     style="border-color: var(--color-border); background: var(--color-secondary);">
+                    <div class="flex justify-between">
+                        <span class="font-medium truncate" style="color: var(--color-foreground);">${email.subject || '无主题'}</span>
+                        <span class="text-xs ml-2" style="color: var(--color-muted);">${(email.received_at || '').substring(0, 10)}</span>
+                    </div>
+                    <p class="text-xs mt-1" style="color: var(--color-muted);">${email.sender_name || ''}</p>
+                </div>
+            `).join('');
+        }
+    } catch (err) {
+        // 静默失败：保留加载态
+    }
+}
+
+// 邮件导入
+async function importEmails() {
+    const count = parseInt(document.getElementById('importCount').value);
+    const btn = document.getElementById('importBtn');
+    const progressDiv = document.getElementById('importProgress');
+    const stepsDiv = document.getElementById('importSteps');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ 导入中...';
+    progressDiv.classList.remove('hidden');
+    stepsDiv.innerHTML = '<p style="color: var(--color-muted);">正在导入...</p>';
+
+    try {
+        const res = await fetch('/api/emails/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ count })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            stepsDiv.innerHTML = data.steps.map(step => `
+                <div class="flex items-start space-x-3 p-3 rounded-lg"
+                     style="background: var(--color-secondary);">
+                    <span style="color: var(--color-accent);">✅</span>
+                    <div>
+                        <p class="font-medium text-sm" style="color: var(--color-foreground);">${step.description}</p>
+                        <p class="text-xs" style="color: var(--color-muted);">${step.duration_ms?.toFixed(0) || 0}ms</p>
+                    </div>
+                </div>
+            `).join('');
+            loadEmailStats();
+            alert(`成功导入 ${data.imported_emails} 封邮件`);
+        } else {
+            stepsDiv.innerHTML = `<p style="color: #ef4444;">❌ ${data.detail}</p>`;
+        }
+    } catch (err) {
+        stepsDiv.innerHTML = `<p style="color: #ef4444;">❌ ${err.message}</p>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📥 开始导入';
+    }
+}
+
+// 初始化入口（由路由调用）
+window.initDocEmail = function() {
+    loadEmailStats();
+    loadEmailPreview();
+};
+
+// 暴露到 window（内联 onclick / 路由用）
+window.loadEmailStats = loadEmailStats;
+window.loadEmailPreview = loadEmailPreview;
+window.importEmails = importEmails;
+</script>

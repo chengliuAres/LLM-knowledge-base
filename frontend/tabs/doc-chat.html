@@ -1,0 +1,199 @@
+<!-- 文档问答 tab：RAG 对话 + 参考来源展示 -->
+
+<div class="max-w-4xl mx-auto space-y-4">
+    <!-- 对话区 -->
+    <div class="panel" style="padding: 0;">
+        <div id="chatMessages" class="h-[500px] overflow-y-auto p-6 space-y-4">
+            <!-- 欢迎消息（暗色气泡样式） -->
+            <div class="flex items-start space-x-3">
+                <div class="rounded-full p-2"
+                     style="background-color: rgba(34, 197, 94, 0.15);">🤖</div>
+                <div class="rounded-lg p-3 max-w-[80%]"
+                     style="background-color: rgba(255, 255, 255, 0.04);">
+                    <p class="text-sm" style="color: var(--color-foreground);">你好！我是智能问答助手，基于你的文档和邮件知识库回答问题。</p>
+                </div>
+            </div>
+        </div>
+        <div style="border-top: 1px solid var(--color-border); padding: 1rem;">
+            <div class="flex space-x-3">
+                <input type="text" id="chatInput" placeholder="输入你的问题..."
+                       class="input flex-1"
+                       style="padding: 12px 16px; font-size: 14px;">
+                <button onclick="handleChat()" id="chatBtn"
+                        class="btn btn-accent"
+                        style="padding: 12px 24px;">发送</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 参考来源区 -->
+    <div id="chatSources" class="hidden panel">
+        <h3 class="font-semibold text-sm mb-3" style="color: var(--color-foreground);">📚 参考来源</h3>
+        <div id="sourcesList" class="space-y-2"></div>
+    </div>
+</div>
+
+<style>
+    /* 关键词高亮（暗色主题下需要更明显的底色） */
+    mark {
+        background-color: rgba(250, 204, 21, 0.35);
+        color: inherit;
+        padding: 0 2px;
+        border-radius: 2px;
+    }
+</style>
+
+<script>
+/* ============================================================
+ * 文档问答 tab — 页面脚本
+ *
+ * initDocChat() 由 router.js 路由命中后调用
+ * 依赖 shared.js 暴露的 escapeHtml / showToast
+ * ============================================================ */
+
+// 防止重复提交（用户连点发送按钮 / 快速回车）
+let isChatting = false;
+
+// ─── 路由入口 ────────────────────────────────────────────
+window.initDocChat = function () {
+    // 回车发送（独立 setupKeyboard 拆开，避免影响 doc-upload tab）
+    const chatInput = document.getElementById('chatInput');
+    if (chatInput) {
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleChat();
+        });
+    }
+};
+
+// ─── 发送问答 ────────────────────────────────────────────
+async function handleChat() {
+    const input = document.getElementById('chatInput');
+    const query = input ? input.value.trim() : '';
+    if (!query || isChatting) return;
+
+    isChatting = true;
+    input.value = '';
+
+    const messagesDiv = document.getElementById('chatMessages');
+    const chatBtn = document.getElementById('chatBtn');
+
+    // 用户消息（右侧气泡，accent 强调色）
+    messagesDiv.innerHTML += `
+        <div class="flex items-start space-x-3 justify-end">
+            <div class="rounded-lg p-3 max-w-[80%]"
+                 style="background-color: var(--color-accent); color: white;">
+                <p class="text-sm">${escapeHtml(query)}</p>
+            </div>
+            <div class="rounded-full p-2"
+                 style="background-color: rgba(34, 197, 94, 0.15);">👤</div>
+        </div>`;
+
+    // AI 占位消息（带 spinner）
+    const aiMsgId = `ai-msg-${Date.now()}`;
+    messagesDiv.innerHTML += `
+        <div class="flex items-start space-x-3" id="${aiMsgId}">
+            <div class="rounded-full p-2"
+                 style="background-color: rgba(34, 197, 94, 0.15);">🤖</div>
+            <div class="rounded-lg p-3 max-w-[80%]"
+                 style="background-color: rgba(255, 255, 255, 0.04);">
+                <div class="flex items-center space-x-2">
+                    <div class="animate-spin rounded-full h-4 w-4 border-b-2"
+                         style="border-color: var(--color-accent);"></div>
+                    <span class="text-sm" style="color: var(--color-muted);">思考中...</span>
+                </div>
+            </div>
+        </div>`;
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+    chatBtn.disabled = true;
+    chatBtn.textContent = '思考中...';
+
+    try {
+        const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, top_k: 5, stream: false }),
+        });
+        const data = await res.json();
+
+        // 替换 AI 占位为实际回答
+        const aiMsg = document.getElementById(aiMsgId);
+        if (aiMsg) {
+            const bubble = aiMsg.querySelector('.rounded-lg.p-3');
+            bubble.innerHTML = `<p class="text-sm whitespace-pre-wrap" style="color: var(--color-foreground);">${escapeHtml(data.answer || '抱歉，无法生成回答')}</p>`;
+        }
+
+        // 渲染参考来源
+        if (data.sources && data.sources.length > 0) {
+            document.getElementById('chatSources').classList.remove('hidden');
+            document.getElementById('sourcesList').innerHTML = data.sources.map((s, i) => `
+                <div class="rounded p-2" style="background-color: rgba(255, 255, 255, 0.04); border-left: 2px solid var(--color-accent);">
+                    <div class="flex items-start space-x-2">
+                        <span class="text-xs font-medium" style="color: var(--color-accent);">[${i + 1}]</span>
+                        <span class="text-xs" style="color: var(--color-foreground);">${escapeHtml(s.filename)}</span>
+                        ${s.metadata && s.metadata.subject
+                            ? `<span class="text-xs" style="color: var(--color-muted);">- ${highlightText(s.metadata.subject, query, s.hit_keywords)}</span>`
+                            : ''}
+                        <span class="text-xs ml-auto" style="color: var(--color-muted);">${(s.score * 100).toFixed(1)}%</span>
+                    </div>
+                    ${renderMatchReasons(s.match_reasons)}
+                </div>
+            `).join('');
+        }
+    } catch (err) {
+        const aiMsg = document.getElementById(aiMsgId);
+        if (aiMsg) {
+            const bubble = aiMsg.querySelector('.rounded-lg.p-3');
+            bubble.innerHTML = `<p class="text-sm" style="color: var(--color-destructive);">❌ ${escapeHtml(err.message)}</p>`;
+        }
+    } finally {
+        isChatting = false;
+        chatBtn.disabled = false;
+        chatBtn.textContent = '发送';
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+}
+
+// ─── 工具函数（仅本 tab 使用） ────────────────────────────
+
+// 关键词高亮（chat 内的 subject/content 高亮匹配词）
+function highlightText(text, query, hitKeywords) {
+    if (!text) return '';
+    let escaped = escapeHtml(text);
+    let words = [];
+    if (hitKeywords && hitKeywords.length > 0) {
+        words = [...hitKeywords];
+    } else if (query) {
+        words = query.split(/\s+/).filter(w => w.length > 0);
+    }
+    if (words.length === 0) return escaped;
+    words.sort((a, b) => b.length - a.length);
+    const escapedWords = words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const regex = new RegExp(`(${escapedWords.join('|')})`, 'gi');
+    return escaped.replace(regex, '<mark>$1</mark>');
+}
+
+// 匹配原因徽章颜色（暗色主题：rgba 透明底 + 高亮前景色）
+const REASON_COLOR_CLASS = {
+    red:    { bg: 'rgba(239, 68, 68, 0.15)',  fg: '#FCA5A5', border: 'rgba(239, 68, 68, 0.40)' },
+    amber:  { bg: 'rgba(245, 158, 11, 0.15)', fg: '#FCD34D', border: 'rgba(245, 158, 11, 0.40)' },
+    blue:   { bg: 'rgba(59, 130, 246, 0.15)', fg: '#93C5FD', border: 'rgba(59, 130, 246, 0.40)' },
+    indigo: { bg: 'rgba(99, 102, 241, 0.15)', fg: '#A5B4FC', border: 'rgba(99, 102, 241, 0.40)' },
+    slate:  { bg: 'rgba(100, 116, 139, 0.15)',fg: '#CBD5E1', border: 'rgba(100, 116, 139, 0.40)' },
+    purple: { bg: 'rgba(168, 85, 247, 0.15)', fg: '#D8B4FE', border: 'rgba(168, 85, 247, 0.40)' },
+    green:  { bg: 'rgba(34, 197, 94, 0.15)',  fg: '#86EFAC', border: 'rgba(34, 197, 94, 0.40)' },
+};
+
+function renderMatchReasons(reasons) {
+    if (!reasons || reasons.length === 0) return '';
+    return `<div class="flex flex-wrap gap-1 mt-1.5">` +
+        reasons.map(r => {
+            const c = REASON_COLOR_CLASS[r.color] || REASON_COLOR_CLASS.slate;
+            return `<span class="text-[10px] px-1.5 py-0.5 rounded border" style="background-color: ${c.bg}; color: ${c.fg}; border-color: ${c.border};">${escapeHtml(r.label)}</span>`;
+        }).join('') +
+        `</div>`;
+}
+
+// 暴露到 window（路由 / 内联 onclick 用）
+window.handleChat = handleChat;
+</script>

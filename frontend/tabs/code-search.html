@@ -1,0 +1,166 @@
+<!-- 代码搜索 tab：搜索输入 + 模式选择 + 结果区 -->
+
+<div class="max-w-7xl mx-auto">
+    <div class="flex flex-col gap-4">
+        <!-- 搜索栏 -->
+        <div class="panel">
+            <div class="flex gap-2">
+                <input id="codeSearchInput" type="text" placeholder="搜索代码..." class="input flex-1" onkeypress="if(event.key==='Enter')codeSearch()">
+                <select id="codeSearchMode" class="input shrink-0">
+                    <option value="hybrid">混合</option>
+                    <option value="vector">语义</option>
+                    <option value="keyword">关键词</option>
+                </select>
+                <button onclick="codeSearch()" class="btn btn-accent shrink-0">搜索</button>
+            </div>
+        </div>
+
+        <!-- 搜索结果 -->
+        <div id="codeSearchResults" class="panel flex-1">
+            <div class="p-6 text-center text-xs" style="color: var(--color-muted);">输入关键词搜索代码</div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 工具函数
+function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+}
+
+// 执行代码搜索（向量 / 关键词 / 混合）
+async function codeSearch() {
+    const query = document.getElementById('codeSearchInput').value.trim();
+    if (!query) return;
+
+    const mode = document.getElementById('codeSearchMode').value;
+    const filters = {};
+    const repo = document.getElementById('codeFilterRepo')?.value;
+    const lang = document.getElementById('codeFilterLang')?.value;
+    if (repo) filters.repo_name = repo;
+    if (lang) filters.language = lang;
+
+    try {
+        const res = await fetch('/api/code/search', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({query, mode, top_k: 10, filters}),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail);
+
+        if (typeof codeRenderSteps === 'function') {
+            codeRenderSteps(data.steps || []);
+        }
+        codeRenderResults(data.results || [], query);
+    } catch (e) {
+        alert('搜索失败: ' + e.message);
+    }
+}
+
+// 渲染搜索结果列表（深色主题）
+function codeRenderResults(results, query) {
+    const el = document.getElementById('codeSearchResults');
+    if (!el) return;
+
+    if (results.length === 0) {
+        el.innerHTML = '<div class="p-6 text-center text-xs" style="color: var(--color-muted);">无结果</div>';
+        return;
+    }
+
+    el.innerHTML = results.map((r) => {
+        // 关键词高亮
+        let content = escapeHtml(r.content);
+        if (query) {
+            const words = query.split(/\s+/).filter(w => w.length > 1);
+            words.forEach(w => {
+                const re = new RegExp(`(${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                content = content.replace(re, '<mark class="hl">$1</mark>');
+            });
+        }
+
+        const sourceTag = r.source === 'both' ? '🎯 混合' : r.source === 'keyword' ? '🔤 关键词' : '🧠 语义';
+
+        return `
+        <div class="code-result" onclick="codeHighlightRepo('${escapeHtml(r.file_path)}')">
+            <div class="flex items-center gap-2 mb-1 flex-wrap">
+                <span class="text-xs font-mono truncate" style="color: var(--color-accent);">${escapeHtml(r.file_path)}</span>
+                <span class="tag">${escapeHtml(r.language || '')}</span>
+                <span class="tag" style="background: var(--color-border); color: var(--color-muted);">${escapeHtml(r.chunk_type || '')}</span>
+                ${r.symbol_name ? `<span class="text-[10px] font-medium" style="color: var(--color-foreground);">${escapeHtml(r.symbol_name)}</span>` : ''}
+            </div>
+            <pre class="code-snippet">${content}</pre>
+            <div class="flex items-center gap-3 mt-1 text-[10px]" style="color: var(--color-muted);">
+                <span>L${r.line_start}-${r.line_end}</span>
+                <span>${sourceTag}</span>
+                <span>${escapeHtml(r.match_reason || '')}</span>
+                ${r.score ? `<span>score: ${r.score.toFixed(4)}</span>` : ''}
+                ${r.rrf_score ? `<span>rrf: ${r.rrf_score.toFixed(6)}</span>` : ''}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+// 点击结果时高亮对应文件（占位）
+function codeHighlightRepo(filePath) {
+    console.log('Navigate to:', filePath);
+}
+
+// 初始化入口（由路由调用）
+window.initCodeSearch = function() {
+    // 搜索框聚焦
+    document.getElementById('codeSearchInput')?.focus();
+};
+
+// 暴露到 window（内联 onclick / 路由用）
+window.codeSearch = codeSearch;
+window.codeRenderResults = codeRenderResults;
+window.codeHighlightRepo = codeHighlightRepo;
+</script>
+
+<style>
+/* 代码搜索结果项样式 */
+.code-result {
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    background: var(--color-background);
+    transition: background 0.15s;
+}
+.code-result:hover {
+    background: var(--color-primary);
+}
+.code-snippet {
+    font-family: 'SF Mono', Monaco, monospace;
+    font-size: 0.75rem;
+    background: var(--color-primary);
+    border: 1px solid var(--color-border);
+    border-radius: 0.25rem;
+    padding: 0.5rem;
+    overflow-x: auto;
+    max-height: 10rem;
+    color: var(--color-foreground);
+    white-space: pre;
+    margin: 0;
+}
+/* 关键词高亮 */
+.code-result mark.hl {
+    background: rgba(250, 204, 21, 0.35);
+    color: inherit;
+    padding: 0 1px;
+    border-radius: 2px;
+}
+/* 语言 / 类型小标签 */
+.code-result .tag {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 0.25rem;
+    background: var(--color-accent);
+    color: white;
+    flex-shrink: 0;
+}
+</style>

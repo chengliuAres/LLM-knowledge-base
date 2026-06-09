@@ -1,0 +1,556 @@
+<!-- 文档上传 tab：拖拽上传、文档列表、关键词搜索、结果展示、流程步骤 -->
+
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <!-- 左侧：文档上传 + 列表 (4列) -->
+    <div class="lg:col-span-4 space-y-4">
+        <div id="dropZone" class="panel border-2 border-dashed cursor-pointer transition-all duration-200 text-center"
+             style="border-color: var(--color-border);">
+            <div class="text-4xl mb-3">📄</div>
+            <p class="font-medium" style="color: var(--color-foreground);">拖拽文件到此处</p>
+            <p class="text-xs mt-2" style="color: var(--color-muted);">或点击选择 · PDF/TXT/MD/DOCX/EML</p>
+            <input type="file" id="fileInput" class="hidden" accept=".pdf,.txt,.md,.docx,.eml" multiple>
+        </div>
+
+        <div id="uploadProgress" class="hidden panel">
+            <div class="flex items-center space-x-2">
+                <div class="animate-spin rounded-full h-4 w-4 border-b-2"
+                     style="border-color: var(--color-accent);"></div>
+                <span id="uploadStatus" class="text-sm" style="color: var(--color-foreground);">正在处理...</span>
+            </div>
+        </div>
+
+        <div class="panel" style="padding: 0;">
+            <div class="px-3 py-2 flex justify-between items-center"
+                 style="border-bottom: 1px solid var(--color-border);">
+                <h3 class="font-semibold text-sm" style="color: var(--color-foreground);">已上传文档</h3>
+                <span id="docCount" class="text-xs" style="color: var(--color-muted);">0</span>
+            </div>
+            <div id="docList" class="max-h-[500px] overflow-y-auto">
+                <div class="p-3 text-center text-xs" style="color: var(--color-muted);">暂无文档</div>
+            </div>
+        </div>
+
+        <div class="panel text-xs"
+             style="background-color: rgba(34, 197, 94, 0.10); border-color: rgba(34, 197, 94, 0.30); color: var(--color-foreground);">
+            <span id="statsText">加载中...</span>
+        </div>
+    </div>
+
+    <!-- 中间：搜索区 (4列) -->
+    <div class="lg:col-span-4 space-y-4">
+        <div class="panel">
+            <div class="flex space-x-2">
+                <input type="text" id="searchInput"
+                       placeholder="输入问题，搜索相关文档内容..."
+                       class="input flex-1"
+                       style="padding: 8px 12px; font-size: 13px;">
+                <button onclick="handleSearch()" class="btn btn-accent">搜索</button>
+            </div>
+            <div class="mt-2 flex items-center space-x-3 text-xs" style="color: var(--color-muted);">
+                <label class="flex items-center space-x-1">
+                    <span>返回:</span>
+                    <select id="topK" class="input" style="width: auto; padding: 2px 4px; font-size: 12px;">
+                        <option value="3">3</option>
+                        <option value="5" selected>5</option>
+                        <option value="10">10</option>
+                    </select>
+                </label>
+                <label class="flex items-center space-x-1">
+                    <span>类型:</span>
+                    <select id="fileTypeFilter" class="input" style="width: auto; padding: 2px 4px; font-size: 12px;">
+                        <option value="">全部</option>
+                        <option value=".eml">仅邮件</option>
+                        <option value=".md">仅Markdown</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+
+        <div class="panel" style="padding: 0;">
+            <div class="px-4 py-2" style="border-bottom: 1px solid var(--color-border);">
+                <h3 class="font-semibold text-sm" style="color: var(--color-foreground);">搜索结果</h3>
+            </div>
+            <div id="searchResults" class="max-h-[600px] overflow-y-auto">
+                <div class="p-6 text-center" style="color: var(--color-muted);">
+                    <div class="text-3xl mb-2">🔍</div>
+                    <p class="text-sm">输入问题开始搜索</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 右侧：执行流程 (4列) -->
+    <div class="lg:col-span-4 space-y-4">
+        <!-- 上传流程 -->
+        <div class="panel" style="padding: 0;">
+            <div class="px-4 py-3 flex items-center justify-between"
+                 style="border-bottom: 1px solid var(--color-border);">
+                <h3 class="font-semibold text-sm flex items-center" style="color: var(--color-foreground);">
+                    <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] mr-2"
+                          style="background-color: rgba(34, 197, 94, 0.15); color: var(--color-accent);">📤</span>
+                    上传流程
+                </h3>
+                <span id="uploadDuration" class="text-[10px]" style="color: var(--color-muted);"></span>
+            </div>
+            <div class="p-4 max-h-[350px] overflow-y-auto">
+                <div id="uploadStepsList" class="space-y-2">
+                    <div class="text-center text-xs py-3" style="color: var(--color-muted);">拖入文件后显示流程</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 搜索流程 -->
+        <div class="panel" style="padding: 0;">
+            <div class="px-4 py-3 flex items-center justify-between"
+                 style="border-bottom: 1px solid var(--color-border);">
+                <h3 class="font-semibold text-sm flex items-center" style="color: var(--color-foreground);">
+                    <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] mr-2"
+                          style="background-color: rgba(34, 197, 94, 0.15); color: var(--color-accent);">🔍</span>
+                    搜索流程
+                </h3>
+                <span id="stepDuration" class="text-[10px]" style="color: var(--color-muted);"></span>
+            </div>
+            <div class="p-4 max-h-[350px] overflow-y-auto">
+                <div id="searchStepsList" class="space-y-2">
+                    <div class="text-center text-xs py-3" style="color: var(--color-muted);">执行搜索后显示流程</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* 拖拽高亮（hover 之外的 drag-over 态） */
+    #dropZone.drag-over {
+        border-color: var(--color-accent) !important;
+        background-color: rgba(34, 197, 94, 0.10);
+    }
+    /* 搜索结果高亮关键词 */
+    mark {
+        background-color: rgba(250, 204, 21, 0.35);
+        color: inherit;
+        padding: 0 2px;
+        border-radius: 2px;
+    }
+</style>
+
+<script>
+/* ============================================================
+ * 文档上传 tab — 页面脚本
+ *
+ * initDocUpload() 由 router.js 路由命中后调用
+ * 依赖 shared.js 暴露的 escapeHtml / formatBytes / apiFetch / showToast
+ * ============================================================ */
+
+// 文档列表缓存（被 renderDocList / scrollToDocument 共用）
+let documents = [];
+let isSearching = false;
+let currentQuery = '';
+
+// ─── 上传/搜索状态徽章颜色（暗色主题） ─────────────────────
+const REASON_COLOR_CLASS = {
+    red:    { bg: 'rgba(239, 68, 68, 0.15)',  fg: '#FCA5A5', border: 'rgba(239, 68, 68, 0.40)' },
+    amber:  { bg: 'rgba(245, 158, 11, 0.15)', fg: '#FCD34D', border: 'rgba(245, 158, 11, 0.40)' },
+    blue:   { bg: 'rgba(59, 130, 246, 0.15)', fg: '#93C5FD', border: 'rgba(59, 130, 246, 0.40)' },
+    indigo: { bg: 'rgba(99, 102, 241, 0.15)', fg: '#A5B4FC', border: 'rgba(99, 102, 241, 0.40)' },
+    slate:  { bg: 'rgba(100, 116, 139, 0.15)',fg: '#CBD5E1', border: 'rgba(100, 116, 139, 0.40)' },
+    purple: { bg: 'rgba(168, 85, 247, 0.15)', fg: '#D8B4FE', border: 'rgba(168, 85, 247, 0.40)' },
+    green:  { bg: 'rgba(34, 197, 94, 0.15)',  fg: '#86EFAC', border: 'rgba(34, 197, 94, 0.40)' },
+};
+
+// ─── 路由入口 ────────────────────────────────────────────
+window.initDocUpload = function () {
+    loadDocuments();
+    setupDragDrop();
+    // 搜索框回车触发（独立 setupKeyboard 拆开，避免影响 chat tab）
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleSearch();
+        });
+    }
+};
+
+// ─── 拖拽上传 ────────────────────────────────────────────
+function setupDragDrop() {
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    if (!dropZone || !fileInput) return;
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-over');
+    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        handleFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+}
+
+async function handleFiles(files) {
+    for (const file of files) await uploadFile(file);
+}
+
+async function uploadFile(file) {
+    const progress = document.getElementById('uploadProgress');
+    const status   = document.getElementById('uploadStatus');
+    const stepsEl  = document.getElementById('uploadStepsList');
+    if (!progress || !status) return;
+
+    progress.classList.remove('hidden');
+    status.textContent = `正在处理: ${file.name}...`;
+    if (stepsEl) stepsEl.innerHTML = `<div class="text-center text-xs py-2" style="color: var(--color-muted);">正在上传...</div>`;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (res.ok) {
+            status.textContent = `✅ ${data.filename} - ${data.chunks} 个分块`;
+            setTimeout(() => progress.classList.add('hidden'), 2000);
+            if (data.steps && data.steps.length > 0) renderUploadSteps(data.steps);
+            loadDocuments();
+        } else {
+            status.textContent = `❌ ${data.detail}`;
+            setTimeout(() => progress.classList.add('hidden'), 3000);
+        }
+    } catch (err) {
+        status.textContent = `❌ ${err.message}`;
+        setTimeout(() => progress.classList.add('hidden'), 3000);
+    }
+}
+
+// ─── 文档列表 / 统计 ─────────────────────────────────────
+async function loadDocuments() {
+    try {
+        const [docs, stats] = await Promise.all([
+            fetch('/api/documents').then(r => r.json()),
+            fetch('/api/stats').then(r => r.json()),
+        ]);
+        documents = docs;
+        renderDocList(docs);
+        renderStats(stats);
+    } catch (err) {
+        console.error('加载失败:', err);
+    }
+}
+
+function renderDocList(docs) {
+    const container = document.getElementById('docList');
+    const count = document.getElementById('docCount');
+    if (!container || !count) return;
+
+    if (docs.length === 0) {
+        container.innerHTML = `<div class="p-3 text-center text-xs" style="color: var(--color-muted);">暂无文档</div>`;
+        count.textContent = '0';
+        return;
+    }
+    count.textContent = `${docs.length}`;
+    container.innerHTML = docs.map(doc => `
+        <div id="doc-${safeId(doc.filename)}" class="px-3 py-2 flex justify-between items-center transition-all duration-300"
+             style="border-top: 1px solid var(--color-border);">
+            <div class="flex items-center space-x-2 min-w-0">
+                <span class="text-lg">${getFileIcon(doc.file_type)}</span>
+                <div class="min-w-0">
+                    <p class="font-medium text-xs truncate" style="color: var(--color-foreground);">${escapeHtml(doc.filename)}</p>
+                    <p class="text-[10px]" style="color: var(--color-muted);">${doc.chunk_count}块${doc.file_size ? ' · ' + formatSize(doc.file_size) : ''}</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-0.5 flex-shrink-0">
+                <button onclick="openDoc('${escQ(doc.filename)}')" title="打开"
+                        class="text-xs px-1.5 py-1 rounded"
+                        style="color: var(--color-muted);"
+                        onmouseover="this.style.color='var(--color-accent)'"
+                        onmouseout="this.style.color='var(--color-muted)'">📖</button>
+                ${doc.file_type === '.eml'
+                    ? `<span class="text-xs px-1.5 py-1" style="color: var(--color-muted);" title="邮件在数据库中">📁</span>`
+                    : `<button onclick="showInFinder('${escQ(doc.filename)}')" title="Finder"
+                               class="text-xs px-1.5 py-1 rounded"
+                               style="color: var(--color-muted);"
+                               onmouseover="this.style.color='var(--color-accent)'"
+                               onmouseout="this.style.color='var(--color-muted)'">📁</button>`}
+                <button onclick="deleteDoc('${escQ(doc.filename)}')" title="删除"
+                        class="text-xs px-1.5 py-1 rounded"
+                        style="color: var(--color-muted);"
+                        onmouseover="this.style.color='var(--color-destructive)'"
+                        onmouseout="this.style.color='var(--color-muted)'">🗑️</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderStats(stats) {
+    const d = stats.documents || {};
+    const e = stats.emails || {};
+    const el = document.getElementById('statsText');
+    if (el) el.innerHTML = `📊 文档: ${d.total_documents || 0}个 (${d.total_chunks || 0}块) | 📧 邮件: ${e.total_emails || 0}封 (${e.total_threads || 0}线程)`;
+}
+
+async function deleteDoc(filename) {
+    if (!confirm(`确定删除 ${filename}？`)) return;
+    try {
+        await fetch(`/api/documents/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+        loadDocuments();
+    } catch (err) {
+        alert('删除失败: ' + err.message);
+    }
+}
+
+async function openDoc(filename) {
+    window.open(`/api/documents/${encodeURIComponent(filename)}/open`, '_blank');
+}
+
+async function showInFinder(filename) {
+    try {
+        const res = await fetch(`/api/documents/${encodeURIComponent(filename)}/show-in-finder`);
+        const data = await res.json();
+        if (res.ok) {
+            showToast(`✅ ${data.message}`, 'success');
+        } else {
+            alert(data.detail);
+        }
+    } catch (err) {
+        alert(err.message);
+    }
+}
+
+// ─── 搜索 ────────────────────────────────────────────────
+async function handleSearch() {
+    const input = document.getElementById('searchInput');
+    const query = input ? input.value.trim() : '';
+    if (!query || isSearching) return;
+
+    isSearching = true;
+    const topK = parseInt(document.getElementById('topK').value, 10);
+    const fileType = document.getElementById('fileTypeFilter').value || '';
+    const container = document.getElementById('searchResults');
+    const stepsEl = document.getElementById('searchStepsList');
+
+    container.innerHTML = `
+        <div class="p-6 text-center" style="color: var(--color-muted);">
+            <div class="animate-spin rounded-full h-6 w-6 border-b-2 mx-auto mb-2"
+                 style="border-color: var(--color-accent);"></div>
+            <p class="text-sm">正在搜索...</p>
+        </div>`;
+    if (stepsEl) stepsEl.innerHTML = `<div class="text-center text-xs py-2" style="color: var(--color-muted);">正在执行...</div>`;
+
+    try {
+        const requestBody = { query, top_k: topK };
+        if (fileType) requestBody.file_type = fileType;
+
+        const res = await fetch('/api/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody),
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+            renderSearchSteps(data.steps || []);
+            renderResults(data);
+        } else {
+            container.innerHTML = `<div class="p-6 text-center" style="color: var(--color-destructive);"><p class="text-sm">搜索失败: ${escapeHtml(data.detail || '未知错误')}</p></div>`;
+        }
+    } catch (err) {
+        container.innerHTML = `<div class="p-6 text-center" style="color: var(--color-destructive);"><p class="text-sm">搜索失败: ${escapeHtml(err.message)}</p></div>`;
+    } finally {
+        isSearching = false;
+    }
+}
+
+function renderResults(data) {
+    const container = document.getElementById('searchResults');
+    if (!container) return;
+
+    if (!data.results || data.results.length === 0) {
+        container.innerHTML = `<div class="p-6 text-center" style="color: var(--color-muted);"><div class="text-3xl mb-2">😕</div><p class="text-sm">未找到相关内容</p></div>`;
+        return;
+    }
+    currentQuery = data.query || '';
+    container.innerHTML = data.results.map((r) => `
+        <div class="p-3 cursor-pointer transition-colors"
+             style="border-top: 1px solid var(--color-border);"
+             onclick="scrollToDocument('${escQ(r.filename)}')"
+             onmouseover="this.style.backgroundColor='rgba(255,255,255,0.04)'"
+             onmouseout="this.style.backgroundColor='transparent'"
+             title="点击定位到文档列表">
+            <div class="flex items-start justify-between mb-1">
+                <span class="text-xs font-medium px-2 py-0.5 rounded"
+                      style="background-color: rgba(34, 197, 94, 0.15); color: var(--color-accent);">
+                    ${getScoreLabel(r.score)} ${(r.score * 100).toFixed(1)}%
+                </span>
+                <span class="text-xs" style="color: var(--color-muted);">${escapeHtml(r.filename)} #${r.chunk_index}</span>
+            </div>
+            ${r.metadata && r.metadata.subject
+                ? `<p class="text-xs mb-1" style="color: var(--color-accent);">📧 ${highlightText(r.metadata.subject, currentQuery, r.hit_keywords)}</p>`
+                : ''}
+            <p class="text-xs leading-relaxed whitespace-pre-wrap" style="color: var(--color-foreground);">${highlightText(r.content, currentQuery, r.hit_keywords)}</p>
+            ${renderMatchReasons(r.match_reasons)}
+        </div>
+    `).join('');
+}
+
+function scrollToDocument(filename) {
+    const docElement = document.getElementById(`doc-${safeId(filename)}`);
+    if (docElement) {
+        docElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        docElement.style.backgroundColor = 'rgba(34, 197, 94, 0.15)';
+        docElement.style.boxShadow = '0 0 0 2px var(--color-accent)';
+        setTimeout(() => {
+            docElement.style.backgroundColor = '';
+            docElement.style.boxShadow = '';
+        }, 2000);
+    }
+}
+
+// ─── 步骤渲染 ────────────────────────────────────────────
+function renderUploadSteps(steps) {
+    const stepsList = document.getElementById('uploadStepsList');
+    const uploadDuration = document.getElementById('uploadDuration');
+    if (!stepsList) return;
+
+    const totalDuration = steps.reduce((sum, s) => sum + (s.duration_ms || 0), 0);
+    if (uploadDuration) uploadDuration.textContent = `${totalDuration.toFixed(0)}ms`;
+
+    stepsList.innerHTML = steps.map((step, i) => `
+        <div class="rounded p-2" style="background-color: rgba(255, 255, 255, 0.04);">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-1.5">
+                    <span class="w-4 h-4 rounded-full text-white text-[10px] flex items-center justify-center"
+                          style="background-color: var(--color-accent);">${i + 1}</span>
+                    <span class="text-xs font-medium" style="color: var(--color-foreground);">${escapeHtml(step.description)}</span>
+                </div>
+                <span class="text-[10px]" style="color: var(--color-muted);">${(step.duration_ms || 0).toFixed(0)}ms</span>
+            </div>
+            ${step.details ? `<div class="ml-5.5 mt-1 text-[10px]" style="color: var(--color-muted);">${formatStepDetails(step.details)}</div>` : ''}
+        </div>
+    `).join('');
+}
+
+function renderSearchSteps(steps) {
+    const stepsList = document.getElementById('searchStepsList');
+    const stepDuration = document.getElementById('stepDuration');
+    if (!stepsList) return;
+
+    if (!steps || steps.length === 0) {
+        stepsList.innerHTML = `<p class="text-xs" style="color: var(--color-muted);">无步骤信息</p>`;
+        return;
+    }
+
+    const totalDuration = steps.reduce((sum, s) => sum + (s.duration_ms || 0), 0);
+    if (stepDuration) stepDuration.textContent = `${totalDuration.toFixed(0)}ms`;
+
+    stepsList.innerHTML = steps.map((step, i) => `
+        <div class="rounded p-2" style="background-color: rgba(255, 255, 255, 0.04);">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-1.5">
+                    <span class="w-4 h-4 rounded-full text-white text-[10px] flex items-center justify-center"
+                          style="background-color: var(--color-accent);">${i + 1}</span>
+                    <span class="text-xs font-medium" style="color: var(--color-foreground);">${escapeHtml(step.description)}</span>
+                </div>
+                <span class="text-[10px]" style="color: var(--color-muted);">${(step.duration_ms || 0).toFixed(0)}ms</span>
+            </div>
+            ${step.details ? `<div class="ml-5.5 mt-1 text-[10px]" style="color: var(--color-muted);">${formatStepDetails(step.details)}</div>` : ''}
+        </div>
+    `).join('');
+}
+
+function formatStepDetails(details) {
+    return `<div class="space-y-1">${Object.entries(details).map(([k, v]) => {
+        const label = k.replace(/_/g, ' ');
+        return `<div>${formatDetailItem(label, v)}</div>`;
+    }).join('')}</div>`;
+}
+
+function formatDetailItem(label, value) {
+    // 数组
+    if (Array.isArray(value)) {
+        if (value.length === 0) {
+            return `<span style="color: var(--color-muted);">${escapeHtml(label)}:</span> <span style="color: var(--color-muted);">[]</span>`;
+        }
+        // 对象数组（搜索结果）
+        if (typeof value[0] === 'object') {
+            return `
+                <div><span style="color: var(--color-muted);">${escapeHtml(label)}:</span></div>
+                <div class="ml-3 mt-0.5 space-y-0.5">
+                    ${value.map((item) => `
+                        <div class="rounded px-1.5 py-0.5" style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">
+                            ${Object.entries(item).map(([ik, iv]) => `<span style="color: var(--color-muted);">${escapeHtml(ik)}:</span> ${escapeHtml(String(iv))}`).join(' · ')}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+        // 简单数组（向量预览）
+        return `<span style="color: var(--color-muted);">${escapeHtml(label)}:</span> <span style="font-family: var(--font-mono); font-size: 9px; color: var(--color-foreground);">[${value.map(v => escapeHtml(String(v))).join(', ')}]</span>`;
+    }
+    // 对象
+    if (typeof value === 'object' && value !== null) {
+        return `
+            <div><span style="color: var(--color-muted);">${escapeHtml(label)}:</span></div>
+            <div class="ml-3 mt-0.5 rounded px-1.5 py-0.5" style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">
+                ${Object.entries(value).map(([ik, iv]) => `<span style="color: var(--color-muted);">${escapeHtml(ik)}:</span> ${escapeHtml(String(iv))}`).join(' · ')}
+            </div>
+        `;
+    }
+    // 简单值
+    return `<span style="color: var(--color-muted);">${escapeHtml(label)}:</span> <span style="color: var(--color-foreground);">${escapeHtml(String(value))}</span>`;
+}
+
+// ─── 工具函数 ────────────────────────────────────────────
+function getFileIcon(ext) {
+    return { '.pdf': '📕', '.txt': '📄', '.md': '📝', '.docx': '📘', '.eml': '📧' }[ext] || '📄';
+}
+function getScoreLabel(score) {
+    if (score >= 0.9) return '🟢';
+    if (score >= 0.8) return '🟡';
+    return '🟠';
+}
+function formatSize(bytes) {
+    if (!bytes || bytes === 0) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+function highlightText(text, query, hitKeywords) {
+    if (!text) return '';
+    let escaped = escapeHtml(text);
+    let words = [];
+    if (hitKeywords && hitKeywords.length > 0) {
+        words = [...hitKeywords];
+    } else if (query) {
+        words = query.split(/\s+/).filter(w => w.length > 0);
+    }
+    if (words.length === 0) return escaped;
+    words.sort((a, b) => b.length - a.length);
+    const escapedWords = words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const regex = new RegExp(`(${escapedWords.join('|')})`, 'gi');
+    return escaped.replace(regex, '<mark>$1</mark>');
+}
+function renderMatchReasons(reasons) {
+    if (!reasons || reasons.length === 0) return '';
+    return `<div class="flex flex-wrap gap-1 mt-1.5">` +
+        reasons.map(r => {
+            const c = REASON_COLOR_CLASS[r.color] || REASON_COLOR_CLASS.slate;
+            return `<span class="text-[10px] px-1.5 py-0.5 rounded border" style="background-color: ${c.bg}; color: ${c.fg}; border-color: ${c.border};">${escapeHtml(r.label)}</span>`;
+        }).join('') +
+        `</div>`;
+}
+// 单引号转义（onclick 模板用）
+const escQ = s => String(s).replace(/'/g, "\\'");
+// ID 安全化（去除 / 等特殊字符）
+const safeId = s => encodeURIComponent(s).replace(/%/g, '_');
+
+// 暴露到 window（路由/内联 onclick 用）
+window.handleSearch = handleSearch;
+window.openDoc = openDoc;
+window.showInFinder = showInFinder;
+window.deleteDoc = deleteDoc;
+window.scrollToDocument = scrollToDocument;
+</script>

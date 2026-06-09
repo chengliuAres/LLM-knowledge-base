@@ -1,0 +1,67 @@
+<!-- 代码问答 tab：输入问题 + 提问按钮 + 答案展示 -->
+
+<div class="max-w-7xl mx-auto">
+    <div class="panel">
+        <h3 class="text-sm font-semibold mb-2" style="color: var(--color-foreground);">💬 代码问答</h3>
+        <div class="flex gap-2">
+            <input id="codeChatInput" type="text" placeholder="问一个问题..." class="input flex-1" onkeypress="if(event.key==='Enter')codeChat()">
+            <button onclick="codeChat()" id="codeChatBtn" class="btn btn-accent shrink-0">提问</button>
+        </div>
+        <div id="codeChatAnswer" class="mt-3 text-sm hidden" style="color: var(--color-foreground);"></div>
+    </div>
+</div>
+
+<script>
+window.initCodeChat = function() {};
+
+function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+}
+
+async function codeChat() {
+    const question = document.getElementById('codeChatInput').value.trim();
+    if (!question) return;
+
+    const btn = document.getElementById('codeChatBtn');
+    const answerEl = document.getElementById('codeChatAnswer');
+    btn.disabled = true;
+    btn.textContent = '⏳';
+    answerEl.classList.remove('hidden');
+    answerEl.innerHTML = '<div style="color: var(--color-muted);">思考中...</div>';
+
+    const filters = {};
+    const repo = document.getElementById('codeFilterRepo')?.value;
+    if (repo) filters.repo_name = repo;
+
+    try {
+        const res = await fetch('/api/code/chat', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({question, top_k: 5, filters, stream: false}),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail);
+
+        if (typeof codeRenderSteps === 'function') {
+            codeRenderSteps(data.steps || []);
+        }
+
+        let html = `<div class="text-sm" style="color: var(--color-foreground);">${escapeHtml(data.answer).replace(/\n/g, '<br>')}</div>`;
+        if (data.sources && data.sources.length > 0) {
+            html += '<div class="mt-2 text-xs" style="color: var(--color-muted);"><b>引用:</b> ';
+            html += data.sources.map(s => `${escapeHtml(s.file_path)}:${s.line_start}`).join(', ');
+            html += '</div>';
+        }
+        answerEl.innerHTML = html;
+    } catch (e) {
+        answerEl.innerHTML = `<div style="color: var(--color-danger);">错误: ${escapeHtml(e.message)}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '提问';
+    }
+}
+
+window.codeChat = codeChat;
+</script>
