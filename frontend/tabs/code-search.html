@@ -51,7 +51,7 @@ async function codeSearch() {
         }
         codeRenderResults(data.results || [], query);
     } catch (e) {
-        alert('搜索失败: ' + e.message);
+        showToast('搜索失败: ' + e.message, 'error');
     }
 }
 

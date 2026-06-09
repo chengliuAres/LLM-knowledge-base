@@ -88,9 +88,10 @@
     </div>
 
     <!-- ─────────── 脚本 ─────────── -->
-    <script src="js/shared.js?v=2"></script>
-    <script src="js/router.js?v=4"></script>
+    <script src="js/shared.js?v=3"></script>
+    <script src="js/router.js?v=5"></script>
     <script>
+        window.__TAB_VERSION = '2';
         // 显式启动路由（router.js 也会在 DOMContentLoaded 时自启，这里双保险）
         if (typeof initRouter === "function") {
             initRouter();

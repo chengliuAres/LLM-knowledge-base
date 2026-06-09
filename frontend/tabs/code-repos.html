@@ -226,7 +226,7 @@ async function codeScanRepo() {
     const name = document.getElementById('codeRepoName').value.trim();
     const path = document.getElementById('codeRepoPath').value.trim();
     const type = document.getElementById('codeProjectType').value;
-    if (!name || !path) return alert('请填写仓库名和路径');
+    if (!name || !path) return showToast('请填写仓库名和路径', 'warning');
 
     const btn = document.getElementById('codeScanBtn');
     const progressEl = document.getElementById('codeScanProgress');
@@ -282,7 +282,7 @@ async function codeScanRepo() {
                 codeRenderScanProgress([...steps, {step: 'cancelled', detail: '🛑 已终止并清理'}]);
             } else if (result.status === 'error') {
                 progressEl.classList.add('hidden');
-                alert('扫描出错: ' + result.error);
+                showToast('扫描出错: ' + result.error, 'error');
             }
         });
 
@@ -294,7 +294,7 @@ async function codeScanRepo() {
         };
 
     } catch (e) {
-        alert('扫描失败: ' + e.message);
+        showToast('扫描失败: ' + e.message, 'error');
         _resetScanBtn();
         progressEl.classList.add('hidden');
     }
@@ -352,27 +352,38 @@ async function codeLoadDirs(dirPath) {
         if (!res.ok) throw new Error(data.detail);
 
         let html = `<div class="sticky top-0 px-2 py-1.5 border-b flex items-center gap-2" style="background: var(--color-primary); border-color: var(--color-border);">
-            <span class="text-xs truncate flex-1 font-mono" style="color: var(--color-muted);">${data.current}</span>
-            ${data.parent ? `<button onclick="codeLoadDirs('${data.parent.replace(/'/g, "\\'")}')" class="btn btn-secondary text-xs py-0.5 px-2 shrink-0">⬆ 上级</button>` : ''}
+            <span class="text-xs truncate flex-1 font-mono" style="color: var(--color-muted);">${escapeHtml(data.current)}</span>
+            ${data.parent ? `<button id="btnParentDir" data-path="${escapeHtml(data.parent)}" class="btn btn-secondary text-xs py-0.5 px-2 shrink-0">⬆ 上级</button>` : ''}
         </div>`;
 
         if (data.dirs.length === 0) {
             html += '<div class="p-3 text-center text-xs" style="color: var(--color-muted);">无子目录</div>';
         } else {
             for (const d of data.dirs) {
-                const escaped = d.path.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                const escapedName = d.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                html += `<div class="flex items-center cursor-pointer px-2 py-1.5 border-b" style="border-color: var(--color-border);"
-                            onclick="codeSelectDir('${escaped}', '${escapedName}')">
+                html += `<div class="dir-item flex items-center cursor-pointer px-2 py-1.5 border-b" style="border-color: var(--color-border);"
+                            data-path="${escapeHtml(d.path)}" data-name="${escapeHtml(d.name)}">
                             <span class="mr-2">📁</span>
-                            <span class="truncate" style="color: var(--color-foreground);">${d.name}</span>
-                            <button onclick="event.stopPropagation(); codeLoadDirs('${escaped}')"
-                                class="ml-auto text-[10px] hover:opacity-80 shrink-0" style="color: var(--color-muted);">进入 →</button>
+                            <span class="truncate" style="color: var(--color-foreground);">${escapeHtml(d.name)}</span>
+                            <button class="dir-enter ml-auto text-[10px] hover:opacity-80 shrink-0" data-path="${escapeHtml(d.path)}" style="color: var(--color-muted);">进入 →</button>
                          </div>`;
             }
         }
 
         browser.innerHTML = html;
+        // 事件委托：上级目录按钮
+        const btnParent = browser.querySelector('#btnParentDir');
+        if (btnParent) btnParent.addEventListener('click', () => codeLoadDirs(btnParent.dataset.path));
+        // 事件委托：点击目录行填入路径，点击"进入"按钮导航
+        browser.querySelectorAll('.dir-item').forEach(el => {
+            el.addEventListener('click', (e) => {
+                if (e.target.closest('.dir-enter')) {
+                    e.stopPropagation();
+                    codeLoadDirs(el.dataset.path);
+                } else {
+                    codeSelectDir(el.dataset.path, el.dataset.name);
+                }
+            });
+        });
     } catch (e) {
         browser.innerHTML = `<div class="p-2 text-xs" style="color: var(--color-destructive);">⚠ ${e.message}</div>`;
     }
@@ -392,11 +403,11 @@ async function codeRefreshRepo(name) {
         const res = await fetch(`/api/code/repos/${name}/refresh`, {method: 'POST'});
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail);
-        codeRenderSteps(data.steps || []);
-        alert(`刷新完成: ${data.total_chunks} chunks`);
+        codeRenderSteps('codeScanProgress', data.steps || []);
+        showToast(`刷新完成: ${data.total_chunks} chunks`, 'success');
         codeLoadRepos();
     } catch (e) {
-        alert('刷新失败: ' + e.message);
+        showToast('刷新失败: ' + e.message, 'error');
     }
 }
 
@@ -410,10 +421,10 @@ async function codeClearAll() {
         const res = await fetch('/api/code/repos', {method: 'DELETE'});
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail);
-        alert(`已清空: ${data.deleted_chunks} chunks, ${data.cleared_repos.length} 个仓库`);
+        showToast(`已清空: ${data.deleted_chunks} chunks, ${data.cleared_repos.length} 个仓库`, 'success');
         codeLoadRepos();
     } catch (e) {
-        alert('清空失败: ' + e.message);
+        showToast('清空失败: ' + e.message, 'error');
     } finally {
         btn.disabled = false;
         btn.textContent = '🗑️ 清空全部';
@@ -428,7 +439,7 @@ async function codeDeleteRepo(name) {
         if (!res.ok) throw new Error((await res.json()).detail);
         codeLoadRepos();
     } catch (e) {
-        alert('删除失败: ' + e.message);
+        showToast('删除失败: ' + e.message, 'error');
     }
 }
 
@@ -450,5 +461,4 @@ window.codeRefreshRepo = codeRefreshRepo;
 window.codeClearAll = codeClearAll;
 window.codeDeleteRepo = codeDeleteRepo;
 window.codeRenderScanProgress = codeRenderScanProgress;
-window.codeRenderSteps = codeRenderSteps;
 </script>

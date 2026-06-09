@@ -119,7 +119,7 @@ async function importEmails() {
                 </div>
             `).join('');
             loadEmailStats();
-            alert(`成功导入 ${data.imported_emails} 封邮件`);
+            showToast(`成功导入 ${data.imported_emails} 封邮件`, 'success');
         } else {
             stepsDiv.innerHTML = `<p style="color: var(--color-destructive);">❌ ${data.detail}</p>`;
         }

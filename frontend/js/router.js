@@ -61,7 +61,7 @@ async function navigate(hash) {
   if (!_cache[key]) {
     // 首次访问：fetch + 注入
     try {
-      const res = await fetch(route.file);
+      const res = await fetch(route.file + '?v=' + (window.__TAB_VERSION || '1'));
       if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
       const html = await res.text();
 
