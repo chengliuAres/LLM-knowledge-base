@@ -9,6 +9,7 @@
 import contextvars
 import logging
 import sys
+import threading
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
@@ -17,6 +18,7 @@ LOG_FILE: Path = LOG_DIR / "app.log"
 LOG_FORMAT: str = "%(asctime)s [%(levelname)s] %(name)s: %(message)s [req:%(req_id)s]"
 DATE_FORMAT: str = "%Y-%m-%d %H:%M:%S"
 _HANDLER_MARKER: str = "__kb_logging_setup__"
+_init_lock: threading.Lock = threading.Lock()
 
 # 跨协程 request_id 存储（middleware 写入）
 request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
@@ -35,36 +37,41 @@ class RequestIdFilter(logging.Filter):
 def configure_logging(level: str = "INFO") -> None:
     """幂等：重复调直接 return。挂 file/stream 两个 handler，注入 request_id filter。"""
     root = logging.getLogger()
+    # 快速路径：未持锁先扫一遍 marker，命中直接 return
     if any(getattr(h, _HANDLER_MARKER, False) for h in root.handlers):
-        return  # 已初始化
+        return
+    with _init_lock:
+        # 双重检查：拿到锁后再验一次，避免 check-then-act 之间被并发初始化
+        if any(getattr(h, _HANDLER_MARKER, False) for h in root.handlers):
+            return
 
-    root.setLevel(level)
-    formatter = logging.Formatter(LOG_FORMAT, DATE_FORMAT)
-    req_filter = RequestIdFilter()
+        root.setLevel(level)
+        formatter = logging.Formatter(LOG_FORMAT, DATE_FORMAT)
+        req_filter = RequestIdFilter()
 
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    file_handler = TimedRotatingFileHandler(
-        LOG_FILE,
-        when="midnight",
-        backupCount=3,
-        encoding="utf-8",
-        utc=False,
-    )
-    file_handler.suffix = "%Y-%m-%d"
-    file_handler.setFormatter(formatter)
-    file_handler.addFilter(req_filter)
-    setattr(file_handler, _HANDLER_MARKER, True)
-    root.addHandler(file_handler)
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        file_handler = TimedRotatingFileHandler(
+            LOG_FILE,
+            when="midnight",
+            backupCount=3,
+            encoding="utf-8",
+            utc=False,
+        )
+        file_handler.suffix = "%Y-%m-%d"
+        file_handler.setFormatter(formatter)
+        file_handler.addFilter(req_filter)
+        setattr(file_handler, _HANDLER_MARKER, True)
+        root.addHandler(file_handler)
 
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setFormatter(formatter)
-    stream_handler.addFilter(req_filter)
-    setattr(stream_handler, _HANDLER_MARKER, True)
-    root.addHandler(stream_handler)
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setFormatter(formatter)
+        stream_handler.addFilter(req_filter)
+        setattr(stream_handler, _HANDLER_MARKER, True)
+        root.addHandler(stream_handler)
 
-    # 静默第三方库噪音（与原 main.py:14-16 行为一致）
-    for noisy in ("jieba", "sentence_transformers", "transformers"):
-        logging.getLogger(noisy).setLevel(logging.WARNING)
+        # 静默第三方库噪音（与原 main.py:14-16 行为一致）
+        for noisy in ("jieba", "sentence_transformers", "transformers"):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def get_logger(name: str) -> logging.Logger:
