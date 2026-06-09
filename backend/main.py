@@ -75,7 +75,7 @@ async def request_id_middleware(request: Request, call_next):
 async def unhandled_exception_handler(request: Request, exc: Exception):
     """全局兜底：未捕获的 Exception 自动打 stack trace + request_id。"""
     rid = request_id_var.get()
-    log.exception(f"unhandled path={request.url.path} method={request.method} request_id={rid}")
+    log.exception(f"unhandled path={request.url.path} method={request.method} error_type={type(exc).__name__} request_id={rid}")
     return JSONResponse(
         status_code=500,
         content={"detail": "内部错误", "request_id": rid},
@@ -133,7 +133,7 @@ class EmailImportRequest(BaseModel):
 @app.post("/api/upload", response_model=UploadResponse)
 async def upload_file(file: UploadFile = File(...)):
     """上传并解析文档"""
-    log.info(f"upload_start filename={file.filename}")
+    log.info(f"upload_start filename={file.filename!r}")
     tracker = StepTracker(operation_type="insert_file")
     
     # 检查文件格式
@@ -506,17 +506,14 @@ async def chat(request: ChatRequest):
             step3.complete({"mode": "stream"})
             
             async def generate():
-                # 先发送步骤信息
                 yield f"data: {json.dumps({'type': 'steps', 'data': tracker.to_list()})}\n\n"
-                
-                # 流式输出回答
-                async for chunk in await llm_client.chat(messages, stream=True):
-                    yield f"data: {json.dumps({'type': 'content', 'data': chunk})}\n\n"
-                
-                # 发送来源信息
-                yield f"data: {json.dumps({'type': 'sources', 'data': search_results})}\n\n"
-                yield "data: [DONE]\n\n"
-                tracker.flush()
+                try:
+                    async for chunk in await llm_client.chat(messages, stream=True):
+                        yield f"data: {json.dumps({'type': 'content', 'data': chunk})}\n\n"
+                    yield f"data: {json.dumps({'type': 'sources', 'data': search_results})}\n\n"
+                finally:
+                    yield "data: [DONE]\n\n"
+                    tracker.flush()
             
             return StreamingResponse(generate(), media_type="text/event-stream")
         else:
