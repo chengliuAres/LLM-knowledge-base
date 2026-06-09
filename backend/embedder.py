@@ -29,6 +29,7 @@ def get_model() -> SentenceTransformer:
 
         _model = SentenceTransformer(
             _model_name,
+            cache_folder=MODEL_CACHE_DIR,
             model_kwargs={"torch_dtype": "float16"},  # fp16: MPS 上 ~2x 加速 + 省一半显存
         )
         # MPS 加速

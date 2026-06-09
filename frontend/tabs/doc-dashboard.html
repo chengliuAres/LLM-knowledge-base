@@ -125,10 +125,9 @@
                 </div>
                 <div>
                     <p class="font-medium text-sm" style="color: var(--color-foreground);">Embedding 模型</p>
-                    <code class="text-xs block mt-1 px-2 py-1 rounded"
-                          style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">~/.cache/huggingface/hub/</code>
-                    <p id="embedderInfo" class="text-[10px] mt-1" style="color: var(--color-muted);">文档: -</p>
-                    <p id="codeEmbedderInfo" class="text-[10px]" style="color: var(--color-muted);">代码: -</p>
+                    <p id="embedderPath" class="text-[10px] mt-1" style="color: var(--color-muted);">模型路径: -</p>
+                    <p id="embedderInfo" class="text-[10px] mt-0.5" style="color: var(--color-muted);">文档: -</p>
+                    <p id="codeEmbedderInfo" class="text-[10px] mt-0.5" style="color: var(--color-muted);">代码: -</p>
                 </div>
                 <div>
                     <p class="font-medium text-sm" style="color: var(--color-foreground);">测试文档</p>
@@ -201,15 +200,23 @@ function loadDashboardStats(stats) {
 
     const emb = stats.embedder || {};
     const embEl = document.getElementById('embedderInfo');
+    const embPathEl = document.getElementById('embedderPath');
+    if (emb.cache_dir && embPathEl) {
+        embPathEl.textContent = `模型路径: ${emb.cache_dir}`;
+    }
     if (embEl && emb.model_name) {
         const shortName = emb.model_name.split('/').pop();
         embEl.textContent = `文档: ${shortName} · ${emb.dimension}维`;
     }
     const cemb = stats.code_embedder || {};
     const cembEl = document.getElementById('codeEmbedderInfo');
-    if (cembEl && cemb.model_name) {
-        const shortName = cemb.model_name.split('/').pop();
-        cembEl.textContent = `代码: ${shortName} · ${cemb.dimension}维`;
+    if (cembEl && cemb.primary_model) {
+        const shortName = cemb.primary_model.split('/').pop();
+        const parts = [`${shortName} · ${cemb.primary_dimension}维`];
+        if (cemb.fallback_model) {
+            parts.push(`备用: ${cemb.fallback_model.split('/').pop()} · ${cemb.fallback_dimension}维`);
+        }
+        cembEl.textContent = `代码: ${parts.join(' ｜ ')}`;
     }
 
     const perf = stats.performance || {};

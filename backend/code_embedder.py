@@ -46,7 +46,7 @@ def _load_model(model_name: str, model_attr: str, trust_remote: bool = False) ->
         kwargs["trust_remote_code"] = True
         kwargs["model_kwargs"] = {"torch_dtype": "float16"}
 
-    current = SentenceTransformer(model_name, **kwargs)
+    current = SentenceTransformer(model_name, cache_folder=MODEL_CACHE_DIR, **kwargs)
 
     # bge-small-en 在 MPS 上可能不稳定，跳过 MPS 加速
     if "bge-small" not in model_name:
