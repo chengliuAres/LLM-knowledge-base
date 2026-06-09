@@ -108,7 +108,7 @@ def test_unhandled_exception_handler_logs_with_request_id(tmp_path, monkeypatch,
     # 设置一个固定的 request_id
     token = request_id_var.set("test1234")
     try:
-        # 构造一个假 request
+        # 构造一个假 request（scope 必须完整，handler 会访问 request.url.path）
         from starlette.requests import Request
 
         req = Request(
@@ -117,6 +117,11 @@ def test_unhandled_exception_handler_logs_with_request_id(tmp_path, monkeypatch,
                 "method": "GET",
                 "path": "/dummy",
                 "headers": [],
+                "query_string": b"",
+                "scheme": "http",
+                "server": ("testserver", 80),
+                "client": ("testclient", 50000),
+                "root_path": "",
             }
         )
 
@@ -143,36 +148,39 @@ def test_unhandled_exception_handler_logs_with_request_id(tmp_path, monkeypatch,
 
 
 def test_rotation_backupcount_trims_oldest(tmp_path, monkeypatch):
-    """backupCount=3：构造 5 个不同日期的 backup + 当前文件，触发一次 rollover 后
-    最旧的两个 backup 应被删除，最终剩 1 当前 + 3 backup。
+    """backupCount=3：构造 5 个远期 backup + 当前文件，触发一次 rollover 后
+    最老的 2 个 backup 应被删除，最终剩 1 当前 + 3 backup。
+
+    说明：用 2099 年远期日期预创建 5 个 backup，避免与今日（rollover 实际日期）撞名。
+    rollover 产生的 backup 文件名 = 今日，排序上 2099-* > 今日，所以保留 3 个
+    2099-*（最老 2 个被裁）。
     """
     from logging.handlers import TimedRotatingFileHandler
     import logging
 
     monkeypatch.setattr("logging_setup.LOG_DIR", tmp_path)
+    # LOG_FILE 在 logging_setup 模块加载时已冻结为 LOG_DIR/'app.log'，需同步改
+    monkeypatch.setattr("logging_setup.LOG_FILE", tmp_path / "app.log")
 
-    from logging_setup import configure_logging, RequestIdFilter, LOG_FORMAT, DATE_FORMAT
+    from logging_setup import configure_logging
+
+    # 先重置 root（避免前序测试残留 handler 干扰 T5）
+    root = logging.getLogger()
+    for h in list(root.handlers):
+        root.removeHandler(h)
 
     configure_logging()
 
-    # 重新拿一个指向 tmp_path 的 handler（用同样的参数）
-    from logging_setup import LOG_FILE
+    # 取刚刚装上的 file handler（SUT 真 handler，不是 stdlib 裸 handler）
+    fh = next(h for h in root.handlers if isinstance(h, TimedRotatingFileHandler))
+    assert fh.backupCount == 3, f"expected backupCount=3, got {fh.backupCount}"
 
-    log_file = tmp_path / "app.log"
-    fh = TimedRotatingFileHandler(
-        str(log_file), when="midnight", backupCount=3, encoding="utf-8"
-    )
-    fh.suffix = "%Y-%m-%d"
-    formatter = logging.Formatter(LOG_FORMAT, DATE_FORMAT)
-    req_filter = RequestIdFilter()
-    fh.setFormatter(formatter)
-    fh.addFilter(req_filter)
-
-    # 先造 5 个不同日期的 backup（模拟 5 天的轮转）
+    # 用远期日期（2099）预创建 5 个 backup，今日的 rollover 不会冲突
+    (tmp_path / "app.log").write_text("current\n")
     for i in range(1, 6):
-        (tmp_path / f"app.log.2026-06-{i:02d}").write_text(f"day {i}\n")
+        (tmp_path / f"app.log.2099-01-{i:02d}").write_text(f"day {i}\n")
 
-    # 给 handler 一个打开的当前文件，再触发 rollover
+    # 给 handler 一个打开的当前文件，再触发一次 rollover
     fh.stream = open(fh.baseFilename, "a")
     rec = logging.LogRecord("test", logging.INFO, "", 1, "current\n", None, None)
     rec.req_id = "-"
@@ -184,16 +192,13 @@ def test_rotation_backupcount_trims_oldest(tmp_path, monkeypatch):
     log_files = sorted(p.name for p in tmp_path.iterdir() if p.name.startswith("app.log"))
     backups = [n for n in log_files if n.startswith("app.log.")]
 
-    # 期望：1 个当前 + 3 个 backup（最老的 3 个被裁掉，留下最新的 3 个）
+    # 期望：1 个当前 + 3 个 backup（最老的 2 个被裁，剩下最新 3 个）
     assert "app.log" in log_files, f"missing current app.log, got {log_files}"
     assert len(backups) == 3, f"expected 3 backups (backupCount=3), got {len(backups)}: {backups}"
-    # 老的三个应被裁掉
-    assert "app.log.2026-06-01" not in log_files
-    assert "app.log.2026-06-02" not in log_files
-    assert "app.log.2026-06-03" not in log_files
-    # 新的三个应保留
-    assert "app.log.2026-06-04" in log_files
-    assert "app.log.2026-06-05" in log_files
-    # 这次 rollover 自己造的 backup（日期 = 今日）
-    rollover_backup = [n for n in backups if n.startswith("app.log.2026")]
-    assert any(n != "app.log.2026-06-04" and n != "app.log.2026-06-05" for n in rollover_backup)
+    # 5 个 2099-* 中最老的 2 个应被裁
+    assert "app.log.2099-01-01" not in log_files
+    assert "app.log.2099-01-02" not in log_files
+    # 5 个 2099-* 中最新 3 个应保留
+    assert "app.log.2099-01-03" in log_files
+    assert "app.log.2099-01-04" in log_files
+    assert "app.log.2099-01-05" in log_files
