@@ -23,12 +23,7 @@
 </div>
 
 <script>
-// 工具函数
-function escapeHtml(str) {
-    const d = document.createElement('div');
-    d.textContent = str;
-    return d.innerHTML;
-}
+// 工具函数（escapeHtml 来自 shared.js）
 
 // 执行代码搜索（向量 / 关键词 / 混合）
 async function codeSearch() {

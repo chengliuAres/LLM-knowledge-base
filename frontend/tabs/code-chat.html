@@ -14,12 +14,6 @@
 <script>
 window.initCodeChat = function() {};
 
-function escapeHtml(str) {
-    const d = document.createElement('div');
-    d.textContent = str;
-    return d.innerHTML;
-}
-
 async function codeChat() {
     const question = document.getElementById('codeChatInput').value.trim();
     if (!question) return;

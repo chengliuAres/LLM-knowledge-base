@@ -114,6 +114,26 @@ function toggleStepCard(stepId) {
   if (el) el.classList.toggle("expanded");
 }
 
+// ── 代码步骤渲染（跨 tab 共享） ──
+function codeRenderSteps(steps) {
+  const el = document.getElementById('codeSteps');
+  if (!el) return;
+  if (!steps || steps.length === 0) {
+    el.innerHTML = '<div class="p-3 text-center text-xs" style="color: var(--color-muted);">无步骤</div>';
+    return;
+  }
+  el.innerHTML = steps.map((s, i) => `
+    <div class="border rounded p-2" style="border-color: var(--color-border);">
+      <div class="flex items-center gap-2">
+        <span class="w-5 h-5 rounded-full text-white text-[10px] flex items-center justify-center" style="background: ${s.status === 'completed' ? 'var(--color-accent)' : s.status === 'error' ? 'var(--color-destructive)' : 'var(--color-muted)'};">${i + 1}</span>
+        <span class="text-xs font-medium" style="color: var(--color-foreground);">${escapeHtml(s.description || s.name)}</span>
+        <span class="text-[10px] ml-auto" style="color: var(--color-muted);">${(s.duration_ms || 0).toFixed(0)}ms</span>
+      </div>
+      ${s.details ? `<div class="text-[10px] mt-1 ml-7" style="color: var(--color-muted);">${JSON.stringify(s.details)}</div>` : ''}
+    </div>
+  `).join('');
+}
+
 // 暴露到 window，供内联 onclick / 其他模块使用
 window.escapeHtml = escapeHtml;
 window.formatBytes = formatBytes;
@@ -121,3 +141,4 @@ window.formatDuration = formatDuration;
 window.apiFetch = apiFetch;
 window.showToast = showToast;
 window.toggleStepCard = toggleStepCard;
+window.codeRenderSteps = codeRenderSteps;

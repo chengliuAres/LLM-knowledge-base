@@ -1,0 +1,3 @@
+{"type":"server-started","port":53060,"host":"0.0.0.0","url_host":"localhost","url":"http://localhost:53060","screen_dir":"/Users/admin/Desktop/AI产出/email-wiki-demo/.superpowers/brainstorm/77122-1780985208/content","state_dir":"/Users/admin/Desktop/AI产出/email-wiki-demo/.superpowers/brainstorm/77122-1780985208/state"}
+{"type":"screen-added","file":"/Users/admin/Desktop/AI产出/email-wiki-demo/.superpowers/brainstorm/77122-1780985208/content/dashboard-compare.html"}
+{"type":"server-stopped","reason":"idle timeout"}

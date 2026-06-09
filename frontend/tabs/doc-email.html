@@ -121,10 +121,10 @@ async function importEmails() {
             loadEmailStats();
             alert(`成功导入 ${data.imported_emails} 封邮件`);
         } else {
-            stepsDiv.innerHTML = `<p style="color: #ef4444;">❌ ${data.detail}</p>`;
+            stepsDiv.innerHTML = `<p style="color: var(--color-destructive);">❌ ${data.detail}</p>`;
         }
     } catch (err) {
-        stepsDiv.innerHTML = `<p style="color: #ef4444;">❌ ${err.message}</p>`;
+        stepsDiv.innerHTML = `<p style="color: var(--color-destructive);">❌ ${err.message}</p>`;
     } finally {
         btn.disabled = false;
         btn.textContent = '📥 开始导入';
