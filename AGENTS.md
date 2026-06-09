@@ -47,12 +47,12 @@ MCP 调用 → code_mcp.py（MCP tools）→ code_search.py / llm_client.py
 
 ### 关键设计决策
 
-- **Embedding 模型**：本地 `paraphrase-multilingual-MiniLM-L12-v2`（384维，多语言），启动时单例预加载，首次启动会下载模型（~90MB）
+- **Embedding 模型**：文档用 `BAAI/bge-base-zh-v1.5`（768维），代码用 `BAAI/bge-small-en-v1.5`（384维），启动时单例预加载，模型存储在项目 `models/` 目录
 - **LanceDB 元数据**：metadata 字段以 JSON 字符串存储（非原生 JSON），读写时需手动 `json.dumps/loads`
 - **相似度计算**：LanceDB 使用余弦距离（cosine），通过 `(1 - distance + 1) / 2` 转换为 `[0,1]` 相似度分数，低于 0.3 的结果被过滤
 - **搜索能力边界**：`/api/search` 和 `/api/chat` 走向量搜索（LanceDB）；`/api/emails/search` 走 SQL `LIKE`（仅搜 SQLite 原始邮件，不走向量）
 - **步骤追踪**：`StepTracker` 贯穿搜索/问答/导入全链路，每步耗时透传前端展示
-- **前端**：单文件 `frontend/index.html`（Tailwind CDN），无构建步骤，FastAPI 直接 serve
+- **前端**：Hash SPA 路由 + 懒加载 tab HTML 片段（10 个独立 tab），Tailwind CDN + 暗色主题 CSS 变量，无构建步骤，FastAPI 直接 serve
 
 ### LanceDB 表结构（`documents` 表）
 
@@ -61,7 +61,7 @@ id            : str   — "{filename}_{chunk_index}"，主键
 filename      : str   — 文件名（邮件为 "email_{id}.eml"）
 chunk_index   : int   — 当前文件第 N 个分块
 content       : str   — 文本内容
-vector        : [float; 384]
+vector        : [float; 768]
 file_type     : str   — ".pdf" / ".md" / ".txt" / ".docx" / ".eml"
 uploaded_at   : str   — ISO 格式时间戳
 metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/sender 等；普通文档为 "{}"）
