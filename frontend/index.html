@@ -2604,7 +2604,7 @@
       const btnExport = document.getElementById('btn-log-export');
 
       let pollTimer = null;
-      let isOpen = localStorage.getItem(STORAGE_KEY) !== 'true';
+      let isOpen = localStorage.getItem(STORAGE_KEY) === 'true';
 
       function render(lines) {
         body.innerHTML = lines.map(line => {
