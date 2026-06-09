@@ -657,6 +657,160 @@ async def stats_endpoint():
     return db_stats
 
 
+# ── GET /api/code/dashboard ──────────────────────────────────────
+
+@router.get("/dashboard")
+async def code_dashboard_endpoint():
+    """代码知识库仪表盘：总览 + 仓库清单 + embedder 信息"""
+    from code_embedder import get_code_model_info
+
+    db_stats = get_stats()
+    repos_cfg = list_repos()
+
+    # 合并 stats 与 config：按 repo_name 索引以便补充 last_scanned/languages
+    by_repo = db_stats.get("by_repo", {})  # {repo_name: count}
+    repos_view = []
+    for r in repos_cfg:
+        repos_view.append({
+            "name": r["name"],
+            "project_type": r.get("project_type", ""),
+            "chunks": by_repo.get(r["name"], r.get("total_chunks", 0)),
+            "languages": r.get("languages", []),
+            "last_scanned": r.get("last_scanned", ""),
+        })
+
+    return {
+        "total_chunks": db_stats.get("total_chunks", 0),
+        "total_repos": db_stats.get("total_repos", 0),
+        "total_languages": len(db_stats.get("by_language", {})),
+        "total_chunk_types": len(db_stats.get("by_chunk_type", {})),
+        "by_language": db_stats.get("by_language", {}),
+        "by_chunk_type": db_stats.get("by_chunk_type", {}),
+        "repos": repos_view,
+        "embedder": get_code_model_info(),
+    }
+
+
+# ── GET /api/code/lancedb/inspect ─────────────────────────────────
+
+@router.get("/lancedb/inspect")
+async def code_lancedb_inspect():
+    """code_chunks 表的内省信息：schema / 行数 / fragments / versions / indices"""
+    from code_db import get_table as get_code_table
+
+    table = get_code_table()
+    ds = table.to_lance()
+
+    schema_fields = []
+    vector_dim = None
+    for field in ds.schema:
+        type_str = str(field.type)
+        is_vector = type_str.startswith("fixed_size_list")
+        dim = field.type.list_size if is_vector else None
+        if is_vector:
+            vector_dim = dim
+        schema_fields.append({
+            "name": field.name,
+            "type": type_str,
+            "is_vector": is_vector,
+            "vector_dim": dim,
+        })
+
+    fragments = [
+        {"id": f.fragment_id, "rows": f.count_rows()}
+        for f in ds.get_fragments()
+    ]
+
+    versions = []
+    for v in ds.versions()[-10:]:
+        ts = v["timestamp"]
+        versions.append({
+            "version": v["version"],
+            "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+        })
+
+    indices = list(ds.list_indices())
+    return {
+        "table_name": "code_chunks",
+        "total_rows": ds.count_rows(),
+        "schema": schema_fields,
+        "vector_dim": vector_dim,
+        "current_version": ds.version,
+        "version_count": len(ds.versions()),
+        "recent_versions": versions,
+        "fragments": fragments,
+        "fragment_count": len(fragments),
+        "indices": indices,
+        "has_index": len(indices) > 0,
+        "search_strategy": "全量余弦距离扫描" if not indices else "索引检索",
+    }
+
+
+# ── GET /api/code/lancedb/rows ────────────────────────────────────
+
+@router.get("/lancedb/rows")
+async def code_lancedb_rows(
+    limit: int = 20,
+    offset: int = 0,
+    repo_name: Optional[str] = None,
+    language: Optional[str] = None,
+    chunk_type: Optional[str] = None,
+    keyword: Optional[str] = None,
+    include_full_vector: bool = False,
+):
+    """分页列出 code_chunks 表内的数据，可按 repo_name/language/chunk_type 过滤或按 content 关键词模糊搜"""
+    from code_db import get_table as get_code_table
+
+    table = get_code_table()
+    df = table.to_pandas()
+
+    if repo_name:
+        df = df[df["repo_name"] == repo_name]
+    if language:
+        df = df[df["language"] == language]
+    if chunk_type:
+        df = df[df["chunk_type"] == chunk_type]
+    if keyword:
+        df = df[df["content"].str.contains(keyword, na=False, regex=False)]
+
+    total = len(df)
+    df = df.iloc[offset:offset + limit]
+
+    rows = []
+    for _, r in df.iterrows():
+        v = list(r["vector"])
+        try:
+            metadata = _json.loads(r.get("metadata", "{}"))
+        except Exception:
+            metadata = {}
+        rows.append({
+            "id": r["id"],
+            "repo_name": r.get("repo_name", ""),
+            "project_type": r.get("project_type", ""),
+            "file_path": r.get("file_path", ""),
+            "file_name": r.get("file_name", ""),
+            "language": r.get("language", ""),
+            "chunk_type": r.get("chunk_type", ""),
+            "symbol_name": r.get("symbol_name", ""),
+            "content": r.get("content", ""),
+            "content_length": len(r.get("content", "")),
+            "line_start": int(r.get("line_start", 0)),
+            "line_end": int(r.get("line_end", 0)),
+            "metadata": metadata,
+            "vector_dim": len(v),
+            "vector_preview": [round(float(x), 4) for x in v[:16]],
+            "vector_full": [round(float(x), 6) for x in v] if include_full_vector else None,
+            "vector_norm": round(float(sum(x * x for x in v) ** 0.5), 4),
+        })
+
+    return {
+        "total": int(total),
+        "offset": offset,
+        "limit": limit,
+        "rows": rows,
+    }
+
+
 # ── POST /api/code/fts/migrate-chinese ─────────────────────────────
 
 @router.post("/fts/migrate-chinese")

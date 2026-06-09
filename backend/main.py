@@ -671,28 +671,39 @@ async def show_in_finder(filename: str):
 
 
 @app.get("/api/stats")
-async def stats():
-    """获取数据库统计 + 性能指标"""
-    doc_stats = get_stats()
-    email_stats = get_email_stats()
+async def stats(db_type: str = Query("")):
+    """获取数据库统计 + 性能指标。db_type: 空=全部 / doc=文档库 / code=代码库"""
+    from code_db import get_stats as get_code_stats
 
-    lancedb_path = os.path.join(os.path.dirname(__file__), "..", "data", "lancedb")
-    search_summary = metrics_db.get_summary("search")
-    chat_summary = metrics_db.get_summary("chat")
-    insert_throughput = metrics_db.get_insert_throughput()
+    LANCEDB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "lancedb")
+    CODE_LANCEDB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "code_lancedb")
 
-    return {
-        "documents": doc_stats,
-        "emails": email_stats,
-        "embedder": get_model_info(),
-        "code_embedder": _get_code_embedder_info(),
-        "performance": {
-            "lancedb_disk_bytes": metrics_db.get_disk_usage(lancedb_path),
-            "search": search_summary,
-            "chat": chat_summary,
-            "insert": insert_throughput,
-        },
-    }
+    include_doc = db_type in ("", "doc")
+    include_code = db_type in ("", "code")
+
+    result = {}
+
+    if include_doc:
+        result["documents"] = get_stats()
+        result["emails"] = get_email_stats()
+        result["embedder"] = get_model_info()
+        result["performance"] = {
+            "lancedb_disk_bytes": metrics_db.get_disk_usage(LANCEDB_PATH),
+            "search": metrics_db.get_summary("search"),
+            "chat": metrics_db.get_summary("chat"),
+            "insert": metrics_db.get_insert_throughput(),
+        }
+
+    if include_code:
+        result["code"] = get_code_stats()
+        result["code_embedder"] = _get_code_embedder_info()
+        result["code_performance"] = {
+            "code_lancedb_disk_bytes": metrics_db.get_disk_usage(CODE_LANCEDB_PATH),
+            "code_search": metrics_db.get_summary("code_search"),
+            "code_chat": metrics_db.get_summary("code_chat"),
+        }
+
+    return result
 
 
 @app.get("/api/performance/trend")
