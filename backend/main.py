@@ -26,7 +26,7 @@ def _get_code_embedder_info() -> dict:
         from code_embedder import get_code_model_info
         return get_code_model_info()
     except Exception:
-        return {"model_name": "nomic-ai/CodeRankEmbed", "dimension": 768}
+        return {"model_name": "BAAI/bge-small-en-v1.5", "dimension": 384}
 from db import insert_documents, search_similar, list_documents, delete_document, get_stats
 from email_db import init_db, get_all_emails, get_stats as get_email_stats, search_emails, init_sample_data
 from email_parser import email_to_chunks, batch_convert_emails

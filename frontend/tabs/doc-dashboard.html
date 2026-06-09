@@ -210,13 +210,9 @@ function loadDashboardStats(stats) {
     }
     const cemb = stats.code_embedder || {};
     const cembEl = document.getElementById('codeEmbedderInfo');
-    if (cembEl && cemb.primary_model) {
-        const shortName = cemb.primary_model.split('/').pop();
-        const parts = [`${shortName} · ${cemb.primary_dimension}维`];
-        if (cemb.fallback_model) {
-            parts.push(`备用: ${cemb.fallback_model.split('/').pop()} · ${cemb.fallback_dimension}维`);
-        }
-        cembEl.textContent = `代码: ${parts.join(' ｜ ')}`;
+    if (cembEl && cemb.model_name) {
+        const shortName = cemb.model_name.split('/').pop();
+        cembEl.textContent = `代码: ${shortName} · ${cemb.dimension}维`;
     }
 
     const perf = stats.performance || {};
