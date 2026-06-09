@@ -73,6 +73,12 @@ async function handleCodeChat() {
     isCodeChatting = true;
     input.value = '';
 
+    // 重置参考来源面板
+    const sourcesPanel = document.getElementById('codeChatSources');
+    if (sourcesPanel) sourcesPanel.classList.add('hidden');
+    const sourcesList = document.getElementById('codeSourcesList');
+    if (sourcesList) sourcesList.innerHTML = '';
+
     const messagesDiv = document.getElementById('codeChatMessages');
     const chatBtn = document.getElementById('codeChatBtn');
 
@@ -117,8 +123,12 @@ async function handleCodeChat() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question, top_k: 5, filters, stream: false }),
         });
+        if (!res.ok) {
+            let detail = `HTTP ${res.status}`;
+            try { const errData = await res.json(); detail = errData.detail || detail; } catch (_) {}
+            throw new Error(detail);
+        }
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || '请求失败');
 
         // 替换 AI 占位为实际回答
         const aiMsg = document.getElementById(aiMsgId);

@@ -86,7 +86,7 @@ function codeRenderSteps(containerOrId, steps) {
     if (Array.isArray(containerOrId)) {
         // 旧调用方式：codeRenderSteps(steps)
         actualSteps = containerOrId;
-        el = document.getElementById('codeScanProgress') || document.getElementById('codeSearchSteps') || document.getElementById('codeChatSteps');
+        el = document.getElementById('codeScanProgress') || document.getElementById('codeSteps') || document.getElementById('codeSearchSteps') || document.getElementById('codeChatSteps');
     } else {
         el = typeof containerOrId === 'string' ? document.getElementById(containerOrId) : containerOrId;
         actualSteps = steps;
