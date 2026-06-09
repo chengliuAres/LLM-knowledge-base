@@ -1,7 +1,8 @@
-"""代码 Embedding - 基于 nomic-ai/CodeRankEmbed
+"""代码 Embedding - bge-small-en-v1.5 (主) + CodeRankEmbed (备)
 
-CodeRankEmbed: 代码专用检索模型，137M，768-dim，8192-token。
-用于代码知识库的代码语义搜索，CSN MRR 77.9 (超过 OpenAI Ada-002)。
+bge-small-en-v1.5: 33M，384-dim，512-token，英文通用模型。
+配合 query_translator 中文→英文翻译层，实现中文查询搜索英文代码。
+CodeRankEmbed: 137M，768-dim，8192-token，代码专用模型（保留备用）。
 """
 
 import os
@@ -11,75 +12,120 @@ from sentence_transformers import SentenceTransformer
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_CACHE_DIR = os.path.join(PROJECT_ROOT, "models")
 
-_model = None
-_model_name = "nomic-ai/CodeRankEmbed"  # 代码专用，768-dim，8192-token，137M
-_MAX_CHARS = 2000  # 代码 chunk 上限 1000 字符，2x 安全余量。过大值会导致 MPS attention 矩阵 OOM
+# ── bge-small-en (主模型) ─────────────────────────────────────────
+_BGE_MODEL_NAME = "BAAI/bge-small-en-v1.5"
+_BGE_DIMENSION = 384
+_BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
-# CodeRankEmbed 要求查询加此前缀
-_QUERY_PREFIX = "Represent this query for searching relevant code: "
+_bge_model = None
+
+# ── CodeRankEmbed (备用) ─────────────────────────────────────────
+_CODE_MODEL_NAME = "nomic-ai/CodeRankEmbed"
+_CODE_DIMENSION = 768
+_CODE_QUERY_PREFIX = "Represent this query for searching relevant code: "
+_CODE_MAX_CHARS = 2000
+
+_code_model = None
 
 
-def get_code_model() -> SentenceTransformer:
-    """获取代码 embedding 模型（单例）"""
-    global _model
-    if _model is None:
-        os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
-        print(f"正在加载代码 Embedding 模型: {_model_name} ...")
-        print(f"模型缓存目录: {MODEL_CACHE_DIR}")
+def _load_model(model_name: str, model_attr: str, trust_remote: bool = False) -> SentenceTransformer:
+    """通用模型加载（单例 + MPS 加速）"""
+    import gc
+    global _bge_model, _code_model
 
-        _model = SentenceTransformer(
-            _model_name,
-            trust_remote_code=True,  # 必需：CodeRankEmbed 有自定义 NomicBertEncoder pooling 层
-            model_kwargs={"torch_dtype": "float16"},
-        )
-        # MPS 加速
+    current = globals()[model_attr]
+    if current is not None:
+        return current
+
+    os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
+    print(f"正在加载 Embedding 模型: {model_name} ...")
+    print(f"模型缓存目录: {MODEL_CACHE_DIR}")
+
+    kwargs = {}
+    if trust_remote:
+        kwargs["trust_remote_code"] = True
+        kwargs["model_kwargs"] = {"torch_dtype": "float16"}
+
+    current = SentenceTransformer(model_name, **kwargs)
+
+    # bge-small-en 在 MPS 上可能不稳定，跳过 MPS 加速
+    if "bge-small" not in model_name:
         if hasattr(torch, 'backends') and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             try:
-                _model = _model.to('mps')
-                print("代码 Embedding 模型已移至 MPS (Apple Silicon GPU)")
+                current = current.to('mps')
+                print(f"模型已移至 MPS (Apple Silicon GPU)")
             except Exception:
                 pass
 
-        print(f"代码模型加载完成! 维度={get_code_dimension()}")
-    return _model
+    globals()[model_attr] = current
+    print(f"模型加载完成!")
+    return current
 
 
-def embed_code(text: str) -> list[float]:
-    """单条代码 embedding (passage，不加前缀)"""
-    model = get_code_model()
-    safe_text = text[:_MAX_CHARS] if len(text) > _MAX_CHARS else text
-    embedding = model.encode(safe_text, normalize_embeddings=True)
+# ── bge-small-en 接口 (主) ────────────────────────────────────────
+
+def get_model() -> SentenceTransformer:
+    """获取 bge-small-en 模型（单例）"""
+    return _load_model(_BGE_MODEL_NAME, "_bge_model")
+
+
+def embed_text(text: str) -> list[float]:
+    """passage embedding（索引阶段用，不加前缀）"""
+    model = get_model()
+    embedding = model.encode(text, normalize_embeddings=True)
     return embedding.tolist()
 
 
-def embed_code_query(text: str) -> list[float]:
-    """查询 embedding (带 CodeRankEmbed 查询前缀)"""
-    model = get_code_model()
-    safe_text = text[:_MAX_CHARS] if len(text) > _MAX_CHARS else text
-    embedding = model.encode(
-        _QUERY_PREFIX + safe_text,
-        normalize_embeddings=True,
-    )
+def embed_query(text: str) -> list[float]:
+    """query embedding（搜索阶段用，加 bge 前缀）"""
+    model = get_model()
+    embedding = model.encode(_BGE_QUERY_PREFIX + text, normalize_embeddings=True)
     return embedding.tolist()
 
 
-def embed_code_batch(texts: list[str]) -> list[list[float]]:
-    """批量代码 embedding（索引阶段用）"""
-    model = get_code_model()
-    safe_texts = [t[:_MAX_CHARS] if len(t) > _MAX_CHARS else t for t in texts]
-    embeddings = model.encode(safe_texts, normalize_embeddings=True, batch_size=32)  # 32 避免 MPS attention OOM
+def embed_batch(texts: list[str]) -> list[list[float]]:
+    """批量 embedding（索引阶段用）"""
+    model = get_model()
+    embeddings = model.encode(texts, normalize_embeddings=True, batch_size=32)
     return embeddings.tolist()
 
 
-def get_code_dimension() -> int:
-    """返回代码 embedding 维度"""
-    return 768
+def get_dimension() -> int:
+    """返回 embedding 维度"""
+    return _BGE_DIMENSION
 
+
+# ── CodeRankEmbed 接口 (备用) ─────────────────────────────────────
+
+def get_code_model() -> SentenceTransformer:
+    """获取 CodeRankEmbed 模型（单例，按需加载）"""
+    return _load_model(_CODE_MODEL_NAME, "_code_model", trust_remote=True)
+
+
+def embed_code_query(text: str) -> list[float]:
+    """CodeRankEmbed 查询 embedding（带代码查询前缀）"""
+    model = get_code_model()
+    safe_text = text[:_CODE_MAX_CHARS] if len(text) > _CODE_MAX_CHARS else text
+    embedding = model.encode(_CODE_QUERY_PREFIX + safe_text, normalize_embeddings=True)
+    return embedding.tolist()
+
+
+def get_code_dimension() -> int:
+    """返回 CodeRankEmbed 维度"""
+    return _CODE_DIMENSION
+
+
+# ── 兼容旧接口 ────────────────────────────────────────────────────
+
+# 旧代码调用的别名
+embed_code_batch = embed_batch
+get_code_dimension = get_dimension
 
 def get_code_model_info() -> dict:
-    """获取代码模型信息"""
     return {
-        "model_name": _model_name,
-        "dimension": get_code_dimension(),
+        "primary_model": _BGE_MODEL_NAME,
+        "primary_dimension": _BGE_DIMENSION,
+        "fallback_model": _CODE_MODEL_NAME,
+        "fallback_dimension": _CODE_DIMENSION,
         "cache_dir": MODEL_CACHE_DIR,
     }

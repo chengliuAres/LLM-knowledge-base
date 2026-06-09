@@ -11,7 +11,7 @@ import lancedb
 from datetime import datetime
 from typing import Optional
 
-from code_embedder import get_code_dimension
+from code_embedder import get_dimension
 from text_utils import segment_for_fts, segment_query_for_match
 
 # ── 路径配置 ──────────────────────────────────────────────────────
@@ -23,6 +23,8 @@ TABLE_NAME = "code_chunks"
 
 # ── LanceDB 单例 ─────────────────────────────────────────────────
 
+import threading as _threading
+_db_lock = _threading.RLock()  # 可重入锁，get_table() 内部调 get_db() 不会死锁
 _db = None
 _table = None
 
@@ -31,8 +33,10 @@ def get_db() -> lancedb.DBConnection:
     """获取 LanceDB 连接"""
     global _db
     if _db is None:
-        os.makedirs(LANCEDB_PATH, exist_ok=True)
-        _db = lancedb.connect(LANCEDB_PATH)
+        with _db_lock:
+            if _db is None:
+                os.makedirs(LANCEDB_PATH, exist_ok=True)
+                _db = lancedb.connect(LANCEDB_PATH)
     return _db
 
 
@@ -40,54 +44,56 @@ def get_table():
     """获取 code_chunks 表 (不存在则创建，维度不匹配则自动迁移)"""
     global _table
     if _table is None:
-        db = get_db()
-        dim = get_code_dimension()
-        try:
-            _table = db.open_table(TABLE_NAME)
-            # 检查维度是否匹配
-            schema = _table.schema
-            for field in schema:
-                if field.name == 'vector' and hasattr(field.type, 'list_size'):
-                    existing_dim = field.type.list_size
-                    if existing_dim != dim:
-                        import uuid
-                        backup_name = f"{TABLE_NAME}_{existing_dim}dim_backup"
-                        print(f"[code_db] 向量维度不匹配: 现存={existing_dim}, 当前={dim}")
-                        print(f"[code_db] 备份旧表为 {backup_name}，创建新表")
-                        try:
-                            db.drop_table(backup_name)
-                        except Exception:
-                            pass
-                        try:
-                            db.drop_table(TABLE_NAME)
-                        except Exception:
-                            pass
-                        _table = None
-                        raise FileNotFoundError("schema 已废弃，重建表")
-        except FileNotFoundError:
-            _table = None
-        except Exception:
-            _table = None
+        with _db_lock:
+            if _table is None:
+                db = get_db()
+                dim = get_dimension()
+                try:
+                    _table = db.open_table(TABLE_NAME)
+                    # 检查维度是否匹配
+                    schema = _table.schema
+                    for field in schema:
+                        if field.name == 'vector' and hasattr(field.type, 'list_size'):
+                            existing_dim = field.type.list_size
+                            if existing_dim != dim:
+                                import uuid
+                                backup_name = f"{TABLE_NAME}_{existing_dim}dim_backup"
+                                print(f"[code_db] 向量维度不匹配: 现存={existing_dim}, 当前={dim}")
+                                print(f"[code_db] 备份旧表为 {backup_name}，创建新表")
+                                try:
+                                    db.drop_table(backup_name)
+                                except Exception:
+                                    pass
+                                try:
+                                    db.drop_table(TABLE_NAME)
+                                except Exception:
+                                    pass
+                                _table = None
+                                raise FileNotFoundError("schema 已废弃，重建表")
+                except FileNotFoundError:
+                    _table = None
+                except Exception:
+                    _table = None
 
-        if _table is None:
-            placeholder = [{
-                "id": "__placeholder__",
-                "repo_name": "",
-                "project_type": "",
-                "file_path": "",
-                "file_name": "",
-                "language": "",
-                "chunk_type": "",
-                "symbol_name": "",
-                "content": "",
-                "display_text": "",
-                "line_start": 0,
-                "line_end": 0,
-                "vector": [0.0] * dim,
-                "metadata": "{}",
-            }]
-            _table = db.create_table(TABLE_NAME, data=placeholder)
-            _table.delete("id = '__placeholder__'")
+                if _table is None:
+                    placeholder = [{
+                        "id": "__placeholder__",
+                        "repo_name": "",
+                        "project_type": "",
+                        "file_path": "",
+                        "file_name": "",
+                        "language": "",
+                        "chunk_type": "",
+                        "symbol_name": "",
+                        "content": "",
+                        "display_text": "",
+                        "line_start": 0,
+                        "line_end": 0,
+                        "vector": [0.0] * dim,
+                        "metadata": "{}",
+                    }]
+                    _table = db.create_table(TABLE_NAME, data=placeholder)
+                    _table.delete("id = '__placeholder__'")
     return _table
 
 
@@ -500,6 +506,109 @@ def search_keyword(
         formatted.append(item)
 
     return formatted
+
+
+# ── 符号名关键词搜索 ───────────────────────────────────────────────
+
+def search_symbol_by_keywords(
+    keywords: list[str],
+    top_k: int = 10,
+    repo_name: Optional[str] = None,
+    language: Optional[str] = None,
+    chunk_type: Optional[str] = None,
+) -> list[dict]:
+    """用英文关键词搜索 symbol_name 和 file_path 字段
+
+    TODO: LIKE '%keyword%' 无法走 B-tree 索引，大数据量下全表扫描。
+    后续可为 symbol_name 建 FTS5 虚拟表或 trigram 索引加速。
+
+    对每个关键词: symbol_name LIKE '%keyword%' OR file_path LIKE '%keyword%'
+    多关键词命中越多的排越前（按命中数降序）。
+
+    Args:
+        keywords: 翻译后的英文关键词列表 ["login", "signin", "auth"]
+        top_k: 最多返回条数
+        repo_name, language, chunk_type: 可选过滤条件
+    """
+    if not keywords:
+        return []
+
+    conn = get_sqlite()
+    results = {}  # chunk_id → {item, hit_count}
+
+    for kw in keywords:
+        kw = kw.strip()
+        if not kw or len(kw) < 2:
+            continue
+
+        sql = """
+            SELECT chunk_id, repo_name, project_type, file_path, file_name,
+                   language, chunk_type, symbol_name, line_start, line_end
+            FROM code_meta
+            WHERE (symbol_name LIKE ? OR file_path LIKE ?)
+        """
+        escaped_kw = kw.replace("%", "\\%").replace("_", "\\_")
+        like_pattern = f"%{escaped_kw}%"
+        params: list = [like_pattern, like_pattern]
+
+        if repo_name:
+            sql += " AND repo_name = ?"
+            params.append(repo_name)
+        if language:
+            sql += " AND language = ?"
+            params.append(language)
+        if chunk_type:
+            sql += " AND chunk_type = ?"
+            params.append(chunk_type)
+
+        sql += " LIMIT 50"
+
+        try:
+            rows = conn.execute(sql, params).fetchall()
+        except Exception as e:
+            print(f"[code_db] search_symbol_by_keywords 查询失败 (kw={kw}): {e}")
+            continue
+
+        for row in rows:
+            cid = row[0]
+            if cid not in results:
+                results[cid] = {
+                    "id": cid,
+                    "repo_name": row[1],
+                    "project_type": row[2],
+                    "file_path": row[3],
+                    "file_name": row[4],
+                    "language": row[5],
+                    "chunk_type": row[6],
+                    "symbol_name": row[7],
+                    "line_start": row[8],
+                    "line_end": row[9],
+                    "hit_count": 0,
+                    "matched_keywords": [],
+                    "source": "symbol",
+                }
+            results[cid]["hit_count"] += 1
+            results[cid]["matched_keywords"].append(kw)
+
+    # 按命中数降序排序
+    sorted_items = sorted(results.values(), key=lambda x: x["hit_count"], reverse=True)
+
+    # 截断并补 content
+    final = []
+    for item in sorted_items[:top_k]:
+        item["score"] = item["hit_count"] / max(len(keywords), 1)
+        item["match_reason"] = f"符号匹配: {', '.join(item['matched_keywords'])}"
+        # 补 content（从 LanceDB 或 FTS5 读）
+        try:
+            fts_row = conn.execute(
+                "SELECT content FROM code_fts WHERE chunk_id = ?", (item["id"],)
+            ).fetchone()
+            item["content"] = fts_row[0] if fts_row else ""
+        except Exception:
+            item["content"] = ""
+        final.append(item)
+
+    return final
 
 
 # ── 统计 ─────────────────────────────────────────────────────────
