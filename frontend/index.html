@@ -2247,6 +2247,7 @@
     async function openSkipRulesModal() {
         document.getElementById('skip-rules-modal').classList.remove('hidden');
         await loadSkipRules();
+        await loadPreview();
     }
 
     function closeSkipRulesModal() {
@@ -2256,6 +2257,42 @@
     function _getCurrentRepoPath() {
         const el = document.getElementById('codeRepoPath');
         return el ? el.value.trim() : '';
+    }
+
+    async function loadPreview() {
+        const bar = document.getElementById('skip-rules-preview-bar');
+        if (!bar) return;
+        bar.innerHTML = '⏳ 计算中...';
+        const repoPath = _getCurrentRepoPath();
+        if (!repoPath) {
+            bar.innerHTML = '📊 预览：请先填写仓库路径';
+            return;
+        }
+        try {
+            const res = await fetch(`/api/code/skip-rules/preview?repo_path=${encodeURIComponent(repoPath)}`, {method: 'POST'});
+            const data = await res.json();
+            const filtered = data.filtered_files ?? 0;
+            const total = data.total_files ?? 0;
+            const skipped = data.skipped_files ?? 0;
+            bar.innerHTML = `📊 预览：将扫描 <strong class="text-blue-700">${filtered}</strong> / ${total} 个文件（排除 <strong class="text-red-600">${skipped}</strong> 个）`;
+        } catch (e) {
+            bar.innerHTML = `<span class="text-red-500">预览加载失败: ${escapeHtml(e.message)}</span>`;
+        }
+    }
+
+    async function refreshSkipRules() {
+        const btn = document.getElementById('skip-rules-refresh-btn');
+        if (!btn) return;
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '刷新中...';
+        try {
+            await loadSkipRules();
+            await loadPreview();
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = orig;
+        }
     }
 
     async function loadSkipRules() {
@@ -2411,6 +2448,7 @@
             });
             if (!res.ok) throw new Error('保存失败');
             alert('已保存');
+            await loadPreview();
             closeSkipRulesModal();
         } catch (e) {
             alert('保存失败: ' + e.message);
@@ -2431,6 +2469,7 @@
             renderSkipTable('skip-exts-body', _skipRulesDraft.exts, 'exts');
             // reset 后重新加载 gitignore 目录（默认全部勾选）
             await loadGitignoreDirs([]);
+            await loadPreview();
         } catch (e) {
             alert('重置失败: ' + e.message);
         }
@@ -2451,7 +2490,10 @@
         <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
             <!-- 头部 -->
             <div class="flex items-center justify-between px-5 py-3 border-b">
-                <h3 class="font-semibold text-gray-800">⚙️ 排除规则</h3>
+                <div class="flex items-center gap-2">
+                    <button onclick="refreshSkipRules()" id="skip-rules-refresh-btn" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded">🔄 刷新</button>
+                    <h3 class="font-semibold text-gray-800">⚙️ 排除规则</h3>
+                </div>
                 <div class="flex items-center gap-2">
                     <button onclick="openSkipRulesInFinder()" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded">📂 在 Finder 中打开</button>
                     <button onclick="resetSkipRules()" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded">恢复默认</button>
@@ -2462,6 +2504,11 @@
 
             <!-- 主体：两个表格区域 -->
             <div class="flex-1 overflow-y-auto p-5 space-y-5">
+                <!-- 统计信息栏 -->
+                <div id="skip-rules-preview-bar" class="bg-gray-50 text-xs text-gray-600 rounded px-3 py-2">
+                    ⏳ 计算中...
+                </div>
+
                 <!-- .gitignore 目录 -->
                 <div class="bg-green-50 border border-green-200 rounded p-3">
                     <div class="flex items-center justify-between mb-2">

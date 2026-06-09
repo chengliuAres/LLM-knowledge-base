@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from step_tracker import StepTracker
 from code_parser import parse_repo, scan_directory
 from code_db import insert_chunks, delete_by_repo, delete_by_file, get_stats
-from code_skip_rules import get_skip_rules, save_skip_rules, reset_skip_rules, parse_gitignore_dirs, open_config_in_finder
+from code_skip_rules import get_skip_rules, save_skip_rules, reset_skip_rules, parse_gitignore_dirs, open_config_in_finder, get_skip_dirs, get_skip_exts
 from code_search import search_code
 from code_config import (
     list_repos, get_repo_config, register_repo, remove_repo,
@@ -820,3 +820,51 @@ async def api_open_skip_rules_in_finder():
     """在 Finder 中打开配置文件"""
     open_config_in_finder()
     return {"status": "ok"}
+
+
+# ── POST /api/code/skip-rules/preview ─────────────────────────────
+
+@router.post("/skip-rules/preview")
+async def api_skip_rules_preview(repo_path: str = ""):
+    """预览应用排除规则后将扫描的文件数"""
+    if not repo_path or not os.path.isdir(repo_path):
+        return {"total_files": 0, "filtered_files": 0, "skipped_files": 0}
+
+    from pathlib import Path
+    from code_parser import EXTENSION_MAP
+
+    skip_dirs = get_skip_dirs()
+    skip_exts = get_skip_exts()
+    repo = os.path.abspath(repo_path)
+
+    def _count_files(dirs_filter=None, exts_filter=None):
+        """遍历目录计数代码文件"""
+        count = 0
+        for root, dirs, filenames in os.walk(repo):
+            if dirs_filter is not None:
+                dirs[:] = [d for d in dirs if d not in dirs_filter]
+            for fname in filenames:
+                ext = Path(fname).suffix.lower()
+                if ext not in EXTENSION_MAP:
+                    continue
+                if exts_filter and ext in exts_filter:
+                    continue
+                abs_path = os.path.join(root, fname)
+                try:
+                    if os.path.getsize(abs_path) > 100 * 1024:
+                        continue
+                except OSError:
+                    continue
+                count += 1
+        return count
+
+    # total: 不排除任何目录/扩展名
+    total = _count_files()
+    # filtered: 应用排除规则
+    filtered = _count_files(dirs_filter=skip_dirs, exts_filter=skip_exts)
+
+    return {
+        "total_files": total,
+        "filtered_files": filtered,
+        "skipped_files": total - filtered,
+    }
