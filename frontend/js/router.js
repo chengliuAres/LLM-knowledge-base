@@ -59,7 +59,12 @@ async function navigate(hash) {
 
   // 2. 获取或创建目标 tab 的 DOM
   if (!_cache[key]) {
-    // 首次访问：fetch + 注入
+    // 首次访问：清除 content-area 默认占位（"加载中…"）
+    // appendChild 模式下不会自动覆盖，需手动清理
+    const placeholder = contentArea.querySelector('.router-placeholder');
+    if (placeholder) placeholder.remove();
+
+    // fetch + 注入
     try {
       const res = await fetch(route.file + '?v=' + (window.__TAB_VERSION || '1'));
       if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);

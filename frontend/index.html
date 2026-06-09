@@ -65,7 +65,7 @@
 
         <!-- 主内容区：路由切换注入的 tab HTML -->
         <main id="content-area" class="flex-1 overflow-y-auto p-6">
-            <div class="text-slate-400 text-sm">加载中…</div>
+            <div class="router-placeholder text-slate-400 text-sm">加载中…</div>
         </main>
     </div>
 
@@ -88,9 +88,11 @@
     </div>
 
     <!-- ─────────── 脚本 ─────────── -->
-    <script src="js/shared.js?v=3"></script>
-    <script src="js/router.js?v=5"></script>
+    <script src="js/shared.js?v=4"></script>
+    <script src="js/router.js?v=6"></script>
     <script>
+        // Tab 文件缓存版本号（router.js 用 ?v= 参数强制刷新）
+        window.__TAB_VERSION = '2';
         window.__TAB_VERSION = '2';
         // 显式启动路由（router.js 也会在 DOMContentLoaded 时自启，这里双保险）
         if (typeof initRouter === "function") {

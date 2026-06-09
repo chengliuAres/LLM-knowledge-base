@@ -1,85 +1,169 @@
-<!-- 代码问答 tab：输入问题 + 提问按钮 + 答案展示 -->
+<!-- 代码问答 tab：RAG 对话 + 参考来源展示 -->
 
-<div class="max-w-7xl mx-auto">
-    <!-- WIP 提示 -->
-    <div class="mb-4 px-4 py-3 rounded-lg text-sm flex items-center gap-2" style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); color: #FCD34D;">
-        ⚠️ 代码问答功能开发中，当前为基础版本。完整版将支持对话历史、流式输出和来源展示。
-    </div>
-    <div class="panel">
-        <h3 class="text-sm font-semibold mb-2" style="color: var(--color-foreground);">💬 代码问答</h3>
-        <div class="flex gap-2">
-            <input id="codeChatInput" type="text" placeholder="问一个问题..." class="input flex-1" onkeypress="if(event.key==='Enter')codeChat()">
-            <select id="codeChatRepo" class="input shrink-0" style="width: auto; max-width: 160px;">
-                <option value="">全部仓库</option>
-            </select>
-            <button onclick="codeChat()" id="codeChatBtn" class="btn btn-accent shrink-0">提问</button>
+<div class="flex flex-col gap-4 h-full">
+    <!-- 对话区 -->
+    <div class="panel flex-1 flex flex-col" style="padding: 0;">
+        <div id="codeChatMessages" class="flex-1 overflow-y-auto p-6 space-y-4">
+            <!-- 欢迎消息 -->
+            <div class="flex items-start gap-3">
+                <div class="rounded-full w-8 h-8 flex items-center justify-center shrink-0 text-sm"
+                     style="background-color: rgba(34, 197, 94, 0.15);">🤖</div>
+                <div class="rounded-lg px-4 py-3 max-w-[80%]"
+                     style="background-color: rgba(255, 255, 255, 0.04);">
+                    <p class="text-sm leading-relaxed" style="color: var(--color-foreground);">
+                        你好！我是代码智能助手，基于已索引的代码仓库回答问题。<br>
+                        可以问我关于代码结构、函数实现、调用关系等问题。
+                    </p>
+                </div>
+            </div>
         </div>
-        <div id="codeChatAnswer" class="mt-3 text-sm hidden" style="color: var(--color-foreground);"></div>
+        <div style="border-top: 1px solid var(--color-border); padding: 1rem;">
+            <div class="flex gap-2">
+                <input type="text" id="codeChatInput" placeholder="输入你的问题，如：这个函数是怎么实现的？"
+                       class="input flex-1" style="padding: 12px 16px; font-size: 14px;">
+                <select id="codeChatRepo" class="input shrink-0" style="width: auto; max-width: 160px; padding: 12px 16px; font-size: 14px;">
+                    <option value="">全部仓库</option>
+                </select>
+                <button onclick="handleCodeChat()" id="codeChatBtn"
+                        class="btn btn-accent shrink-0" style="padding: 12px 24px;">发送</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 参考来源区 -->
+    <div id="codeChatSources" class="hidden panel">
+        <h3 class="font-semibold text-sm mb-3" style="color: var(--color-foreground);">📚 参考来源</h3>
+        <div id="codeSourcesList" class="space-y-2"></div>
     </div>
 </div>
 
 <script>
-window.initCodeChat = function() {
-    codeLoadChatFilters();
-};
+let isCodeChatting = false;
 
-async function codeLoadChatFilters() {
+// ── 加载仓库筛选 ────────────────────────────────────────────
+async function codeChatLoadRepos() {
     try {
         const res = await fetch('/api/code/repos');
         const data = await res.json();
-        const repos = data.repos || [];
         const select = document.getElementById('codeChatRepo');
         if (select) {
             select.innerHTML = '<option value="">全部仓库</option>' +
-                repos.map(r => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.name)}</option>`).join('');
+                (data.repos || []).map(r => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.name)}</option>`).join('');
         }
-    } catch (e) {
-        console.error('加载筛选器失败:', e);
-    }
+    } catch (e) { console.error('加载仓库列表失败:', e); }
 }
 
-async function codeChat() {
-    const question = document.getElementById('codeChatInput').value.trim();
-    if (!question) return;
+// ── 路由入口 ────────────────────────────────────────────────
+window.initCodeChat = function () {
+    codeChatLoadRepos();
+    const input = document.getElementById('codeChatInput');
+    if (input) {
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleCodeChat();
+        });
+    }
+};
 
-    const btn = document.getElementById('codeChatBtn');
-    const answerEl = document.getElementById('codeChatAnswer');
-    btn.disabled = true;
-    btn.textContent = '⏳';
-    answerEl.classList.remove('hidden');
-    answerEl.innerHTML = '<div style="color: var(--color-muted);">思考中...</div>';
+// ── 发送问答 ────────────────────────────────────────────────
+async function handleCodeChat() {
+    const input = document.getElementById('codeChatInput');
+    const question = input ? input.value.trim() : '';
+    if (!question || isCodeChatting) return;
 
-    const filters = {};
-    const repo = document.getElementById('codeChatRepo')?.value;
-    if (repo) filters.repo_name = repo;
+    isCodeChatting = true;
+    input.value = '';
+
+    const messagesDiv = document.getElementById('codeChatMessages');
+    const chatBtn = document.getElementById('codeChatBtn');
+
+    // 用户消息（右侧气泡）
+    messagesDiv.innerHTML += `
+        <div class="flex items-start gap-3 justify-end fade-in">
+            <div class="rounded-lg px-4 py-3 max-w-[80%]"
+                 style="background-color: var(--color-accent); color: #052E16;">
+                <p class="text-sm">${escapeHtml(question)}</p>
+            </div>
+            <div class="rounded-full w-8 h-8 flex items-center justify-center shrink-0 text-sm"
+                 style="background-color: rgba(34, 197, 94, 0.15);">👤</div>
+        </div>`;
+
+    // AI 占位消息
+    const aiMsgId = `ai-msg-${Date.now()}`;
+    messagesDiv.innerHTML += `
+        <div class="flex items-start gap-3 fade-in" id="${aiMsgId}">
+            <div class="rounded-full w-8 h-8 flex items-center justify-center shrink-0 text-sm"
+                 style="background-color: rgba(34, 197, 94, 0.15);">🤖</div>
+            <div class="rounded-lg px-4 py-3 max-w-[80%]"
+                 style="background-color: rgba(255, 255, 255, 0.04);">
+                <div class="flex items-center gap-2">
+                    <div class="animate-spin rounded-full h-4 w-4 border-b-2"
+                         style="border-color: var(--color-accent);"></div>
+                    <span class="text-sm" style="color: var(--color-muted);">思考中...</span>
+                </div>
+            </div>
+        </div>`;
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+    chatBtn.disabled = true;
+    chatBtn.textContent = '思考中...';
 
     try {
+        const filters = {};
+        const repo = document.getElementById('codeChatRepo')?.value;
+        if (repo) filters.repo_name = repo;
+
         const res = await fetch('/api/code/chat', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({question, top_k: 5, filters, stream: false}),
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question, top_k: 5, filters, stream: false }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail);
+        if (!res.ok) throw new Error(data.detail || '请求失败');
 
-        if (typeof codeRenderSteps === 'function') {
-            codeRenderSteps(data.steps || []);
+        // 替换 AI 占位为实际回答
+        const aiMsg = document.getElementById(aiMsgId);
+        if (aiMsg) {
+            const bubble = aiMsg.querySelector('.rounded-lg.px-4.py-3');
+            if (bubble) {
+                bubble.innerHTML = `<p class="text-sm leading-relaxed whitespace-pre-wrap" style="color: var(--color-foreground);">${escapeHtml(data.answer || '抱歉，无法生成回答')}</p>`;
+            }
         }
 
-        let html = `<div class="text-sm" style="color: var(--color-foreground);">${escapeHtml(data.answer).replace(/\n/g, '<br>')}</div>`;
+        // 渲染参考来源
         if (data.sources && data.sources.length > 0) {
-            html += '<div class="mt-2 text-xs" style="color: var(--color-muted);"><b>引用:</b> ';
-            html += data.sources.map(s => `${escapeHtml(s.file_path)}:${s.line_start}`).join(', ');
-            html += '</div>';
+            document.getElementById('codeChatSources').classList.remove('hidden');
+            document.getElementById('codeSourcesList').innerHTML = data.sources.map((s, i) => `
+                <div class="rounded p-3" style="background-color: rgba(255, 255, 255, 0.04); border-left: 2px solid var(--color-accent);">
+                    <div class="flex items-start gap-2 flex-wrap">
+                        <span class="text-xs font-medium" style="color: var(--color-accent);">[${i + 1}]</span>
+                        <code class="text-xs" style="color: var(--color-foreground); font-family: var(--font-mono);">${escapeHtml(s.file_path)}</code>
+                        <span class="text-xs px-1.5 py-0.5 rounded" style="background: var(--color-border); color: var(--color-muted);">L${s.line_start}-${s.line_end || s.line_start}</span>
+                        ${s.symbol_name ? `<span class="text-xs font-medium" style="color: var(--color-accent);">${escapeHtml(s.symbol_name)}</span>` : ''}
+                        ${s.score ? `<span class="text-xs ml-auto" style="color: var(--color-muted);">${(s.score * 100).toFixed(1)}%</span>` : ''}
+                    </div>
+                    ${s.content ? `<pre class="text-xs mt-2 px-2 py-1.5 rounded overflow-x-auto" style="background: var(--color-background); color: var(--color-muted); font-family: var(--font-mono); max-height: 120px; white-space: pre-wrap;">${escapeHtml(s.content.substring(0, 300))}</pre>` : ''}
+                </div>
+            `).join('');
         }
-        answerEl.innerHTML = html;
-    } catch (e) {
-        answerEl.innerHTML = `<div style="color: var(--color-danger);">错误: ${escapeHtml(e.message)}</div>`;
+    } catch (err) {
+        const aiMsg = document.getElementById(aiMsgId);
+        if (aiMsg) {
+            aiMsg.innerHTML = `
+                <div class="rounded-full w-8 h-8 flex items-center justify-center shrink-0 text-sm"
+                     style="background-color: rgba(239, 68, 68, 0.15);">❌</div>
+                <div class="rounded-lg px-4 py-3 max-w-[80%]"
+                     style="background-color: rgba(239, 68, 68, 0.08);">
+                    <p class="text-sm" style="color: var(--color-destructive);">${escapeHtml(err.message)}</p>
+                </div>`;
+        }
     } finally {
-        btn.disabled = false;
-        btn.textContent = '提问';
+        isCodeChatting = false;
+        chatBtn.disabled = false;
+        chatBtn.textContent = '发送';
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
 }
 
-window.codeChat = codeChat;
+// 暴露到 window
+window.handleCodeChat = handleCodeChat;
 </script>
