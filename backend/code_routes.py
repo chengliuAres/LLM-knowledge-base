@@ -786,7 +786,10 @@ async def api_get_skip_rules():
 async def api_save_skip_rules(req: SkipRulesRequest):
     """保存可配置排除规则"""
     rules = {"skip_dirs": req.skip_dirs, "skip_exts": req.skip_exts}
-    save_skip_rules(rules)
+    try:
+        save_skip_rules(rules)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"status": "ok", "message": "规则已保存"}
 
 
