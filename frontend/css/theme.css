@@ -28,7 +28,7 @@ body {
   background-color: var(--color-background);
   color: var(--color-foreground);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -68,7 +68,7 @@ kbd {
 
 .sidebar-group-label {
   padding: 12px 20px 6px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -128,7 +128,7 @@ kbd {
 
 .panel-title {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--color-foreground);
 }
@@ -141,7 +141,7 @@ kbd {
   gap: 6px;
   padding: 8px 14px;
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   line-height: 1.2;
   border: 1px solid transparent;
@@ -200,7 +200,7 @@ kbd {
   width: 100%;
   padding: 8px 12px;
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--color-foreground);
   background-color: var(--color-background);
   border: 1px solid var(--color-border);

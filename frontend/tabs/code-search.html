@@ -1,39 +1,62 @@
-<!-- 代码搜索 tab：搜索输入 + 模式选择 + 结果区 -->
+<!-- 代码搜索 tab：搜索输入 + 模式/筛选 + 结果区 -->
 
-<div class="max-w-7xl mx-auto">
-    <div class="flex flex-col gap-4">
-        <!-- 搜索栏 -->
-        <div class="panel">
-            <div class="flex gap-2">
-                <input id="codeSearchInput" type="text" placeholder="搜索代码..." class="input flex-1" onkeypress="if(event.key==='Enter')codeSearch()">
-                <select id="codeSearchMode" class="input shrink-0">
-                    <option value="hybrid">混合</option>
-                    <option value="vector">语义</option>
-                    <option value="keyword">关键词</option>
-                </select>
-                <button onclick="codeSearch()" class="btn btn-accent shrink-0">搜索</button>
-            </div>
+<div class="flex flex-col gap-4 h-full">
+    <!-- 搜索栏 -->
+    <div class="panel">
+        <div class="flex gap-2">
+            <input id="codeSearchInput" type="text" placeholder="搜索代码..." class="input flex-1" onkeypress="if(event.key==='Enter')codeSearch()">
+            <select id="codeSearchMode" class="input shrink-0" style="width: auto;">
+                <option value="hybrid">混合</option>
+                <option value="vector">语义</option>
+                <option value="keyword">关键词</option>
+            </select>
+            <select id="codeSearchRepo" class="input shrink-0" style="width: auto; max-width: 160px;">
+                <option value="">全部仓库</option>
+            </select>
+            <select id="codeSearchLang" class="input shrink-0" style="width: auto; max-width: 120px;">
+                <option value="">全部语言</option>
+            </select>
+            <button onclick="codeSearch()" class="btn btn-accent shrink-0">搜索</button>
         </div>
+    </div>
 
-        <!-- 搜索结果 -->
-        <div id="codeSearchResults" class="panel flex-1">
-            <div class="p-6 text-center text-xs" style="color: var(--color-muted);">输入关键词搜索代码</div>
-        </div>
+    <!-- 搜索结果 -->
+    <div id="codeSearchResults" class="panel flex-1 overflow-y-auto">
+        <div class="p-6 text-center text-sm" style="color: var(--color-muted);">输入关键词搜索代码</div>
     </div>
 </div>
 
 <script>
-// 工具函数（escapeHtml 来自 shared.js）
+// ── 搜索筛选器加载 ───────────────────────────────────────────
+async function codeLoadSearchFilters() {
+    try {
+        const res = await fetch('/api/code/repos');
+        const data = await res.json();
+        const repos = data.repos || [];
 
-// 执行代码搜索（向量 / 关键词 / 混合）
+        const repoSelect = document.getElementById('codeSearchRepo');
+        repoSelect.innerHTML = '<option value="">全部仓库</option>' +
+            repos.map(r => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.name)}</option>`).join('');
+
+        const langs = new Set();
+        repos.forEach(r => (r.languages || []).forEach(l => langs.add(l)));
+        const langSelect = document.getElementById('codeSearchLang');
+        langSelect.innerHTML = '<option value="">全部语言</option>' +
+            [...langs].sort().map(l => `<option value="${l}">${l}</option>`).join('');
+    } catch (e) {
+        console.error('加载搜索筛选器失败:', e);
+    }
+}
+
+// ── 执行代码搜索 ────────────────────────────────────────────
 async function codeSearch() {
     const query = document.getElementById('codeSearchInput').value.trim();
     if (!query) return;
 
     const mode = document.getElementById('codeSearchMode').value;
     const filters = {};
-    const repo = document.getElementById('codeFilterRepo')?.value;
-    const lang = document.getElementById('codeFilterLang')?.value;
+    const repo = document.getElementById('codeSearchRepo')?.value;
+    const lang = document.getElementById('codeSearchLang')?.value;
     if (repo) filters.repo_name = repo;
     if (lang) filters.language = lang;
 
@@ -55,18 +78,17 @@ async function codeSearch() {
     }
 }
 
-// 渲染搜索结果列表（深色主题）
+// ── 渲染搜索结果 ────────────────────────────────────────────
 function codeRenderResults(results, query) {
     const el = document.getElementById('codeSearchResults');
     if (!el) return;
 
     if (results.length === 0) {
-        el.innerHTML = '<div class="p-6 text-center text-xs" style="color: var(--color-muted);">无结果</div>';
+        el.innerHTML = '<div class="p-6 text-center text-sm" style="color: var(--color-muted);">无结果</div>';
         return;
     }
 
     el.innerHTML = results.map((r) => {
-        // 关键词高亮
         let content = escapeHtml(r.content);
         if (query) {
             const words = query.split(/\s+/).filter(w => w.length > 1);
@@ -81,13 +103,13 @@ function codeRenderResults(results, query) {
         return `
         <div class="code-result" onclick="codeHighlightRepo('${escapeHtml(r.file_path)}')">
             <div class="flex items-center gap-2 mb-1 flex-wrap">
-                <span class="text-xs font-mono truncate" style="color: var(--color-accent);">${escapeHtml(r.file_path)}</span>
+                <span class="text-sm font-mono truncate" style="color: var(--color-accent);">${escapeHtml(r.file_path)}</span>
                 <span class="tag">${escapeHtml(r.language || '')}</span>
                 <span class="tag" style="background: var(--color-border); color: var(--color-muted);">${escapeHtml(r.chunk_type || '')}</span>
-                ${r.symbol_name ? `<span class="text-[10px] font-medium" style="color: var(--color-foreground);">${escapeHtml(r.symbol_name)}</span>` : ''}
+                ${r.symbol_name ? `<span class="text-xs font-medium" style="color: var(--color-foreground);">${escapeHtml(r.symbol_name)}</span>` : ''}
             </div>
             <pre class="code-snippet">${content}</pre>
-            <div class="flex items-center gap-3 mt-1 text-[10px]" style="color: var(--color-muted);">
+            <div class="flex items-center gap-3 mt-1 text-xs" style="color: var(--color-muted);">
                 <span>L${r.line_start}-${r.line_end}</span>
                 <span>${sourceTag}</span>
                 <span>${escapeHtml(r.match_reason || '')}</span>
@@ -98,25 +120,23 @@ function codeRenderResults(results, query) {
     }).join('');
 }
 
-// 点击结果时高亮对应文件（占位）
 function codeHighlightRepo(filePath) {
     console.log('Navigate to:', filePath);
 }
 
-// 初始化入口（由路由调用）
+// ── 路由入口 ────────────────────────────────────────────────
 window.initCodeSearch = function() {
-    // 搜索框聚焦
     document.getElementById('codeSearchInput')?.focus();
+    codeLoadSearchFilters();
 };
 
-// 暴露到 window（内联 onclick / 路由用）
+// 暴露到 window
 window.codeSearch = codeSearch;
 window.codeRenderResults = codeRenderResults;
 window.codeHighlightRepo = codeHighlightRepo;
 </script>
 
 <style>
-/* 代码搜索结果项样式 */
 .code-result {
     border: 1px solid var(--color-border);
     border-radius: 0.5rem;
@@ -127,11 +147,11 @@ window.codeHighlightRepo = codeHighlightRepo;
     transition: background 0.15s;
 }
 .code-result:hover {
-    background: var(--color-primary);
+    background: rgba(255, 255, 255, 0.04);
 }
 .code-snippet {
-    font-family: 'SF Mono', Monaco, monospace;
-    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
     background: var(--color-primary);
     border: 1px solid var(--color-border);
     border-radius: 0.25rem;
@@ -142,20 +162,18 @@ window.codeHighlightRepo = codeHighlightRepo;
     white-space: pre;
     margin: 0;
 }
-/* 关键词高亮 */
 .code-result mark.hl {
     background: rgba(250, 204, 21, 0.35);
     color: inherit;
     padding: 0 1px;
     border-radius: 2px;
 }
-/* 语言 / 类型小标签 */
 .code-result .tag {
-    font-size: 10px;
+    font-size: 11px;
     padding: 1px 6px;
     border-radius: 0.25rem;
     background: var(--color-accent);
-    color: white;
+    color: #052E16;
     flex-shrink: 0;
 }
 </style>
