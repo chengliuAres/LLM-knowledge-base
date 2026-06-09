@@ -61,6 +61,24 @@ async function navigate(hash) {
     }
     const html = await res.text();
     contentArea.innerHTML = html;
+
+    // 3b. 手动执行注入的 <script> 标签（innerHTML 不会自动执行）
+    const scripts = Array.from(contentArea.querySelectorAll("script"));
+    for (const oldScript of scripts) {
+      if (oldScript.src) {
+        // 外部脚本：动态创建 script 标签加载
+        const newScript = document.createElement("script");
+        newScript.src = oldScript.src;
+        document.head.appendChild(newScript);
+      } else {
+        // 内联脚本：直接 eval（最可靠）
+        try {
+          eval(oldScript.textContent);
+        } catch (err) {
+          console.error("[router] 脚本执行失败:", err);
+        }
+      }
+    }
   } catch (err) {
     console.error(`[router] 加载 "${route.file}" 失败:`, err);
     contentArea.innerHTML = `
