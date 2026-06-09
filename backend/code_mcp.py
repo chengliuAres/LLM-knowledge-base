@@ -292,7 +292,7 @@ async def mcp_sse(request: Request):
                 except asyncio.TimeoutError:
                     # 心跳
                     yield {"event": "ping", "data": ""}
-                except asyncio.CancelledError:
+                except (asyncio.CancelledError, GeneratorExit):
                     log.info("sse_disconnect")
                     break
         finally:
