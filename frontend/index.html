@@ -1656,6 +1656,7 @@
                         <option value="generic">通用</option>
                     </select>
                     <button onclick="codeScanRepo()" id="codeScanBtn" class="w-full bg-blue-600 text-white rounded py-1.5 text-sm hover:bg-blue-700 transition-colors">🔍 开始扫描</button>
+                    <button onclick="openSkipRulesModal()" class="w-full mt-1 bg-gray-50 text-gray-700 border border-gray-200 rounded py-1 text-xs hover:bg-gray-100 transition-colors">⚙️ 排除规则</button>
                     <div id="codeScanProgress" class="hidden mt-2">
                         <div class="flex items-center gap-2 mb-1">
                             <div class="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
@@ -2232,6 +2233,202 @@
         document.getElementById('codeRepoName').value = name;
         document.getElementById('codeFolderBrowser').classList.add('hidden');
     }
+
+    // ── 排除规则模态框 ──────────────────────────────────────────
+    // 分类下拉选项（目录 / 扩展名）
+    const SKIP_DIR_CATEGORIES = ['版本控制', '依赖', '构建产物', 'IDE', '资源', '缓存', '虚拟环境', '第三方', '自定义'];
+    const SKIP_EXT_CATEGORIES = ['图片', '字体', 'iOS/Mac资源', 'Android资源', '配置/数据', '自定义'];
+
+    // 本地暂存（模态框打开期间编辑，未点保存不写后端）
+    let _skipRulesDraft = {dirs: [], exts: []};
+
+    async function openSkipRulesModal() {
+        document.getElementById('skip-rules-modal').classList.remove('hidden');
+        await loadSkipRules();
+    }
+
+    function closeSkipRulesModal() {
+        document.getElementById('skip-rules-modal').classList.add('hidden');
+    }
+
+    async function loadSkipRules() {
+        try {
+            const res = await fetch('/api/code/skip-rules');
+            if (!res.ok) throw new Error('加载规则失败');
+            const data = await res.json();
+            _skipRulesDraft = {
+                dirs: (data.skip_dirs || []).map(d => ({name: d.name, category: d.category})),
+                exts: (data.skip_exts || []).map(d => ({name: d.name, category: d.category})),
+            };
+            renderSkipTable('skip-dirs-body', _skipRulesDraft.dirs, 'dirs');
+            renderSkipTable('skip-exts-body', _skipRulesDraft.exts, 'exts');
+        } catch (e) {
+            alert('加载排除规则失败: ' + e.message);
+        }
+    }
+
+    function renderSkipTable(containerId, items, type) {
+        const tbody = document.getElementById(containerId);
+        if (!items.length) {
+            tbody.innerHTML = `<tr><td colspan="3" class="text-center text-gray-400 text-xs py-3">暂无规则</td></tr>`;
+            return;
+        }
+        // 按 category 分组，组内按 name 排序
+        const grouped = {};
+        items.forEach((it, idx) => {
+            if (!grouped[it.category]) grouped[it.category] = [];
+            grouped[it.category].push({...it, _idx: idx});
+        });
+        const sortedCats = Object.keys(grouped).sort();
+        tbody.innerHTML = sortedCats.map(cat => {
+            const rows = grouped[cat]
+                .slice()
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map(it => `
+                <tr class="border-t border-gray-100 hover:bg-gray-50">
+                    <td class="py-1.5 px-2 text-xs font-mono text-gray-800">${escapeHtml(it.name)}</td>
+                    <td class="py-1.5 px-2 text-xs text-gray-500">${escapeHtml(it.category)}</td>
+                    <td class="py-1.5 px-2 text-right">
+                        <button onclick="removeSkipRule('${type}', ${it._idx})" class="text-[10px] text-red-500 hover:text-red-700 hover:bg-red-50 px-1.5 py-0.5 rounded">删除</button>
+                    </td>
+                </tr>`).join('');
+            return `
+                <tr class="bg-gray-50">
+                    <td colspan="3" class="py-1 px-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">${escapeHtml(cat)} <span class="text-gray-400 font-normal">(${grouped[cat].length})</span></td>
+                </tr>
+                ${rows}
+            `;
+        }).join('');
+    }
+
+    function addSkipRule(type) {
+        const inputId = type === 'dirs' ? 'skip-dir-input' : 'skip-ext-input';
+        const selectId = type === 'dirs' ? 'skip-dir-category' : 'skip-ext-category';
+        const name = document.getElementById(inputId).value.trim();
+        const category = document.getElementById(selectId).value;
+        if (!name) {
+            alert('请输入规则名称');
+            return;
+        }
+        if (name.includes('/')) {
+            alert('目录名/扩展名不能包含 / 字符');
+            return;
+        }
+        const arr = type === 'dirs' ? _skipRulesDraft.dirs : _skipRulesDraft.exts;
+        if (arr.some(it => it.name === name)) {
+            alert('该规则已存在');
+            return;
+        }
+        arr.push({name, category});
+        document.getElementById(inputId).value = '';
+        renderSkipTable(type === 'dirs' ? 'skip-dirs-body' : 'skip-exts-body', arr, type);
+    }
+
+    function removeSkipRule(type, index) {
+        const arr = type === 'dirs' ? _skipRulesDraft.dirs : _skipRulesDraft.exts;
+        arr.splice(index, 1);
+        renderSkipTable(type === 'dirs' ? 'skip-dirs-body' : 'skip-exts-body', arr, type);
+    }
+
+    async function saveSkipRules() {
+        try {
+            const res = await fetch('/api/code/skip-rules', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({skip_dirs: _skipRulesDraft.dirs, skip_exts: _skipRulesDraft.exts}),
+            });
+            if (!res.ok) throw new Error('保存失败');
+            alert('已保存');
+            closeSkipRulesModal();
+        } catch (e) {
+            alert('保存失败: ' + e.message);
+        }
+    }
+
+    async function resetSkipRules() {
+        if (!confirm('确定要恢复默认排除规则吗？当前修改会丢失。')) return;
+        try {
+            const res = await fetch('/api/code/skip-rules/reset', {method: 'POST'});
+            if (!res.ok) throw new Error('重置失败');
+            const data = await res.json();
+            _skipRulesDraft = {
+                dirs: (data.rules.skip_dirs || []).map(d => ({name: d.name, category: d.category})),
+                exts: (data.rules.skip_exts || []).map(d => ({name: d.name, category: d.category})),
+            };
+            renderSkipTable('skip-dirs-body', _skipRulesDraft.dirs, 'dirs');
+            renderSkipTable('skip-exts-body', _skipRulesDraft.exts, 'exts');
+        } catch (e) {
+            alert('重置失败: ' + e.message);
+        }
+    }
+    </script>
+
+    <!-- 排除规则模态框 -->
+    <div id="skip-rules-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+            <!-- 头部 -->
+            <div class="flex items-center justify-between px-5 py-3 border-b">
+                <h3 class="font-semibold text-gray-800">⚙️ 排除规则</h3>
+                <div class="flex items-center gap-2">
+                    <button onclick="resetSkipRules()" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded">恢复默认</button>
+                    <button onclick="saveSkipRules()" class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded">保存</button>
+                    <button onclick="closeSkipRulesModal()" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded">关闭</button>
+                </div>
+            </div>
+
+            <!-- 主体：两个表格区域 -->
+            <div class="flex-1 overflow-y-auto p-5 space-y-5">
+                <!-- 排除目录 -->
+                <div>
+                    <h4 class="text-sm font-semibold text-gray-700 mb-2">📁 排除目录</h4>
+                    <table class="w-full border border-gray-200 rounded text-left">
+                        <thead class="bg-gray-50 text-[10px] uppercase text-gray-500">
+                            <tr>
+                                <th class="py-1.5 px-2 font-semibold w-1/3">名称</th>
+                                <th class="py-1.5 px-2 font-semibold w-1/3">分类</th>
+                                <th class="py-1.5 px-2 font-semibold w-1/3 text-right">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="skip-dirs-body"></tbody>
+                    </table>
+                    <div class="flex gap-2 mt-2">
+                        <input id="skip-dir-input" type="text" placeholder="目录名, 如 node_modules" class="flex-1 border rounded px-2 py-1.5 text-xs font-mono">
+                        <select id="skip-dir-category" class="border rounded px-2 py-1.5 text-xs"></select>
+                        <button onclick="addSkipRule('dirs')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 text-xs rounded">+ 添加</button>
+                    </div>
+                </div>
+
+                <!-- 排除扩展名 -->
+                <div>
+                    <h4 class="text-sm font-semibold text-gray-700 mb-2">📄 排除扩展名</h4>
+                    <table class="w-full border border-gray-200 rounded text-left">
+                        <thead class="bg-gray-50 text-[10px] uppercase text-gray-500">
+                            <tr>
+                                <th class="py-1.5 px-2 font-semibold w-1/3">名称</th>
+                                <th class="py-1.5 px-2 font-semibold w-1/3">分类</th>
+                                <th class="py-1.5 px-2 font-semibold w-1/3 text-right">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="skip-exts-body"></tbody>
+                    </table>
+                    <div class="flex gap-2 mt-2">
+                        <input id="skip-ext-input" type="text" placeholder="扩展名, 如 .lock" class="flex-1 border rounded px-2 py-1.5 text-xs font-mono">
+                        <select id="skip-ext-category" class="border rounded px-2 py-1.5 text-xs"></select>
+                        <button onclick="addSkipRule('exts')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 text-xs rounded">+ 添加</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // 初始化分类下拉选项（DOM 就绪后）
+    (function initSkipRuleSelects() {
+        const dirSel = document.getElementById('skip-dir-category');
+        const extSel = document.getElementById('skip-ext-category');
+        if (dirSel) dirSel.innerHTML = SKIP_DIR_CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('');
+        if (extSel) extSel.innerHTML = SKIP_EXT_CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('');
+    })();
     </script>
 </body>
 </html>

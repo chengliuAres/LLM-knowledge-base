@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from step_tracker import StepTracker
 from code_parser import parse_repo, scan_directory
 from code_db import insert_chunks, delete_by_repo, delete_by_file, get_stats
+from code_skip_rules import get_skip_rules, save_skip_rules, reset_skip_rules
 from code_search import search_code
 from code_config import (
     list_repos, get_repo_config, register_repo, remove_repo,
@@ -53,6 +54,11 @@ class TraceRequest(BaseModel):
     repo_name: str = ""
     direction: str = "both"  # callers / callees / both
     depth: int = Field(default=2, ge=1, le=3)
+
+
+class SkipRulesRequest(BaseModel):
+    skip_dirs: list[dict] = Field(default_factory=list)
+    skip_exts: list[dict] = Field(default_factory=list)
 
 
 # ── 扫描任务管理 ─────────────────────────────────────────────────
@@ -764,3 +770,30 @@ async def browse_directory(path: str = "/"):
         "parent": os.path.dirname(path) if path != "/" else None,
         "dirs": dirs,
     }
+
+
+# ── GET /api/code/skip-rules ──────────────────────────────────────
+
+@router.get("/skip-rules")
+async def api_get_skip_rules():
+    """获取当前可配置排除规则"""
+    return get_skip_rules()
+
+
+# ── PUT /api/code/skip-rules ──────────────────────────────────────
+
+@router.put("/skip-rules")
+async def api_save_skip_rules(req: SkipRulesRequest):
+    """保存可配置排除规则"""
+    rules = {"skip_dirs": req.skip_dirs, "skip_exts": req.skip_exts}
+    save_skip_rules(rules)
+    return {"status": "ok", "message": "规则已保存"}
+
+
+# ── POST /api/code/skip-rules/reset ───────────────────────────────
+
+@router.post("/skip-rules/reset")
+async def api_reset_skip_rules():
+    """恢复默认排除规则"""
+    rules = reset_skip_rules()
+    return {"status": "ok", "message": "已恢复默认规则", "rules": rules}

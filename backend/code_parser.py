@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from code_skip_rules import get_skip_dirs, get_skip_exts
+
 # ── tree-sitter Parser 全局缓存 ─────────────────────────────────────
 # tree_sitter_language_pack 的 get_parser() 每次创建全新的 Language+Parser
 # 不缓存会导致 3773 个文件 = 3773 个 Language(含完整语法) + 3773 个 Parser → 内存爆炸
@@ -63,63 +65,6 @@ EXTENSION_MAP = {
     '.yaml': 'yaml',
     # JSON
     '.json': 'json',
-}
-
-# ── 各项目类型默认跳过规则 ─────────────────────────────────────────
-
-DEFAULT_SKIP_DIRS = {
-    'ios': {'.git', '.xcassets', '.xcframework', '.lproj', 'lottie', 'third',
-            'Pods', 'DerivedData', 'build'},
-    'macos': {'.git', 'Assets.xcassets', 'Resource', 'third_party', 'Pods',
-              '.xcodeproj', '.xcworkspace', 'DerivedData', 'build'},
-    'android': {'.git', 'build', '.gradle', 'buildSrc', 'keystore',
-                'gradleScripts', '.idea'},
-    'flutter': {'.git', '.ios', '.android', 'build', '.dart_tool'},
-    'rn': {'.git', 'node_modules', 'build'},
-    'kmp': {'.git', 'build', '.gradle', 'ohosApp'},
-    'python': {'.git', '__pycache__', '.venv', 'venv', '.tox', '.eggs',
-               'build', 'dist', '.mypy_cache', '.pytest_cache', '.ruff_cache'},
-    'javascript': {'.git', 'node_modules', 'dist', 'build', '.next', '.nuxt'},
-    'generic': {'.git', 'node_modules', 'build', 'dist', '__pycache__',
-                'venv', '.venv', 'target', 'vendor', '.idea', '.vscode',
-                'coverage', '.nyc_output'},
-}
-
-DEFAULT_SKIP_EXTS = {
-    'ios': {'.png', '.jpg', '.jpeg', '.gif', '.json', '.strings', '.plist',
-            '.storyboard', '.xib'},
-    'macos': {'.png', '.jpg', '.jpeg', '.gif', '.json', '.strings',
-              '.storyboard', '.xib'},
-    'android': {'.png', '.jpg', '.jpeg', '.gif', '.xml', '.pro'},
-    'flutter': {'.png', '.jpg', '.jpeg', '.gif', '.json'},
-    'rn': {'.png', '.jpg', '.jpeg', '.gif'},
-    'kmp': {'.png', '.jpg', '.jpeg', '.gif', '.ets'},
-    'python': {},   # 脚本文件通常无资源
-    'javascript': {'.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg',
-                   '.woff', '.woff2', '.ttf', '.eot'},
-    'generic': {'.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff',
-                '.woff2', '.ttf', '.eot'},
-}
-
-# 通用跳过目录 — project_type 为空时使用，合并所有工程类型的规则
-UNIVERSAL_SKIP_DIRS = {
-    '.git', '.svn', '.hg',
-    'node_modules', 'bower_components',
-    '__pycache__', '.mypy_cache', '.pytest_cache', '.ruff_cache',
-    'venv', '.venv', 'virtualenv', 'env', '.tox',
-    'build', 'dist', 'target', 'out',
-    '.gradle', '.idea', '.vscode',
-    'Pods', 'Carthage', '.build',
-    'DerivedData', '.xcodeproj', '.xcworkspace',
-    '.dart_tool', '.packages',
-    '.next', '.nuxt', '.cache',
-    'vendor', 'bundle',
-    'coverage', '.nyc_output',
-    '.xcassets', '.xcframework', '.lproj', 'lottie', 'third',
-    'Assets.xcassets', 'Resource', 'third_party',
-    'buildSrc', 'keystore', 'gradleScripts',
-    '.ios', '.android',
-    'ohosApp',
 }
 
 # ── AST 节点类型 → chunk_type 映射 ──────────────────────────────────
@@ -543,13 +488,9 @@ def scan_directory(
     if not os.path.isdir(repo_path):
         raise ValueError(f"目录不存在: {repo_path}")
 
-    # 合并跳过规则 — project_type 为空时使用通用规则
-    if project_type:
-        effective_skip_dirs = DEFAULT_SKIP_DIRS.get(project_type, DEFAULT_SKIP_DIRS['generic']).copy()
-        effective_skip_exts = DEFAULT_SKIP_EXTS.get(project_type, DEFAULT_SKIP_EXTS['generic']).copy()
-    else:
-        effective_skip_dirs = UNIVERSAL_SKIP_DIRS.copy()
-        effective_skip_exts = DEFAULT_SKIP_EXTS['generic'].copy()
+    # 合并跳过规则 — 从可配置规则中加载，支持运行时覆盖
+    effective_skip_dirs = get_skip_dirs()
+    effective_skip_exts = get_skip_exts()
     if skip_dirs:
         effective_skip_dirs |= skip_dirs
     if skip_extensions:
