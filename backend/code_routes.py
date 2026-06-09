@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from step_tracker import StepTracker
 from code_parser import parse_repo, scan_directory
 from code_db import insert_chunks, delete_by_repo, delete_by_file, get_stats
-from code_skip_rules import get_skip_rules, save_skip_rules, reset_skip_rules
+from code_skip_rules import get_skip_rules, save_skip_rules, reset_skip_rules, parse_gitignore_dirs, open_config_in_finder
 from code_search import search_code
 from code_config import (
     list_repos, get_repo_config, register_repo, remove_repo,
@@ -59,6 +59,7 @@ class TraceRequest(BaseModel):
 class SkipRulesRequest(BaseModel):
     skip_dirs: list[dict] = Field(default_factory=list)
     skip_exts: list[dict] = Field(default_factory=list)
+    gitignore_selections: list[dict] = Field(default_factory=list)
 
 
 # ── 扫描任务管理 ─────────────────────────────────────────────────
@@ -785,7 +786,7 @@ async def api_get_skip_rules():
 @router.put("/skip-rules")
 async def api_save_skip_rules(req: SkipRulesRequest):
     """保存可配置排除规则"""
-    rules = {"skip_dirs": req.skip_dirs, "skip_exts": req.skip_exts}
+    rules = {"skip_dirs": req.skip_dirs, "skip_exts": req.skip_exts, "gitignore_selections": req.gitignore_selections}
     try:
         save_skip_rules(rules)
     except ValueError as e:
@@ -800,3 +801,22 @@ async def api_reset_skip_rules():
     """恢复默认排除规则"""
     rules = reset_skip_rules()
     return {"status": "ok", "message": "已恢复默认规则", "rules": rules}
+
+
+# ── GET /api/code/gitignore-dirs ──────────────────────────────────
+
+@router.get("/gitignore-dirs")
+async def api_get_gitignore_dirs(repo_path: str = ""):
+    """读取 .gitignore 并提取目录名"""
+    if not repo_path or not os.path.isdir(repo_path):
+        return {"dirs": []}
+    return {"dirs": parse_gitignore_dirs(repo_path)}
+
+
+# ── POST /api/code/skip-rules/open-finder ─────────────────────────
+
+@router.post("/skip-rules/open-finder")
+async def api_open_skip_rules_in_finder():
+    """在 Finder 中打开配置文件"""
+    open_config_in_finder()
+    return {"status": "ok"}

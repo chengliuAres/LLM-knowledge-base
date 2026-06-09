@@ -7,6 +7,7 @@
 
 import os
 import json
+import subprocess
 
 # 项目根目录 + 配置文件路径
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -112,10 +113,62 @@ def reset_skip_rules() -> dict:
 # ── 便捷访问 ────────────────────────────────────────────────────
 
 def get_skip_dirs() -> set[str]:
-    """返回目录名集合（忽略 category）"""
-    return {d["name"] for d in get_skip_rules().get("skip_dirs", [])}
+    """返回目录名集合（忽略 category），含勾选的 gitignore 目录"""
+    rules = get_skip_rules()
+    dirs = {d["name"] for d in rules.get("skip_dirs", [])}
+    # 合并勾选的 gitignore 目录
+    for g in rules.get("gitignore_selections", []):
+        if g.get("selected", True):
+            dirs.add(g["name"])
+    return dirs
 
 
 def get_skip_exts() -> set[str]:
     """返回扩展名集合（忽略 category）"""
     return {d["name"] for d in get_skip_rules().get("skip_exts", [])}
+
+
+# ── .gitignore 解析 ──────────────────────────────────────────────
+
+def parse_gitignore_dirs(repo_path: str) -> list[str]:
+    """从 .gitignore 提取目录名条目
+
+    只提取：
+    - 以 / 结尾的条目（去掉 /）→ 确定是目录
+    - 不含 * ? [ 通配符的纯名称条目 → 可能是目录
+    跳过：注释行、空行、取反（!）行、通配符模式
+    """
+    gitignore_path = os.path.join(repo_path, ".gitignore")
+    if not os.path.isfile(gitignore_path):
+        return []
+
+    dirs = []
+    try:
+        with open(gitignore_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                entry = line.strip()
+                if not entry or entry.startswith("#") or entry.startswith("!"):
+                    continue
+                if entry.endswith("/"):
+                    name = entry.rstrip("/")
+                    if name and "*" not in name and "?" not in name and "[" not in name:
+                        dirs.append(name)
+                elif "*" not in entry and "?" not in entry and "[" not in entry and "." not in entry:
+                    dirs.append(entry)
+    except OSError:
+        pass
+
+    seen = set()
+    result = []
+    for d in dirs:
+        if d not in seen:
+            seen.add(d)
+            result.append(d)
+    return result
+
+
+def open_config_in_finder():
+    """在 Finder 中打开配置文件所在目录并选中文件"""
+    if not os.path.exists(CONFIG_PATH):
+        save_skip_rules(build_default_skip_rules())
+    subprocess.run(["open", "-R", CONFIG_PATH], check=False)
