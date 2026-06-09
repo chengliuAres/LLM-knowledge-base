@@ -131,36 +131,48 @@ def get_skip_exts() -> set[str]:
 # ── .gitignore 解析 ──────────────────────────────────────────────
 
 def parse_gitignore_dirs(repo_path: str) -> list[str]:
-    """从 .gitignore 提取目录名条目
+    """从 .gitignore 提取可排除的条目
 
-    只提取：
-    - 以 / 结尾的条目（去掉 /）→ 确定是目录
-    - 不含 * ? [ 通配符的纯名称条目 → 可能是目录
+    提取规则：
+    - 以 / 结尾 → 目录，去掉 /
+    - 不含 * ? [ 通配符 → 精确名称（目录或文件均可）
+    - 嵌套路径（如 a/b）→ 提取顶层目录 a + 完整路径 a/b
     跳过：注释行、空行、取反（!）行、通配符模式
     """
     gitignore_path = os.path.join(repo_path, ".gitignore")
     if not os.path.isfile(gitignore_path):
         return []
 
-    dirs = []
+    entries = []
     try:
         with open(gitignore_path, "r", encoding="utf-8", errors="ignore") as f:
             for line in f:
                 entry = line.strip()
                 if not entry or entry.startswith("#") or entry.startswith("!"):
                     continue
+                # 跳过含通配符的模式
+                if "*" in entry or "?" in entry or "[" in entry:
+                    continue
+                # 去掉尾部 / 和开头 /
                 if entry.endswith("/"):
-                    name = entry.rstrip("/")
-                    if name and "*" not in name and "?" not in name and "[" not in name:
-                        dirs.append(name)
-                elif "*" not in entry and "?" not in entry and "[" not in entry and "." not in entry:
-                    dirs.append(entry)
+                    entry = entry.rstrip("/")
+                if entry.startswith("/"):
+                    entry = entry.lstrip("/")
+                if not entry:
+                    continue
+                entries.append(entry)
+                # 嵌套路径 → 额外提取顶层目录
+                if "/" in entry:
+                    top = entry.split("/")[0]
+                    if top and top not in entries:
+                        entries.append(top)
     except OSError:
         pass
 
+    # 去重保序
     seen = set()
     result = []
-    for d in dirs:
+    for d in entries:
         if d not in seen:
             seen.add(d)
             result.append(d)
