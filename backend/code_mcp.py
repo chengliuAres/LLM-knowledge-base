@@ -103,8 +103,11 @@ async def execute_tool(name: str, arguments: dict) -> dict:
     from code_db import get_chunks_by_file
 
     if name == "code_search":
+        query = arguments.get("query", "").strip()
+        if not query:
+            return {"error": "query 不能为空"}
         result = search_code(
-            query=arguments["query"],
+            query=query,
             mode=arguments.get("mode", "hybrid"),
             top_k=arguments.get("top_k", 10),
             repo_name=arguments.get("repo"),
