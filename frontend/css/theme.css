@@ -7,6 +7,7 @@
   /* 颜色 */
   --color-primary: #1E293B;        /* 卡片/侧边栏背景 */
   --color-secondary: #1A2332;      /* 次级背景（介于 primary 和 background 之间） */
+  --color-bg-elevated: #1E293B;    /* 提升层背景（tooltip/下拉等浮层） */
   --color-background: #0F172A;     /* 页面底色 */
   --color-foreground: #F8FAFC;     /* 主文本 */
   --color-accent: #22C55E;          /* 强调色（绿） */
@@ -17,10 +18,11 @@
   /* 布局 */
   --sidebar-width: 240px;            /* 侧边栏宽度（与 .sidebar 类的 width/min-width 保持一致） */
 
-  /* 字体 */
-  --font-sans: "Fira Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
+  /* 字体 — 2026-06-10 去掉 Fira Sans/Code 首选项（外部 CDN 已下线）
+     直接走系统字体栈，避免字体回退闪烁。需要时再加 woff2 到 frontend/vendor/fonts/ */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI",
                Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "Fira Code", "SFMono-Regular", Menlo, Consolas,
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas,
                "Liberation Mono", monospace;
 }
 
@@ -266,16 +268,13 @@ textarea.input {
   scrollbar-color: var(--color-border) transparent;
 }
 
-/* ---------- 8. 过渡动画 ---------- */
+/* ---------- 8. 过渡动画 ----------
+   注意：fadeIn 只能用 opacity，不能用 transform！
+   否则 .tab-page.tab-active / .fade-in / .content 等会变成 position:fixed 子元素的
+   containing block，导致 fixed 模态框（如 #skip-rules-modal）变成 0×0。*/
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 .fade-in {
@@ -289,11 +288,29 @@ main,
   animation: fadeIn 0.25s ease-out both;
 }
 
-/* tab 页面显隐控制 */
+/* tab 页面显隐控制
+   ⚠️ 严禁在 .tab-page / main / body 加 transform/filter/contain/will-change:transform！
+   否则 .tab-page 会成为 position:fixed 后代（#skip-rules-modal / #agent-settings-modal）
+   的 containing block，导致 fixed 元素变 0×0（弹窗跑到屏幕外）。 */
 .tab-page {
   display: none;
 }
 .tab-page.tab-active {
   display: block;
   animation: fadeIn 0.2s ease-out both;
+}
+
+/* 排除规则弹窗内独立 tab 样式（目录/扩展名切换） */
+.skip-tab-btn {
+  color: var(--color-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;  /* 抵消外层 border-b，让激活态底部边框贴合 */
+  transition: color 0.15s, border-color 0.15s;
+}
+.skip-tab-btn:hover {
+  color: var(--color-foreground);
+}
+.skip-tab-btn-active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
 }
