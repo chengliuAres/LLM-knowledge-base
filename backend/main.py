@@ -43,13 +43,21 @@ log = get_logger("main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """FastAPI 生命周期：启动时配置日志 + 初始化邮件 DB；关闭时无清理。"""
+    """FastAPI 生命周期：启动时配置日志 + 初始化邮件 DB + 启动 git watchdog；关闭时停止 watchdog。"""
     configure_logging()
     log.info("服务启动")
     init_db()
     init_sample_data()
+
+    # 启动 git watchdog 后台线程（git 仓库变更自动触发增量扫描）
+    from git_watchdog import start_watchdog, stop_watchdog
+    start_watchdog()
+
     log.info("服务启动完成")
     yield
+
+    # 关闭时停止 watchdog（让线程在 daemon 退前能干净退出）
+    stop_watchdog()
 
 
 app = FastAPI(title="文档知识库", version="2.0.0", lifespan=lifespan)
@@ -819,6 +827,7 @@ frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
 app.mount("/css", StaticFiles(directory=os.path.join(frontend_dir, "css")), name="css")
 app.mount("/js", StaticFiles(directory=os.path.join(frontend_dir, "js")), name="js")
 app.mount("/tabs", StaticFiles(directory=os.path.join(frontend_dir, "tabs")), name="tabs")
+app.mount("/vendor", StaticFiles(directory=os.path.join(frontend_dir, "vendor")), name="vendor")
 
 
 @app.get("/")
