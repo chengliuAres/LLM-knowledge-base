@@ -4,6 +4,8 @@ import os
 import math
 import uuid
 import logging
+import platform
+import subprocess
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, HTTPException
@@ -1388,3 +1390,53 @@ async def resolve_path(name: str, parent: Optional[str] = None):
     if len(matches) == 1:
         return {"path": matches[0]}
     return {"matches": matches[:20]}
+
+
+# ── 黑名单：危险目录禁止打开 ─────────────────────────────────────
+
+_OPEN_DENY_PREFIXES = (
+    os.path.expanduser("~/.ssh"),
+    "/etc", "/var", "/usr", "/bin", "/sbin",
+    "/System", "/Library/Apple",
+    "/private/etc", "/private/tmp",
+)
+
+
+# ── POST /api/code/open-in-finder ─────────────────────────────────
+
+@router.post("/open-in-finder")
+async def open_in_finder(payload: dict):
+    """在系统文件管理器中打开指定路径。
+
+    - macOS: open
+    - Windows: explorer
+    - Linux: xdg-open
+    - 未知系统 / 命令缺失: 返回 {skipped: True} 让前端兜底
+    """
+    raw = (payload or {}).get("path", "")
+    if not isinstance(raw, str) or not raw.strip():
+        raise HTTPException(400, detail="path 必填且为非空字符串")
+
+    path = os.path.abspath(raw.strip())
+    if not os.path.isdir(path):
+        raise HTTPException(400, detail=f"不是有效目录: {path}")
+
+    for deny in _OPEN_DENY_PREFIXES:
+        if path == deny or path.startswith(deny + os.sep):
+            raise HTTPException(403, detail=f"禁止访问: {deny}")
+
+    system = platform.system()
+    if system == "Darwin":
+        cmd = ["open", path]
+    elif system == "Windows":
+        cmd = ["explorer", path]
+    elif system == "Linux":
+        cmd = ["xdg-open", path]
+    else:
+        return {"path": path, "skipped": True, "reason": f"不支持的系统: {system}"}
+
+    try:
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except FileNotFoundError:
+        return {"path": path, "skipped": True, "reason": f"未找到命令: {cmd[0]}"}
+    return {"path": path, "opened": True}

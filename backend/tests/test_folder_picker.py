@@ -9,6 +9,7 @@
 
 import os
 import sys
+from unittest.mock import patch, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -77,4 +78,101 @@ def test_resolve_path_invalid_parent(tmp_path):
     """parent 不存在 → 400"""
     fake = tmp_path / "no-such-dir"
     res = client.get(f"/api/code/resolve-path?name=x&parent={fake}")
+    assert res.status_code == 400
+
+
+# ── /api/code/open-in-finder ───────────────────────────────────
+
+def test_open_in_finder_darwin(tmp_path, monkeypatch):
+    """macOS → 调 subprocess.Popen(['open', path])"""
+    target = tmp_path / "mydir"
+    target.mkdir()
+    monkeypatch.setattr("platform.system", lambda: "Darwin")
+
+    with patch("code_routes.subprocess.Popen") as mock_popen:
+        res = client.post("/api/code/open-in-finder", json={"path": str(target)})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["opened"] is True
+        assert data["path"] == str(target)
+        mock_popen.assert_called_once()
+        args = mock_popen.call_args[0][0]
+        assert args[0] == "open"
+        assert str(target) in args
+
+
+def test_open_in_finder_windows(tmp_path, monkeypatch):
+    """Windows → 调 explorer"""
+    target = tmp_path / "mydir"
+    target.mkdir()
+    monkeypatch.setattr("platform.system", lambda: "Windows")
+
+    with patch("code_routes.subprocess.Popen") as mock_popen:
+        res = client.post("/api/code/open-in-finder", json={"path": str(target)})
+        assert res.status_code == 200
+        args = mock_popen.call_args[0][0]
+        assert args[0] == "explorer"
+
+
+def test_open_in_finder_linux(tmp_path, monkeypatch):
+    """Linux → 调 xdg-open"""
+    target = tmp_path / "mydir"
+    target.mkdir()
+    monkeypatch.setattr("platform.system", lambda: "Linux")
+
+    with patch("code_routes.subprocess.Popen") as mock_popen:
+        res = client.post("/api/code/open-in-finder", json={"path": str(target)})
+        assert res.status_code == 200
+        args = mock_popen.call_args[0][0]
+        assert args[0] == "xdg-open"
+
+
+def test_open_in_finder_path_invalid(tmp_path, monkeypatch):
+    """路径不存在 → 400"""
+    monkeypatch.setattr("platform.system", lambda: "Darwin")
+    fake = tmp_path / "no-such-dir"
+    res = client.post("/api/code/open-in-finder", json={"path": str(fake)})
+    assert res.status_code == 400
+
+
+def test_open_in_finder_blacklist_ssh(tmp_path, monkeypatch):
+    """~/.ssh 拒绝 → 403（将 fake_ssh 注入 denylist 以绕过 /private 路径差异）"""
+    monkeypatch.setattr("platform.system", lambda: "Darwin")
+    fake_ssh = tmp_path / ".ssh"
+    fake_ssh.mkdir()
+
+    import code_routes
+    monkeypatch.setattr(
+        code_routes,
+        "_OPEN_DENY_PREFIXES",
+        code_routes._OPEN_DENY_PREFIXES + (str(fake_ssh),),
+    )
+
+    res = client.post("/api/code/open-in-finder", json={"path": str(fake_ssh)})
+    assert res.status_code == 403
+
+
+def test_open_in_finder_blacklist_etc(tmp_path, monkeypatch):
+    """/etc 系统目录 → 403"""
+    monkeypatch.setattr("platform.system", lambda: "Darwin")
+    res = client.post("/api/code/open-in-finder", json={"path": "/etc"})
+    assert res.status_code == 403
+
+
+def test_open_in_finder_unsupported_os(tmp_path, monkeypatch):
+    """未知系统 → 返回 skipped: True"""
+    target = tmp_path / "mydir"
+    target.mkdir()
+    monkeypatch.setattr("platform.system", lambda: "Plan9")
+
+    res = client.post("/api/code/open-in-finder", json={"path": str(target)})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["skipped"] is True
+    assert "Plan9" in data["reason"]
+
+
+def test_open_in_finder_missing_path():
+    """payload 没 path → 400"""
+    res = client.post("/api/code/open-in-finder", json={})
     assert res.status_code == 400
