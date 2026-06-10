@@ -1348,3 +1348,43 @@ async def api_reset_agent_config():
     with _agent_config_lock:
         _save_agent_config(dict(DEFAULT_AGENT_CONFIG))
         return dict(DEFAULT_AGENT_CONFIG)
+
+
+# ── GET /api/code/resolve-path ─────────────────────────────────
+
+@router.get("/resolve-path")
+async def resolve_path(name: str, parent: Optional[str] = None):
+    """在 parent 下找名为 name 的子目录。
+
+    - 唯一命中：返回 {"path": "..."}
+    - 多匹配：返回 {"matches": [...]}（最多 20 个）
+    - 无匹配：404
+    - parent 无效：400
+    """
+    search_root = os.path.abspath(parent) if parent else os.path.expanduser("~")
+    if not os.path.isdir(search_root):
+        raise HTTPException(400, detail=f"搜索根目录不存在: {search_root}")
+
+    # 跳过这些大目录避免扫得慢
+    SKIP_DIRS = {".git", "node_modules", "venv", "__pycache__", "Library", "Applications"}
+
+    matches: list[str] = []
+    search_root = search_root.rstrip(os.sep)
+    root_depth = search_root.count(os.sep)
+    MAX_DEPTH = 3
+
+    for dirpath, dirnames, _ in os.walk(search_root):
+        # 过滤隐藏目录和大目录
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS]
+        if name in dirnames:
+            matches.append(os.path.join(dirpath, name))
+        # 限深
+        cur_depth = dirpath.count(os.sep) - root_depth
+        if cur_depth >= MAX_DEPTH:
+            dirnames[:] = []
+
+    if len(matches) == 0:
+        raise HTTPException(404, detail=f"在 {search_root} 下未找到目录: {name}")
+    if len(matches) == 1:
+        return {"path": matches[0]}
+    return {"matches": matches[:20]}
