@@ -373,6 +373,25 @@ def get_table_from_db():
 
 # ── POST /api/code/scan (启动后台任务) ───────────────────────────
 
+def _start_scan_job(req: ScanRequest) -> str:
+    """同步启动扫描任务并返回 scan_id
+
+    锁不归本函数管，由调用方在调本函数前通过 try_acquire_scan_lock 拿取；
+    释放由 _run_scan 后台线程 finally 块负责（code_routes.py:309）。
+    watchdog 后台线程复用此入口（线程不能 await）。
+    """
+    scan_id = str(uuid.uuid4())[:8]
+    log.info(f"[scan] 分配 scan_id={scan_id} (req.repo_name={req.repo_name})")
+    job = ScanJob(scan_id, req)
+    _scan_jobs[scan_id] = job
+
+    # 启动后台线程
+    thread = threading.Thread(target=_run_scan, args=(job,), daemon=True)
+    thread.start()
+
+    return scan_id
+
+
 @router.post("/scan")
 async def scan_repo_endpoint(req: ScanRequest):
     """启动异步扫描, 返回 scan_id"""
@@ -391,14 +410,8 @@ async def scan_repo_endpoint(req: ScanRequest):
         log.warning(f"[scan] 锁冲突: {req.repo_name} 正在扫描中")
         raise HTTPException(409, detail=f"仓库 {req.repo_name} 正在扫描中")
 
-    scan_id = str(uuid.uuid4())[:8]
-    log.info(f"[scan] 分配 scan_id={scan_id}")
-    job = ScanJob(scan_id, req)
-    _scan_jobs[scan_id] = job
-
-    # 启动后台线程
-    thread = threading.Thread(target=_run_scan, args=(job,), daemon=True)
-    thread.start()
+    scan_id = _start_scan_job(req)
+    log.info(f"[scan] 启动扫描: scan_id={scan_id}, repo={req.repo_name}")
 
     return {
         "status": "started",

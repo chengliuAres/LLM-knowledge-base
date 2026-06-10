@@ -45,7 +45,8 @@
 def _start_scan_job(req: ScanRequest) -> str:
     """同步启动扫描任务并返回 scan_id
 
-    锁由本函数获取；释放由 _run_scan 后台线程 finally 块负责（code_routes.py:309）。
+    锁不归本函数管，由调用方在调本函数前通过 try_acquire_scan_lock 拿取；
+    释放由 _run_scan 后台线程 finally 块负责（code_routes.py:309）。
     watchdog 后台线程复用此入口（线程不能 await）。
     """
     scan_id = str(uuid.uuid4())[:8]
