@@ -577,6 +577,7 @@ def translate_query_sync(query: str, use_llm: bool = True, timeout: float = 3.0,
                 translated=cached.keywords,
                 method="cache",
                 confidence=cached.confidence,
+                steps=[{"method": "cache", "keywords": cached.keywords, "confidence": cached.confidence, "duration_ms": 0}],
             )
 
         # 降级到词典
@@ -586,6 +587,7 @@ def translate_query_sync(query: str, use_llm: bool = True, timeout: float = 3.0,
             translated=keywords or [query],
             method="dict",
             confidence=confidence,
+            steps=[{"method": "dict", "keywords": keywords or [query], "confidence": confidence, "duration_ms": 0}],
         )
 
 
