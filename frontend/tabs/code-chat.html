@@ -26,6 +26,7 @@
                 </select>
                 <button onclick="handleCodeChat()" id="codeChatBtn"
                         class="btn btn-accent shrink-0" style="padding: 12px 24px;">发送</button>
+                <button onclick="openAgentSettings()" class="btn btn-secondary shrink-0" title="Agent 设置" style="padding: 12px;">⚙️</button>
             </div>
         </div>
     </div>
@@ -34,6 +35,35 @@
     <div id="codeChatSources" class="hidden panel">
         <h3 class="font-semibold text-sm mb-3" style="color: var(--color-foreground);">📚 参考来源</h3>
         <div id="codeSourcesList" class="space-y-2"></div>
+    </div>
+</div>
+
+<!-- Agent 设置模态框 -->
+<div id="agent-settings-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.5);">
+    <div class="rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col" style="background: var(--color-primary); border: 1px solid var(--color-border);">
+        <div class="flex items-center justify-between px-5 py-3" style="border-bottom: 1px solid var(--color-border);">
+            <h3 class="font-semibold text-base" style="color: var(--color-foreground);">⚙️ Agent 设置</h3>
+            <div class="flex items-center gap-2">
+                <button onclick="resetAgentSettings()" class="btn btn-secondary text-xs py-1 px-2.5">恢复默认</button>
+                <button onclick="saveAgentSettings()" class="btn btn-accent text-xs py-1 px-2.5">保存</button>
+                <button onclick="closeAgentSettings()" class="btn btn-secondary text-xs py-1 px-2.5">关闭</button>
+            </div>
+        </div>
+        <div class="flex-1 overflow-y-auto p-5 space-y-4">
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: var(--color-foreground);">机器人名称</label>
+                <input id="agent-bot-name" type="text" class="input text-sm" placeholder="如：知识库管理员">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: var(--color-foreground);">风格描述</label>
+                <input id="agent-bot-style" type="text" class="input text-sm" placeholder="如：专业、严谨、以数据说话">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1" style="color: var(--color-foreground);">System Prompt</label>
+                <p class="text-xs mb-2" style="color: var(--color-muted);">定义 Agent 的能力范围、工作原则和回答格式</p>
+                <textarea id="agent-system-prompt" class="input text-sm" rows="16" style="font-family: var(--font-mono); resize: vertical;"></textarea>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -174,6 +204,65 @@ async function handleCodeChat() {
     }
 }
 
+// ── Agent 设置 ───────────────────────────────────────────────
+async function openAgentSettings() {
+    document.getElementById('agent-settings-modal').classList.remove('hidden');
+    try {
+        const res = await fetch('/api/code/agent-config');
+        if (!res.ok) throw new Error('加载配置失败');
+        const data = await res.json();
+        document.getElementById('agent-bot-name').value = data.bot_name || '';
+        document.getElementById('agent-bot-style').value = data.bot_style || '';
+        document.getElementById('agent-system-prompt').value = data.system_prompt || '';
+    } catch (e) {
+        showToast('加载 Agent 配置失败: ' + e.message, 'error');
+    }
+}
+
+function closeAgentSettings() {
+    document.getElementById('agent-settings-modal').classList.add('hidden');
+}
+
+async function saveAgentSettings() {
+    const config = {
+        bot_name: document.getElementById('agent-bot-name').value.trim(),
+        bot_style: document.getElementById('agent-bot-style').value.trim(),
+        system_prompt: document.getElementById('agent-system-prompt').value.trim(),
+    };
+    if (!config.system_prompt) return showToast('System Prompt 不能为空', 'warning');
+    try {
+        const res = await fetch('/api/code/agent-config', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(config),
+        });
+        if (!res.ok) throw new Error('保存失败');
+        showToast('Agent 配置已保存', 'success');
+        closeAgentSettings();
+    } catch (e) {
+        showToast('保存失败: ' + e.message, 'error');
+    }
+}
+
+async function resetAgentSettings() {
+    if (!confirm('确定恢复默认 Agent 配置？当前修改会丢失。')) return;
+    try {
+        const res = await fetch('/api/code/agent-config/reset', {method: 'POST'});
+        if (!res.ok) throw new Error('重置失败');
+        const data = await res.json();
+        document.getElementById('agent-bot-name').value = data.bot_name || '';
+        document.getElementById('agent-bot-style').value = data.bot_style || '';
+        document.getElementById('agent-system-prompt').value = data.system_prompt || '';
+        showToast('已恢复默认配置', 'success');
+    } catch (e) {
+        showToast('重置失败: ' + e.message, 'error');
+    }
+}
+
 // 暴露到 window
 window.handleCodeChat = handleCodeChat;
+window.openAgentSettings = openAgentSettings;
+window.closeAgentSettings = closeAgentSettings;
+window.saveAgentSettings = saveAgentSettings;
+window.resetAgentSettings = resetAgentSettings;
 </script>

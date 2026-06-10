@@ -10,7 +10,7 @@
   --color-background: #0F172A;     /* 页面底色 */
   --color-foreground: #F8FAFC;     /* 主文本 */
   --color-accent: #22C55E;          /* 强调色（绿） */
-  --color-muted: #64748B;           /* 次要文本/占位 */
+  --color-muted: #94A3B8;           /* 次要文本/占位（提高对比度） */
   --color-border: #334155;          /* 分隔线/描边 */
   --color-destructive: #EF4444;     /* 危险/删除 */
 
@@ -287,4 +287,13 @@ textarea.input {
 main,
 .app-content {
   animation: fadeIn 0.25s ease-out both;
+}
+
+/* tab 页面显隐控制 */
+.tab-page {
+  display: none;
+}
+.tab-page.tab-active {
+  display: block;
+  animation: fadeIn 0.2s ease-out both;
 }

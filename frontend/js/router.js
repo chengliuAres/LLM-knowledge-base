@@ -52,10 +52,8 @@ async function navigate(hash) {
     return;
   }
 
-  // 1. 隐藏当前 tab
-  if (_currentKey && _cache[_currentKey]) {
-    _cache[_currentKey].wrapper.style.display = "none";
-  }
+  // 1. 隐藏所有 tab（防御重复显示）
+  Object.values(_cache).forEach(c => c.wrapper.classList.remove("tab-active"));
 
   // 2. 获取或创建目标 tab 的 DOM
   if (!_cache[key]) {
@@ -108,7 +106,7 @@ async function navigate(hash) {
   }
 
   // 3. 显示目标 tab
-  _cache[key].wrapper.style.display = "";
+  _cache[key].wrapper.classList.add("tab-active");
   _currentKey = key;
 
   // 4. 更新 sidebar 高亮

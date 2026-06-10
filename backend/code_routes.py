@@ -565,11 +565,7 @@ async def chat_endpoint(req: ChatRequest):
         step = tracker.add_step("llm_generate", "LLM 生成回答")
         step.start()
 
-        system_prompt = (
-            "你是代码助手, 基于检索到的代码片段回答问题。"
-            "回答时引用具体的文件路径和行号。"
-            "如果代码片段不足以回答, 明确告知。"
-        )
+        system_prompt = get_agent_system_prompt()
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"代码片段:\n{context}\n\n问题: {req.question}"},
@@ -1261,3 +1257,94 @@ async def demo_search(req: DemoSearchRequest):
     except Exception as e:
         log.exception("demo_search failed")
         raise HTTPException(500, detail=str(e))
+
+
+# ── Agent 配置 ───────────────────────────────────────────────────
+
+import threading
+
+_agent_config_lock = threading.Lock()
+_AGENT_CONFIG_PATH = os.path.join(DATA_DIR, "code_agent_config.json")
+
+DEFAULT_AGENT_PROMPT = """你是 Email Wiki 知识库管理员，负责基于已索引的代码仓库回答问题。
+
+**能力范围**：
+- 向量语义搜索：根据代码含义查找相关片段
+- FTS5 全文检索：精确匹配关键词、符号名、函数名
+- 调用链追踪：沿函数调用关系向上/向下追踪数据流
+- 文件内容浏览：查阅具体文件的详细内容
+- 关联分析：将多个搜索来源的数据组合、对比、归纳
+
+**工作原则**：
+1. 以事实为依据：所有结论必须引用具体的文件路径和行号
+2. 不可胡编乱造：不确定时明确说明"未找到相关代码"或"需要更多信息"
+3. 主动关联：自动联想相关模块、调用方、被调用方
+4. 深入追问：发现线索不完整时，建议搜索更多关键词或追踪调用链
+5. 数据优先：先展示代码证据，再给出分析结论
+
+**回答格式**：
+- 先列出找到的关键代码片段（文件路径+行号+内容）
+- 再给出分析、关联和总结
+- 不确定的位置标注"(待确认)"
+"""
+
+DEFAULT_AGENT_CONFIG = {
+    "bot_name": "知识库管理员",
+    "bot_style": "专业、严谨、以数据说话",
+    "system_prompt": DEFAULT_AGENT_PROMPT,
+}
+
+
+def _load_agent_config() -> dict:
+    """加载 Agent 配置，不存在则返回默认"""
+    if not os.path.exists(_AGENT_CONFIG_PATH):
+        return dict(DEFAULT_AGENT_CONFIG)
+    try:
+        with open(_AGENT_CONFIG_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        # 合并缺失的 key
+        for k, v in DEFAULT_AGENT_CONFIG.items():
+            data.setdefault(k, v)
+        return data
+    except Exception:
+        return dict(DEFAULT_AGENT_CONFIG)
+
+
+def _save_agent_config(config: dict) -> None:
+    """保存 Agent 配置"""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(_AGENT_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2, ensure_ascii=False)
+
+
+def get_agent_system_prompt() -> str:
+    """获取当前 Agent 的 system prompt（供 chat 端点使用）"""
+    config = _load_agent_config()
+    return config.get("system_prompt", DEFAULT_AGENT_PROMPT)
+
+
+@router.get("/agent-config")
+async def api_get_agent_config():
+    """获取 Agent 配置"""
+    return _load_agent_config()
+
+
+@router.put("/agent-config")
+async def api_update_agent_config(config: dict):
+    """更新 Agent 配置"""
+    with _agent_config_lock:
+        current = _load_agent_config()
+        # 只更新提供的字段
+        for key in ("bot_name", "bot_style", "system_prompt"):
+            if key in config:
+                current[key] = str(config[key])
+        _save_agent_config(current)
+        return current
+
+
+@router.post("/agent-config/reset")
+async def api_reset_agent_config():
+    """恢复 Agent 默认配置"""
+    with _agent_config_lock:
+        _save_agent_config(dict(DEFAULT_AGENT_CONFIG))
+        return dict(DEFAULT_AGENT_CONFIG)
