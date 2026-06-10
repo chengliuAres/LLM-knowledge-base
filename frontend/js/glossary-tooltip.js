@@ -80,7 +80,8 @@
     }
 
     function scheduleShow(target) {
-        if (showTimer) clearTimeout(showTimer);
+        if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
         showTimer = setTimeout(() => {
             showTimer = null;
             show(target);
@@ -107,8 +108,9 @@
         const t = e.target.closest("[data-glossary]");
         if (!t) return;
         // 如果鼠标移到了 tooltip 自身, 不隐藏
+        // 注意: 鼠标移出视口时 relatedTarget === null, 此时应正常隐藏
         const related = e.relatedTarget;
-        if (related && (related === tooltipEl || tooltipEl?.contains(related))) return;
+        if (related && tooltipEl?.contains(related)) return;
         scheduleHide();
     });
 
