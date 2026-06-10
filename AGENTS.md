@@ -128,6 +128,33 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 - `translation_cache.py`：翻译缓存层，持久化缓存翻译结果
 - `match_reasons.py`：搜索结果归因，解释每条结果为什么被匹配上
 
+### 代码搜索准确率策略（⚠️ 2026-06-10 实验结论）
+
+**三路混搜架构**：`code_search.py` 的 `search_code(hybrid)` 走三路召回 + RRF 融合排序。
+
+**中文 query → 英文代码的核心策略**：翻译层是唯一正确桥梁，不是跨语言 embedding。
+
+| 路径 | 模型/方法 | 输入 | 角色 | 实际效果 |
+|------|-----------|------|------|------|
+| A 关键词 | SQLite FTS5 + jieba 分词 | 中文原 query | 中文 content 搜索 | 弱信号，搜注释/文档 |
+| B 向量 | `bge-small-en` (384维) | 翻译后的英文关键词 | 语义模糊召回 | 同语言英文→英文代码，配合翻译层使用 |
+| C 符号名 | `symbol_name LIKE '%kw%'` | 翻译后的英文关键词 | 精确命中 | **最可靠的路**，权重 1.5x |
+
+**翻译层降级链**：`query_translator.py` 词典 → 缓存 → MyMemory API → LLM → 原 query 回退
+
+**关键设计决策（实验验证）**：
+
+| 决策 | 结论 | 证据 |
+|------|------|------|
+| 跨语言 embedding（e5/bge-m3）代替翻译层 | ❌ 不行 | 实测 e5：中文 query → 纯英文 OC 代码召回接近随机，跨语言桥训练于平行语料非代码 |
+| 词典是第一道防线 | ✅ 必须 | `"读信"→read/mail/message` 符号路直接命中 `ReadCell.m`；缺词典降级到 MyMemory 则译成 `letter/reading` 翻车 |
+| embedding 前剥离注释/中文字面量 | ✅ 有益 | 代码中嵌入的中文（注释、NSString）会误导 bge 模型，剥离后向量路不再偏到中文噪声 |
+| MyMemory 翻译不写入缓存/词典 | ✅ 已修复 | MyMemory 直译（"读信"→letter）置信度低且脱离代码命名习惯，写缓存会永久污染 |
+| 向量阈值 0.0→0.5 | ✅ 已修复 | score = (1+余弦相似度)/2，0.5=正交分界，砍掉「最近邻但无关」的噪声 |
+| 文档侧保持 `bge-base-zh-v1.5` | ✅ 不动 | 同语言中文→中文，换多语言模型会降低中文单项质量 |
+
+**词典维护**：`TERM_MAP` 在 `query_translator.py:45`，按业务场景分组。新增中文词条时加英文词根（类名/方法名词根优先，如 `read` 而非 `reading`），确认 jieba 能正确分词。
+
 **运维模块：**
 - `logging_setup.py`：日志系统 SSOT（唯一初始化入口，幂等）
 - `log_routes.py`：日志对外 API（tail 拉最近 N 行 + export zip 下载）
