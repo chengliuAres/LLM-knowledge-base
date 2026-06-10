@@ -206,8 +206,12 @@ def test_watchdog_loop_skips_non_git_repos(fresh_module, tmp_path, monkeypatch):
     def stop():
         time.sleep(0.5)
         shutdown.set()
-    threading.Thread(target=stop, daemon=True).start()
-    fresh_module.watchdog_loop(shutdown)
+    stop_thread = threading.Thread(target=stop, daemon=True)
+    stop_thread.start()
+    try:
+        fresh_module.watchdog_loop(shutdown)
+    finally:
+        stop_thread.join(timeout=2)
     assert scheduled == [], f"非 git repo 不应被 schedule，实际: {scheduled}"
 
 
@@ -230,6 +234,73 @@ def test_watchdog_loop_triggers_scan_on_porcelain_change(fresh_module, tmp_path,
     def stop():
         time.sleep(0.3)
         shutdown.set()
-    threading.Thread(target=stop, daemon=True).start()
-    fresh_module.watchdog_loop(shutdown)
+    stop_thread = threading.Thread(target=stop, daemon=True)
+    stop_thread.start()
+    try:
+        fresh_module.watchdog_loop(shutdown)
+    finally:
+        stop_thread.join(timeout=2)
     assert scheduled == ["r1"]
+
+
+def test_watchdog_loop_reschedules_after_lock_conflict(fresh_module, tmp_path, monkeypatch):
+    """锁冲突时下一轮重新 schedule 该 repo（不靠用户再改文件）
+
+    模拟场景：
+    1. 主循环第一轮检测到 porcelain 变化 → schedule 一次（_schedule_scan 计数 =1）
+    2. 模拟"用户立刻手动改文件"→ run_git_status_porcelain 返回新值
+       实际这里直接 fake _lock_failed，让主循环下一轮末尾重 schedule
+    3. 主循环末尾遍历 _lock_failed → 重新 schedule（_schedule_scan 计数 =2）
+    4. 断言至少 schedule 2 次
+    """
+    # 准备 git 仓库 + 写 code_repos.json
+    (tmp_path / "repos").mkdir()
+    git_repo = tmp_path / "repos" / "r1"
+    git_repo.mkdir()
+    (git_repo / ".git").mkdir()
+    cfg_path = fresh_module.CONFIG_PATH
+    with open(cfg_path, "w") as f:
+        json.dump(
+            {
+                "repos": {"r1": {"repo_path": str(git_repo)}},
+                "watchdog": {"interval_seconds": 60, "debounce_seconds": 1},
+            },
+            f,
+        )
+
+    # mock porcelain 稳定
+    monkeypatch.setattr(fresh_module, "run_git_status_porcelain", lambda path: "M  README.md\n")
+
+    # 第一次 schedule 后，模拟 _do_scan 锁冲突（直接 add _lock_failed）
+    call_count = {"schedule": 0}
+
+    def fake_schedule(name, debounce, pending):
+        call_count["schedule"] += 1
+        if call_count["schedule"] == 1:
+            # 第一次 schedule 后，模拟 _do_scan 锁失败
+            fresh_module._lock_failed.add(name)
+        # 第二次 schedule 是主循环重试
+
+    monkeypatch.setattr(fresh_module, "_schedule_scan", fake_schedule)
+
+    # 跑 2 轮就够：第一轮 schedule + _lock_failed.add，第二轮末尾重 schedule
+    # 但主循环末尾会调 wait(interval) 60s，所以我们改 cfg 让 interval 极短
+    # 用 cfg_provider 注入：interval=0.2s，debounce=0.05s
+    shutdown = threading.Event()
+
+    def run_loop():
+        fresh_module.watchdog_loop(
+            shutdown,
+            cfg_provider=lambda: {"interval_seconds": 1, "debounce_seconds": 1},
+        )
+
+    stop_thread = threading.Thread(
+        target=lambda: (time.sleep(1.2), shutdown.set()),
+        daemon=True,
+    )
+    stop_thread.start()
+    try:
+        run_loop()
+    finally:
+        stop_thread.join(timeout=2)
+    assert call_count["schedule"] >= 2, f"锁失败后应重 schedule，实际只 schedule {call_count['schedule']} 次"

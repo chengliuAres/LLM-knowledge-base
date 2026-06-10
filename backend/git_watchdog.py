@@ -82,6 +82,13 @@ def load_repo_configs() -> dict:
 
 # ── 调度逻辑 ────────────────────────────────────────────────────
 
+# 锁失败回退集合：_do_scan 拿不到锁时把 repo name 加进来，
+# watchdog_loop 主循环末尾取出这些 name 重新 schedule。
+# 用模块级 set 是因为 _do_scan 在 timer 线程、watchdog_loop 在主线程，
+# 跨线程通讯用模块级 set（set.add 是原子的）。
+_lock_failed: set[str] = set()
+
+
 def _schedule_scan(name: str, debounce: int, pending: dict) -> None:
     """为单个 repo schedule 一次扫描（带 debounce）
 
@@ -106,6 +113,7 @@ def _do_scan(name: str, pending: dict) -> None:
 
     if not try_acquire_scan_lock(name):
         log.info(f"[watchdog] {name} 锁冲突，下一轮重试")
+        _lock_failed.add(name)  # 通知 watchdog_loop 主循环重 schedule
         return
 
     try:
@@ -181,6 +189,16 @@ def watchdog_loop(
             if stale not in repos:
                 pending.pop(stale, None)
                 last_porcelain.pop(stale, None)
+
+        # 重 schedule 任何在 _do_scan 锁失败的 repo
+        # 流程：_do_scan 拿不到锁 → add 到 _lock_failed → 主循环末尾
+        # 取消旧 timer + 重新 schedule + 清空集合（下一轮重新累积）
+        if _lock_failed:
+            for name in list(_lock_failed):
+                if name in pending:
+                    pending[name].cancel()
+                _schedule_scan(name, debounce, pending)
+            _lock_failed.clear()
 
         shutdown_event.wait(timeout=interval)
 
