@@ -1,25 +1,32 @@
-"""代码 Embedding - bge-small-en-v1.5
+"""代码 Embedding - multilingual-e5-small
 
-bge-small-en-v1.5: 33M，384-dim，512-token，英文通用模型。
-配合 query_translator 中文→英文翻译层，实现中文查询搜索英文代码。
+multilingual-e5-small: 118M，384-dim，512-token，94语言跨语言模型。
+原生支持中文 query → 英文代码的跨语言检索，不再依赖翻译层架桥。
 """
 
 import os
 import torch
+import logging
 from sentence_transformers import SentenceTransformer
+
+log = logging.getLogger(__name__)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_CACHE_DIR = os.path.join(PROJECT_ROOT, "models")
 
-_MODEL_NAME = "BAAI/bge-small-en-v1.5"
+_MODEL_NAME = "intfloat/multilingual-e5-small"
 _DIMENSION = 384
-_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+_QUERY_PREFIX = "query: "
+_PASSAGE_PREFIX = "passage: "
+# e5-small token 上限 512；英文代码 ~3 chars/token，1100 chars 在安全域内；
+# 中文注释密集区可能超限，超出截断并 warning
+_MAX_CHARS = 1100
 
 _model = None
 
 
 def _load_model() -> SentenceTransformer:
-    """模型加载（单例）"""
+    """模型加载（单例，MPS + fp16 加速）"""
     global _model
 
     if _model is not None:
@@ -29,7 +36,19 @@ def _load_model() -> SentenceTransformer:
     print(f"正在加载 Embedding 模型: {_MODEL_NAME} ...")
     print(f"模型缓存目录: {MODEL_CACHE_DIR}")
 
-    _model = SentenceTransformer(_MODEL_NAME, cache_folder=MODEL_CACHE_DIR)
+    _model = SentenceTransformer(
+        _MODEL_NAME,
+        cache_folder=MODEL_CACHE_DIR,
+        model_kwargs={"torch_dtype": "float16"},
+    )
+
+    # MPS 加速
+    if hasattr(torch, 'backends') and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        try:
+            _model = _model.to('mps')
+            print("Embedding 模型已移至 MPS (Apple Silicon GPU)")
+        except Exception:
+            pass
 
     print(f"模型加载完成!")
     return _model
@@ -41,23 +60,33 @@ def get_model() -> SentenceTransformer:
 
 
 def embed_text(text: str) -> list[float]:
-    """passage embedding（索引阶段用，不加前缀）"""
+    """passage embedding（索引阶段用，加 passage: 前缀）"""
     model = get_model()
-    embedding = model.encode(text, normalize_embeddings=True)
+    if len(text) > _MAX_CHARS:
+        log.warning(f"文本过长 ({len(text)} > {_MAX_CHARS})，已截断")
+    safe_text = text[:_MAX_CHARS] if len(text) > _MAX_CHARS else text
+    embedding = model.encode(_PASSAGE_PREFIX + safe_text, normalize_embeddings=True)
     return embedding.tolist()
 
 
 def embed_query(text: str) -> list[float]:
-    """query embedding（搜索阶段用，加 bge 前缀）"""
+    """query embedding（搜索阶段用，加 query: 前缀）"""
     model = get_model()
-    embedding = model.encode(_QUERY_PREFIX + text, normalize_embeddings=True)
+    if len(text) > _MAX_CHARS:
+        log.warning(f"查询过长 ({len(text)} > {_MAX_CHARS})，已截断")
+    safe_text = text[:_MAX_CHARS] if len(text) > _MAX_CHARS else text
+    embedding = model.encode(_QUERY_PREFIX + safe_text, normalize_embeddings=True)
     return embedding.tolist()
 
 
-def embed_batch(texts: list[str]) -> list[float]:
-    """批量 embedding（索引阶段用）"""
+def embed_batch(texts: list[str]) -> list[list[float]]:
+    """批量 embedding（索引阶段用，加 passage: 前缀）"""
     model = get_model()
-    embeddings = model.encode(texts, normalize_embeddings=True, batch_size=32)
+    truncated = sum(1 for t in texts if len(t) > _MAX_CHARS)
+    if truncated:
+        log.warning(f"批量 embedding: {truncated}/{len(texts)} 条文本过长，已截断")
+    safe_texts = [_PASSAGE_PREFIX + (t[:_MAX_CHARS] if len(t) > _MAX_CHARS else t) for t in texts]
+    embeddings = model.encode(safe_texts, normalize_embeddings=True, batch_size=64)
     return embeddings.tolist()
 
 
