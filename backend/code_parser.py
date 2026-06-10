@@ -522,6 +522,11 @@ def scan_directory(
             try:
                 size = os.path.getsize(abs_path)
                 if size > 100 * 1024:
+                    stats["skipped_files"].append({
+                        "rel_path": rel_path,
+                        "reason": f"过大 ({size // 1024}KB > 100KB)",
+                        "size": size,
+                    })
                     continue
                 mtime = os.path.getmtime(abs_path)
             except OSError:

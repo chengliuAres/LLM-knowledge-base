@@ -418,8 +418,8 @@ async def search(request: SearchRequest):
         step6 = tracker.add_step("filter_results", "结果过滤与排序")
         step6.start()
         
-        # 过滤掉低分结果
-        filtered_results = [r for r in results if r["score"] > 0.3]
+        # 过滤低分结果（默认不过滤）
+        filtered_results = [r for r in results if r["score"] > score_threshold]
 
         annotate_results(request.query, filtered_results)
 

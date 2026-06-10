@@ -6,7 +6,10 @@ bge-base-zh-v1.5: 中文优化轻量模型，768-dim，512-token 上下文。
 
 import os
 import torch
+import logging
 from sentence_transformers import SentenceTransformer
+
+log = logging.getLogger(__name__)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_CACHE_DIR = os.path.join(PROJECT_ROOT, "models")
@@ -47,6 +50,8 @@ def get_model() -> SentenceTransformer:
 def embed_text(text: str) -> list[float]:
     """单条文本 embedding (passage)"""
     model = get_model()
+    if len(text) > _MAX_CHARS:
+        log.warning(f"文本过长 ({len(text)} > {_MAX_CHARS})，已截断")
     safe_text = text[:_MAX_CHARS] if len(text) > _MAX_CHARS else text
     embedding = model.encode(safe_text, normalize_embeddings=True)
     return embedding.tolist()
@@ -55,6 +60,8 @@ def embed_text(text: str) -> list[float]:
 def embed_query(text: str) -> list[float]:
     """查询 embedding (带查询前缀)"""
     model = get_model()
+    if len(text) > _MAX_CHARS:
+        log.warning(f"查询过长 ({len(text)} > {_MAX_CHARS})，已截断")
     safe_text = text[:_MAX_CHARS] if len(text) > _MAX_CHARS else text
     embedding = model.encode(
         _QUERY_PROMPT + safe_text,
@@ -66,6 +73,9 @@ def embed_query(text: str) -> list[float]:
 def embed_batch(texts: list[str]) -> list[list[float]]:
     """批量 embedding（索引阶段用）"""
     model = get_model()
+    truncated = sum(1 for t in texts if len(t) > _MAX_CHARS)
+    if truncated:
+        log.warning(f"批量 embedding: {truncated}/{len(texts)} 条文本过长，已截断")
     safe_texts = [t[:_MAX_CHARS] if len(t) > _MAX_CHARS else t for t in texts]
     embeddings = model.encode(safe_texts, normalize_embeddings=True, batch_size=64)
     return embeddings.tolist()

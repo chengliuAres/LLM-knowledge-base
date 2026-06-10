@@ -39,20 +39,11 @@ def get_table():
                 if field.name == 'vector' and hasattr(field.type, 'list_size'):
                     existing_dim = field.type.list_size
                     if existing_dim != dim:
-                        import uuid
-                        backup_name = f"{TABLE_NAME}_{existing_dim}dim_backup"
-                        print(f"[db] 向量维度不匹配: 现存={existing_dim}, 当前={dim}")
-                        print(f"[db] 备份旧表为 {backup_name}，创建新表")
-                        try:
-                            db.drop_table(backup_name)
-                        except Exception:
-                            pass
-                        try:
-                            db.drop_table(TABLE_NAME)
-                        except Exception:
-                            pass
-                        _table = None
-                    break
+                        # 维度不匹配 → 抛显式错误，不静默删数据
+                        msg = (f"LanceDB 向量维度不匹配！现存={existing_dim}维, 当前={dim}维。"
+                               f"请手动清除 data/lancedb/ 目录后重新导入。")
+                        print(f"[db] {msg}")
+                        raise RuntimeError(msg)
         except Exception:
             _table = None
 

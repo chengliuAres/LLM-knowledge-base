@@ -30,7 +30,7 @@ def _has_chinese(text: str) -> bool:
 # ── RRF 融合 ─────────────────────────────────────────────────────
 
 RRF_K = 60  # RRF 公式常量
-MIN_VECTOR_SIMILARITY = 0.3  # 向量搜索结果最低相似度阈值
+MIN_VECTOR_SIMILARITY = 0.0   # 向量搜索结果最低相似度阈值 (0=不过滤)
 
 
 def rrf_fusion(
