@@ -827,6 +827,7 @@ frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
 app.mount("/css", StaticFiles(directory=os.path.join(frontend_dir, "css")), name="css")
 app.mount("/js", StaticFiles(directory=os.path.join(frontend_dir, "js")), name="js")
 app.mount("/tabs", StaticFiles(directory=os.path.join(frontend_dir, "tabs")), name="tabs")
+app.mount("/vendor", StaticFiles(directory=os.path.join(frontend_dir, "vendor")), name="vendor")
 
 
 @app.get("/")
