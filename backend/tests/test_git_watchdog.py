@@ -304,3 +304,112 @@ def test_watchdog_loop_reschedules_after_lock_conflict(fresh_module, tmp_path, m
     finally:
         stop_thread.join(timeout=2)
     assert call_count["schedule"] >= 2, f"锁失败后应重 schedule，实际只 schedule {call_count['schedule']} 次"
+
+
+# ── adversarial review 修复回归测试 ──────────────────────────────
+
+def test_do_scan_pops_pending_on_lock_conflict(fresh_module, monkeypatch):
+    """锁失败时 pending 必须被 pop（finally 块兜底，修复 Bug 1）
+
+    旧实现：if not try_acquire_scan_lock(name): return 在 try 块外
+    → finally 不执行 → pending 残留
+    """
+    from code_routes import try_acquire_scan_lock
+    monkeypatch.setattr("code_routes.try_acquire_scan_lock", lambda name: False)
+
+    pending = {"r1": MagicMock()}  # 假 timer 对象
+    fresh_module._do_scan("r1", pending)
+    assert "r1" not in pending, "锁失败时 pending 必须被 pop（修复 Bug 1）"
+
+
+def test_do_scan_releases_lock_when_repo_deleted(fresh_module, monkeypatch):
+    """拿锁后 get_repo_config 返 None → 必须释放锁（避免锁泄漏，修复 Bug 1）
+
+    旧实现：拿锁后 return 在 try 内层但释放锁逻辑没覆盖"仓库被删"路径
+    → release_scan_lock 永不调用 → 锁永久泄漏
+    """
+    # mock 拿锁成功
+    monkeypatch.setattr("code_routes.try_acquire_scan_lock", lambda name: True)
+    # mock get_repo_config 返 None（仓库已被删）
+    monkeypatch.setattr("code_config.get_repo_config", lambda name: None)
+    # mock release_scan_lock，记录调用
+    released = []
+    monkeypatch.setattr("code_routes.release_scan_lock", lambda name: released.append(name))
+
+    pending = {"r1": MagicMock()}
+    fresh_module._do_scan("r1", pending)
+    assert "r1" in released, "拿锁后 get_repo_config 返 None 必须释放锁（修复 Bug 1）"
+    assert "r1" not in pending, "pending 必须被 pop"
+
+
+def test_watchdog_loop_cancels_stale_timer(fresh_module, tmp_path, monkeypatch):
+    """stale repo cleanup 必须 cancel timer（修复 Bug 2）
+
+    旧实现：pop 时不 cancel → timer fire 后调用 _do_scan → try_acquire_scan_lock 拿旧锁
+    → 锁不释放 → 死锁
+    """
+    (tmp_path / "repos").mkdir()
+    fake_git = tmp_path / "repos" / "r1"
+    fake_git.mkdir()
+    (fake_git / ".git").mkdir()
+
+    # 写 code_repos.json，先把 r1 放进去（让 _schedule_scan 跑）
+    with open(fresh_module.CONFIG_PATH, "w") as f:
+        json.dump(
+            {
+                "repos": {"r1": {"repo_path": str(fake_git)}},
+                "watchdog": {"interval_seconds": 60, "debounce_seconds": 1},
+            },
+            f,
+        )
+
+    # 跟踪所有真正启动的 Timer（teardown 阶段统一 cancel，避免 fire 时 pytest 已关 stdout）
+    real_timers = []
+
+    real_timer_cls = threading.Timer
+
+    class TrackedTimer(real_timer_cls):
+        def start(self):
+            real_timers.append(self)
+            return super().start()
+
+    monkeypatch.setattr(threading, "Timer", TrackedTimer)
+
+    # 把 r1 实际 schedule 一个假 timer（不真正 fire）
+    fake_timer = MagicMock()
+    pending = {"r1": fake_timer}
+    fresh_module._schedule_scan("r1", debounce=1, pending=pending)
+
+    # 改 code_repos.json：r1 已被删
+    with open(fresh_module.CONFIG_PATH, "w") as f:
+        json.dump(
+            {
+                "repos": {},
+                "watchdog": {"interval_seconds": 60, "debounce_seconds": 1},
+            },
+            f,
+        )
+
+    # 跑主循环 1 轮（应在 stale cleanup 阶段 cancel timer）
+    monkeypatch.setattr(fresh_module, "run_git_status_porcelain", lambda path: "")
+
+    shutdown = threading.Event()
+    stop_thread = threading.Thread(
+        target=lambda: (time.sleep(0.3), shutdown.set()),
+        daemon=True,
+    )
+    stop_thread.start()
+    try:
+        fresh_module.watchdog_loop(
+            shutdown,
+            cfg_provider=lambda: {"interval_seconds": 1, "debounce_seconds": 1},
+        )
+    finally:
+        stop_thread.join(timeout=2)
+        # teardown: cancel 所有真正启动的 Timer，避免 fire 时 stdout 已关
+        for t in real_timers:
+            t.cancel()
+        for t in real_timers:
+            t.join(timeout=1)
+
+    fake_timer.cancel.assert_called(), "stale repo 的 timer 必须被 cancel（修复 Bug 2）"

@@ -105,36 +105,48 @@ def _schedule_scan(name: str, debounce: int, pending: dict) -> None:
 
 
 def _do_scan(name: str, pending: dict) -> None:
-    """被 timer 线程调用：拿锁 + 调 _start_scan_job"""
+    """被 timer 线程调用：拿锁 + 调 _start_scan_job
+
+    锁管理：
+    - 拿锁失败 → 不持锁，直接 return（外层 finally 兜底 pop pending）
+    - 拿锁成功 + 仓库被删 → 必须主动 release_scan_lock（外层没人接）
+    - 拿锁成功 + 异常 → 必须主动 release_scan_lock（避免泄漏）
+    - 拿锁成功 + _start_scan_job 成功 → 不释放（_run_scan 后台线程 finally 负责）
+    """
     # 锁依赖 code_routes（避免循环 import 放函数内）
-    from code_routes import try_acquire_scan_lock, _start_scan_job
+    from code_routes import try_acquire_scan_lock, _start_scan_job, release_scan_lock
     from code_config import get_repo_config
     from code_routes import ScanRequest
 
-    if not try_acquire_scan_lock(name):
-        log.info(f"[watchdog] {name} 锁冲突，下一轮重试")
-        _lock_failed.add(name)  # 通知 watchdog_loop 主循环重 schedule
-        return
-
     try:
-        repo_cfg = get_repo_config(name)
-        if not repo_cfg:
-            log.info(f"[watchdog] {name} 仓库已被删除，跳过")
-            return
+        if not try_acquire_scan_lock(name):
+            log.info(f"[watchdog] {name} 锁冲突，下一轮重试")
+            _lock_failed.add(name)  # 通知 watchdog_loop 主循环重 schedule
+            return  # 走外层 finally 兜底 pop pending
 
-        req = ScanRequest(
-            repo_name=name,
-            repo_path=repo_cfg["repo_path"],
-            project_type=repo_cfg.get("project_type", "generic"),
-            languages=repo_cfg.get("languages", []),
-        )
-        scan_id = _start_scan_job(req)
-        log.info(f"[watchdog] {name} 触发扫描, scan_id={scan_id}, source=watchdog")
-    except Exception as e:
-        log.exception(f"[watchdog] {name} 扫描失败: {e}")
+        try:
+            repo_cfg = get_repo_config(name)
+            if not repo_cfg:
+                log.info(f"[watchdog] {name} 仓库已被删除，跳过")
+                # 深度防御：拿锁后任何 return 路径都要释放锁（避免泄漏）
+                release_scan_lock(name)
+                return
+
+            req = ScanRequest(
+                repo_name=name,
+                repo_path=repo_cfg["repo_path"],
+                project_type=repo_cfg.get("project_type", "generic"),
+                languages=repo_cfg.get("languages", []),
+            )
+            scan_id = _start_scan_job(req)
+            log.info(f"[watchdog] {name} 触发扫描, scan_id={scan_id}, source=watchdog")
+            # 锁不归本函数管；释放由 _run_scan 后台线程 finally 块负责
+        except Exception as e:
+            # 兜底：拿锁后任何异常都要释放锁，避免泄漏
+            release_scan_lock(name)
+            log.exception(f"[watchdog] {name} 扫描失败: {e}")
     finally:
         pending.pop(name, None)
-        # 锁不归本函数管；释放由 _run_scan 后台线程 finally 块负责（避免重复释放）
 
 
 # ── 主循环 ──────────────────────────────────────────────────────
@@ -184,10 +196,12 @@ def watchdog_loop(
             last_porcelain[name] = porcelain
             _schedule_scan(name, debounce, pending)
 
-        # 清理被删 repo 的 pending
+        # 清理被删 repo 的 pending（cancel timer 避免 fire 后 stale _do_scan 锁泄漏）
         for stale in list(pending.keys()):
             if stale not in repos:
-                pending.pop(stale, None)
+                t = pending.pop(stale, None)
+                if t is not None:
+                    t.cancel()
                 last_porcelain.pop(stale, None)
 
         # 重 schedule 任何在 _do_scan 锁失败的 repo
