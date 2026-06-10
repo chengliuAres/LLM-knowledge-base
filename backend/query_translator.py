@@ -560,12 +560,20 @@ async def translate_query_async(
 
 def translate_query_sync(query: str, use_llm: bool = True, timeout: float = 3.0, tracker=None) -> TranslationResult:
     """同步包装（给非 async 上下文用）"""
-    import nest_asyncio
-    nest_asyncio.apply()
     try:
-        return asyncio.run(
-            translate_query_async(query, use_llm=use_llm, timeout=timeout, tracker=tracker)
-        )
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # 已有 event loop（FastAPI 内），使用 nest_asyncio
+            import nest_asyncio
+            nest_asyncio.apply()
+            return loop.run_until_complete(
+                translate_query_async(query, use_llm=use_llm, timeout=timeout, tracker=tracker)
+            )
+        else:
+            # 没有 event loop，直接运行
+            return asyncio.run(
+                translate_query_async(query, use_llm=use_llm, timeout=timeout, tracker=tracker)
+            )
     except RuntimeError:
         # 已有 event loop 的情况（FastAPI 内），降级到纯词典
         from translation_cache import get_cache
