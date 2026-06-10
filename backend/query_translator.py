@@ -179,6 +179,9 @@ def _dict_translate(query: str) -> tuple[list[str], float]:
                 results.append(token)
 
     confidence = matched_count / max(total_cn_words, 1)
+    # 如果没有匹配任何词典条目，返回空列表（让翻译流程继续走 MyMemory）
+    if matched_count == 0:
+        return [], 0.0
     return results, confidence
 
 
