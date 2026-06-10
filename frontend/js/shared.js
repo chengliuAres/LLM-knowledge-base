@@ -95,10 +95,17 @@ function codeRenderSteps(containerOrId, steps) {
     el.innerHTML = actualSteps.map((step) => {
         const icon = step.status === 'done' ? '✅' : step.status === 'error' ? '❌' : '⏳';
         const ms = step.elapsed_ms != null ? ` <span class="text-xs" style="color:var(--color-muted)">${step.elapsed_ms}ms</span>` : '';
-        const details = (step.details || []).map(d => {
-            const val = typeof d.value === 'object' ? JSON.stringify(d.value) : String(d.value);
-            return `<div class="text-xs ml-6" style="color:var(--color-muted)">${escapeHtml(d.label)}: ${escapeHtml(val)}</div>`;
-        }).join('');
+        const details = Array.isArray(step.details)
+            ? step.details.map(d => {
+                const val = typeof d.value === 'object' ? JSON.stringify(d.value) : String(d.value);
+                return `<div class="text-xs ml-6" style="color:var(--color-muted)">${escapeHtml(d.label)}: ${escapeHtml(val)}</div>`;
+            }).join('')
+            : (step.details && typeof step.details === 'object'
+                ? Object.entries(step.details).map(([k, v]) => {
+                    const val = typeof v === 'string' ? v : JSON.stringify(v);
+                    return `<div class="text-xs ml-6" style="color:var(--color-muted)">${escapeHtml(k)}: ${escapeHtml(val)}</div>`;
+                }).join('')
+                : '');
         return `<div class="py-1">${icon} <span class="font-medium">${escapeHtml(step.name)}</span>${ms}${details}</div>`;
     }).join('');
 }
