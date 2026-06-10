@@ -560,6 +560,8 @@ async def translate_query_async(
 
 def translate_query_sync(query: str, use_llm: bool = True, timeout: float = 3.0, tracker=None) -> TranslationResult:
     """同步包装（给非 async 上下文用）"""
+    import nest_asyncio
+    nest_asyncio.allow()
     try:
         return asyncio.run(
             translate_query_async(query, use_llm=use_llm, timeout=timeout, tracker=tracker)
