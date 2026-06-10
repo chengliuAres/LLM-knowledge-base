@@ -217,7 +217,8 @@
     <script src="js/glossary-tooltip.js?v=1"></script>
     <script>
         // Tab 文件缓存版本号（router.js 用 ?v= 参数强制刷新）
-        window.__TAB_VERSION = '4';
+        // bump 5: 强制刷新以加载新增的术语 hover 解释功能 (code-dashboard.html / doc-dashboard.html)
+        window.__TAB_VERSION = '5';
         // 显式启动路由（router.js 也会在 DOMContentLoaded 时自启，这里双保险）
         if (typeof initRouter === "function") {
             initRouter();
