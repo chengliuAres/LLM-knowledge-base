@@ -114,7 +114,7 @@
 
         let pollTimer = null;
         // localStorage[collapsed]=true 表示已折叠 → 初始默认折叠
-        let isOpen = localStorage.getItem(STORAGE_KEY) !== "true";
+        let isOpen = localStorage.getItem(STORAGE_KEY) === "true";
 
         function render(lines) {
             body.innerHTML = lines.map((line) => {

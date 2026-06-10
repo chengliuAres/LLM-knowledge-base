@@ -6,6 +6,7 @@
 :root {
   /* 颜色 */
   --color-primary: #1E293B;        /* 卡片/侧边栏背景 */
+  --color-secondary: #1A2332;      /* 次级背景（介于 primary 和 background 之间） */
   --color-background: #0F172A;     /* 页面底色 */
   --color-foreground: #F8FAFC;     /* 主文本 */
   --color-accent: #22C55E;          /* 强调色（绿） */

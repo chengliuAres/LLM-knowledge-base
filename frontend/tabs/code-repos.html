@@ -12,11 +12,7 @@
                     <button onclick="codeBrowseFolder()" class="btn btn-secondary shrink-0" title="浏览目录">📂</button>
                 </div>
                 <!-- 快捷路径 -->
-                <div id="codeQuickPaths" class="flex flex-wrap gap-1 mb-2">
-                    <button onclick="codeQuickPath('/Users/admin/Desktop')" class="text-[10px] border rounded px-1.5 py-0.5 hover:opacity-80" style="border-color: var(--color-border); color: var(--color-muted);">Desktop</button>
-                    <button onclick="codeQuickPath('/Users/admin/Documents')" class="text-[10px] border rounded px-1.5 py-0.5 hover:opacity-80" style="border-color: var(--color-border); color: var(--color-muted);">Documents</button>
-                    <button onclick="codeQuickPath('/Users/admin/MailProject')" class="text-[10px] border rounded px-1.5 py-0.5 font-medium" style="border-color: var(--color-accent); color: var(--color-accent);">MailProject</button>
-                </div>
+                <div id="codeQuickPaths" class="flex flex-wrap gap-1 mb-2"></div>
                 <!-- 目录浏览器 -->
                 <div id="codeFolderBrowser" class="hidden border rounded max-h-48 overflow-y-auto text-sm mb-2" style="background: var(--color-background); border-color: var(--color-border);"></div>
                 <select id="codeProjectType" class="input w-full mb-2">
@@ -419,7 +415,7 @@ async function codeBrowseFolder() {
         browser.classList.add('hidden');
         return;
     }
-    const currentPath = document.getElementById('codeRepoPath').value.trim() || '/Users/admin/MailProject';
+    const currentPath = document.getElementById('codeRepoPath').value.trim() || (window.__USER_HOME || '.');
     await codeLoadDirs(currentPath);
 }
 
@@ -767,9 +763,33 @@ async function openSkipRulesInFinder() {
     if (extSel) extSel.innerHTML = SKIP_EXT_CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('');
 })();
 
+// 加载快捷路径（动态获取 HOME）
+async function codeLoadQuickPaths() {
+    try {
+        const res = await fetch('/api/user/home');
+        if (!res.ok) throw new Error('获取 HOME 失败');
+        const data = await res.json();
+        window.__USER_HOME = data.home;
+        const container = document.getElementById('codeQuickPaths');
+        if (!container) return;
+        const h = data.home;
+        const paths = [
+            { label: 'Desktop', path: h + '/Desktop' },
+            { label: 'Documents', path: h + '/Documents' },
+            { label: 'MailProject', path: h + '/MailProject', accent: true },
+        ];
+        container.innerHTML = paths.map(p =>
+            `<button onclick="codeQuickPath('${p.path.replace(/'/g, "\\'")}')" class="text-xs border rounded px-1.5 py-0.5 hover:opacity-80${p.accent ? ' font-medium' : ''}" style="border-color: ${p.accent ? 'var(--color-accent)' : 'var(--color-border)'}; color: ${p.accent ? 'var(--color-accent)' : 'var(--color-muted)'};">${p.label}</button>`
+        ).join('');
+    } catch (e) {
+        console.error('加载快捷路径失败:', e);
+    }
+}
+
 // 初始化入口（由路由调用）
 window.initCodeRepos = function() {
     codeLoadRepos();
+    codeLoadQuickPaths();
 };
 
 // 暴露到 window（内联 onclick / 路由用）

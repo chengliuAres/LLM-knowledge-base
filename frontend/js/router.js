@@ -154,7 +154,7 @@ function reloadCurrentTab() {
  * HTML 转义
  */
 function escapeHtml(str) {
-  return String(str)
+  return window.escapeHtml ? window.escapeHtml(str) : String(str)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")

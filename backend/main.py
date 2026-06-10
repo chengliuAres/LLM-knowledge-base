@@ -733,6 +733,12 @@ async def performance_baselines(limit: int = Query(20, ge=1, le=200)):
     return {"baselines": metrics_db.list_baselines(limit=limit)}
 
 
+@app.get("/api/user/home")
+async def user_home():
+    """获取用户 HOME 目录（前端快捷路径用）"""
+    return {"home": os.path.expanduser("~")}
+
+
 @app.get("/api/lancedb/inspect")
 async def lancedb_inspect_overview():
     """LanceDB 表概览：schema/行数/版本/fragments/indices"""

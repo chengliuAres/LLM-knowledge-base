@@ -40,9 +40,21 @@
     </div>
 
     <div class="panel">
-        <h3 class="font-medium mb-3 text-sm" style="color: var(--color-foreground);">📬 邮件预览</h3>
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="font-medium text-sm" style="color: var(--color-foreground);">📬 邮件预览</h3>
+            <div class="flex gap-2">
+                <input id="emailSearchInput" type="text" placeholder="关键词搜索邮件..."
+                       class="input text-xs" style="width: 200px; padding: 5px 10px;"
+                       onkeypress="if(event.key==='Enter')searchEmails()">
+                <button onclick="searchEmails()" class="btn btn-secondary text-xs py-1 px-2">搜索</button>
+            </div>
+        </div>
         <div id="emailPreview" class="space-y-2 max-h-60 overflow-y-auto">
             <p class="text-sm" style="color: var(--color-muted);">加载中...</p>
+        </div>
+        <div id="emailSearchResults" class="hidden mt-3 pt-3" style="border-top: 1px solid var(--color-border);">
+            <h4 class="text-xs font-semibold mb-2" style="color: var(--color-muted);">搜索结果</h4>
+            <div id="emailSearchList" class="space-y-1 max-h-60 overflow-y-auto"></div>
         </div>
     </div>
 </div>
@@ -131,6 +143,36 @@ async function importEmails() {
     }
 }
 
+// 邮件关键词搜索
+async function searchEmails() {
+    const query = document.getElementById('emailSearchInput').value.trim();
+    if (!query) return;
+    const resultsPanel = document.getElementById('emailSearchResults');
+    const listEl = document.getElementById('emailSearchList');
+    resultsPanel.classList.remove('hidden');
+    listEl.innerHTML = '<p class="text-xs" style="color: var(--color-muted);">搜索中...</p>';
+    try {
+        const res = await fetch(`/api/emails/search?q=${encodeURIComponent(query)}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || '搜索失败');
+        if (!data.emails || data.emails.length === 0) {
+            listEl.innerHTML = '<p class="text-xs" style="color: var(--color-muted);">未找到匹配邮件</p>';
+            return;
+        }
+        listEl.innerHTML = data.emails.map(email => `
+            <div class="border rounded p-2 text-sm" style="border-color: var(--color-border); background: var(--color-secondary);">
+                <div class="flex justify-between">
+                    <span class="font-medium truncate" style="color: var(--color-foreground);">${escapeHtml(email.subject || '无主题')}</span>
+                    <span class="text-xs ml-2 shrink-0" style="color: var(--color-muted);">${(email.received_at || '').substring(0, 10)}</span>
+                </div>
+                <p class="text-xs mt-1" style="color: var(--color-muted);">${escapeHtml(email.sender_name || '')} · ${escapeHtml(email.folder || '')}</p>
+            </div>
+        `).join('');
+    } catch (e) {
+        listEl.innerHTML = `<p class="text-xs" style="color: var(--color-destructive);">❌ ${escapeHtml(e.message)}</p>`;
+    }
+}
+
 // 初始化入口（由路由调用）
 window.initDocEmail = function() {
     loadEmailStats();
@@ -141,4 +183,5 @@ window.initDocEmail = function() {
 window.loadEmailStats = loadEmailStats;
 window.loadEmailPreview = loadEmailPreview;
 window.importEmails = importEmails;
+window.searchEmails = searchEmails;
 </script>
