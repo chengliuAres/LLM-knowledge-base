@@ -93,6 +93,8 @@
                 </select>
             </div>
             <div class="h-64"><canvas id="breakdownChart"></canvas></div>
+            <!-- 术语图例（hover 解释旁路）-->
+            <div id="docBreakdownGlossary" class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px]" style="color: var(--color-muted);"></div>
         </div>
     </div>
 
@@ -302,6 +304,8 @@ async function loadBreakdown() {
                 }
             }
         });
+        // 渲染术语图例 (旁路 hover 解释, 替代 Chart.js canvas 不支持 HTML label 的限制)
+        renderBreakdownGlossary('docBreakdownGlossary', labels);
     } catch (err) { console.error('breakdown load failed:', err); }
 }
 
@@ -311,4 +315,42 @@ window.loadDashboardStats = loadDashboardStats;
 window.renderPerfCards = renderPerfCards;
 window.loadTrend = loadTrend;
 window.loadBreakdown = loadBreakdown;
+
+/**
+ * 渲染 dashboard 拆解图的术语图例 (旁路 hover 解释)
+ * - 对每个 label, 提取其中含 glossary 词典的术语
+ * - 输出为带虚线下划线的 <span>, hover 出解释
+ * @param {string} containerId
+ * @param {string[]} labels - chart 的 y 轴 label 数组
+ */
+function renderBreakdownGlossary(containerId, labels) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (!labels || labels.length === 0) {
+        el.innerHTML = '<span style="color: var(--color-muted);">该类型暂无数据</span>';
+        return;
+    }
+    // 收集所有出现过的术语 key (去重)
+    const seen = new Set();
+    const items = [];
+    for (const label of labels) {
+        if (typeof label !== "string") continue;
+        const keys = Object.keys(window.GLOSSARY || {}).sort((a, b) => b.length - a.length);
+        for (const key of keys) {
+            if (seen.has(key)) continue;
+            const re = new RegExp(key, "i");
+            if (re.test(label)) {
+                seen.add(key);
+                items.push(key);
+            }
+        }
+    }
+    if (items.length === 0) {
+        el.innerHTML = '';
+        return;
+    }
+    el.innerHTML = '<span style="margin-right: 4px;">💡 术语:</span>' +
+        items.map(k => `<span class="glossary-term" data-glossary="${k}" tabindex="0">${k}</span>`).join(', ');
+}
+window.renderBreakdownGlossary = renderBreakdownGlossary;
 </script>
