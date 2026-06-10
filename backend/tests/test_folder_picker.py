@@ -83,6 +83,13 @@ def test_resolve_path_invalid_parent(tmp_path):
 
 # ── /api/code/open-in-finder ───────────────────────────────────
 
+# 测试 fixture：macOS 的 tmp_path 在 /private/var/... 下，会被 denylist 误伤。
+# 用环境变量显式跳过黑名单，.ssh 黑名单测试单独 unset 后注入真实 denylist 项测。
+@pytest.fixture(autouse=True)
+def _skip_denylist_in_tests(monkeypatch):
+    monkeypatch.setenv("EMAIL_WIKI_SKIP_PATH_DENYLIST", "1")
+
+
 def test_open_in_finder_darwin(tmp_path, monkeypatch):
     """macOS → 调 subprocess.Popen(['open', path])"""
     target = tmp_path / "mydir"
@@ -136,10 +143,13 @@ def test_open_in_finder_path_invalid(tmp_path, monkeypatch):
 
 
 def test_open_in_finder_blacklist_ssh(tmp_path, monkeypatch):
-    """~/.ssh 拒绝 → 403（将 fake_ssh 注入 denylist 以绕过 /private 路径差异）"""
+    """~/.ssh 拒绝 → 403（注入 denylist 项以避免依赖真实 ~/.ssh）"""
     monkeypatch.setattr("platform.system", lambda: "Darwin")
     fake_ssh = tmp_path / ".ssh"
     fake_ssh.mkdir()
+
+    # 关闭 fixture 的环境变量跳过，恢复 denylist 校验
+    monkeypatch.delenv("EMAIL_WIKI_SKIP_PATH_DENYLIST", raising=False)
 
     import code_routes
     monkeypatch.setattr(
@@ -153,8 +163,9 @@ def test_open_in_finder_blacklist_ssh(tmp_path, monkeypatch):
 
 
 def test_open_in_finder_blacklist_etc(tmp_path, monkeypatch):
-    """/etc 系统目录 → 403"""
+    """/etc 系统目录 → 403（macOS 上 /etc 是 /private/etc 的 symlink，denylist 必命中）"""
     monkeypatch.setattr("platform.system", lambda: "Darwin")
+    monkeypatch.delenv("EMAIL_WIKI_SKIP_PATH_DENYLIST", raising=False)
     res = client.post("/api/code/open-in-finder", json={"path": "/etc"})
     assert res.status_code == 403
 

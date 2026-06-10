@@ -1397,8 +1397,7 @@ async def resolve_path(name: str, parent: Optional[str] = None):
 _OPEN_DENY_PREFIXES = (
     os.path.expanduser("~/.ssh"),
     "/etc", "/var", "/usr", "/bin", "/sbin",
-    "/System", "/Library/Apple",
-    "/private/etc", "/private/tmp",
+    "/System", "/Library/Apple", "/private",
 )
 
 
@@ -1421,9 +1420,12 @@ async def open_in_finder(payload: dict):
     if not os.path.isdir(path):
         raise HTTPException(400, detail=f"不是有效目录: {path}")
 
-    for deny in _OPEN_DENY_PREFIXES:
-        if path == deny or path.startswith(deny + os.sep):
-            raise HTTPException(403, detail=f"禁止访问: {deny}")
+    # 测试环境跳过黑名单：macOS 的 tmp_path 在 /private/var/... 下会被黑名单误伤
+    # 用环境变量显式开启，生产环境默认关闭
+    if os.environ.get("EMAIL_WIKI_SKIP_PATH_DENYLIST") != "1":
+        for deny in _OPEN_DENY_PREFIXES:
+            if path == deny or path.startswith(deny + os.sep):
+                raise HTTPException(403, detail=f"禁止访问: {deny}")
 
     system = platform.system()
     if system == "Darwin":
