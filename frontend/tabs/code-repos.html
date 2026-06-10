@@ -503,21 +503,28 @@ async function codePickFolder() {
             console.warn('showDirectoryPicker 失败, 降级:', e);
         }
     }
-    // B. 降级 webkitdirectory（Safari / Firefox）
-    const input = __ensureWebkitInput();
-    input.value = '';  // 允许重复选同一目录
-    input.onchange = async () => {
-        const file = input.files[0];
-        if (!file) return;
-        const name = file.webkitRelativePath.split('/')[0];
-        try {
-            const path = await __resolvePathByName(name);
-            codeSelectDir(path, name);
-        } catch (e) {
-            alert('选择目录失败: ' + e.message);
-        }
-    };
-    input.click();
+    // B. 降级 webkitdirectory（Safari / Firefox）—— 部分浏览器支持但拿不到路径
+    if ('webkitdirectory' in HTMLInputElement.prototype) {
+        const input = __ensureWebkitInput();
+        input.value = '';  // 允许重复选同一目录
+        input.onchange = async () => {
+            const file = input.files[0];
+            if (!file) return;
+            const name = file.webkitRelativePath.split('/')[0];
+            try {
+                const path = await __resolvePathByName(name);
+                codeSelectDir(path, name);
+            } catch (e) {
+                // 反查失败 → 降级到现有目录浏览器
+                console.warn('反查失败, 降级到目录浏览器:', e);
+                codeBrowseFolder();
+            }
+        };
+        input.click();
+        return;
+    }
+    // C. 兜底：现有目录浏览器
+    codeBrowseFolder();
 }
 
 // 通过名字反查真实路径（同名多个时弹层让用户选）
