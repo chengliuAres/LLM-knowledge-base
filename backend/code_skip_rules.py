@@ -136,7 +136,7 @@ def parse_gitignore_dirs(repo_path: str) -> list[str]:
     提取规则：
     - 以 / 结尾 → 目录，去掉 /
     - 不含 * ? [ 通配符 → 精确名称（目录或文件均可）
-    - 嵌套路径（如 a/b）→ 提取顶层目录 a + 完整路径 a/b
+    
     跳过：注释行、空行、取反（!）行、通配符模式
     """
     gitignore_path = os.path.join(repo_path, ".gitignore")
@@ -161,11 +161,6 @@ def parse_gitignore_dirs(repo_path: str) -> list[str]:
                 if not entry:
                     continue
                 entries.append(entry)
-                # 嵌套路径 → 额外提取顶层目录
-                if "/" in entry:
-                    top = entry.split("/")[0]
-                    if top and top not in entries:
-                        entries.append(top)
     except OSError:
         pass
 
