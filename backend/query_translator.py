@@ -1,12 +1,18 @@
 """查询翻译层 — 中文查询 → 英文代码关键词
 
-优先级: LLM 翻译 > 本地词典 > jieba 分词降级
+优先级: 缓存 > LLM 翻译 > MyMemory API > 本地词典 > jieba 分词降级
 用于代码搜索场景：用户输入中文"登录"，翻译成 "login, signin, auth" 等英文符号关键词。
+
+特性：
+1. 缓存层：LLM/MyMemory 翻译结果持久化缓存（30天）
+2. 自动扩充词典：翻译成功后自动添加到 TERM_MAP
+3. 翻译流程展示：每步都有 Step 记录（方法、关键词、耗时）
 """
 
 import re
 import os
 import asyncio
+import requests
 from typing import Optional
 from dataclasses import dataclass, field
 
@@ -17,8 +23,10 @@ class TranslationResult:
     """翻译结果"""
     original: str                     # 原始查询 "用户登录"
     translated: list[str]             # 翻译结果 ["user", "login", "signin"]
-    method: str = "none"              # "llm" / "dict" / "none"
+    method: str = "none"              # "cache" / "llm" / "mymemory" / "dict" / "none"
     confidence: float = 0.0           # 置信度 0-1
+    duration_ms: float = 0.0          # 翻译耗时（毫秒）
+    steps: list = field(default_factory=list)  # 翻译步骤详情
 
 
 # ── 中文检测 ──────────────────────────────────────────────────────
@@ -199,6 +207,48 @@ def _substring_match(text: str) -> list[str]:
     return results
 
 
+# ── MyMemory API 翻译 ────────────────────────────────────────────
+
+def _mymemory_translate(query: str) -> tuple[list[str], float]:
+    """调用 MyMemory API 翻译中文查询
+
+    免费额度：5000 字符/天（匿名）
+    速度：~2 秒
+    """
+    try:
+        url = "https://api.mymemory.translated.net/get"
+        params = {
+            "q": query,
+            "langpair": "zh|en"
+        }
+
+        response = requests.get(url, params=params, timeout=2)
+        if response.status_code != 200:
+            return [], 0.0
+
+        data = response.json()
+        if data.get("responseStatus") != 200:
+            return [], 0.0
+
+        translated_text = data["responseData"]["translatedText"]
+        if not translated_text:
+            return [], 0.0
+
+        # 解析翻译结果（逗号分隔或空格分隔）
+        keywords = []
+        for kw in re.split(r'[,，\s]+', translated_text):
+            kw = kw.strip().strip('"').strip("'").strip("`")
+            kw = re.sub(r'[^a-zA-Z0-9_]', '', kw)  # 只保留英文+数字+下划线
+            if kw and len(kw) >= 2:
+                keywords.append(kw.lower())
+
+        return keywords[:5], 0.8 if keywords else 0.0
+
+    except Exception as e:
+        print(f"[query_translator] MyMemory 翻译失败: {e}")
+        return [], 0.0
+
+
 # ── LLM 翻译 ─────────────────────────────────────────────────────
 
 _TRANSLATE_PROMPT = """你是一个代码搜索助手。把用户的中文查询翻译成代码中常见的英文符号名/关键词。
@@ -248,20 +298,25 @@ async def _llm_translate(query: str) -> tuple[list[str], float]:
         return [], 0.0
 
 
-# ── 主入口 ────────────────────────────────────────────────────────
+# ── 主入口（带 StepTracker）──────────────────────────────────────
 
 async def translate_query_async(
     query: str,
     use_llm: bool = True,
     timeout: float = 3.0,
+    tracker=None,  # StepTracker 实例
 ) -> TranslationResult:
-    """异步翻译入口
+    """异步翻译入口（带步骤追踪）
 
     Args:
         query: 原始查询（可能含中文）
         use_llm: 是否尝试 LLM 翻译
         timeout: LLM 调用超时秒数
+        tracker: StepTracker 实例，用于记录翻译步骤
     """
+    import time
+    start_time = time.time()
+
     query = query.strip()
     if not query or not has_chinese(query):
         return TranslationResult(
@@ -269,54 +324,262 @@ async def translate_query_async(
             translated=[query],
             method="none",
             confidence=1.0,
+            duration_ms=0,
         )
 
-    # 1. 尝试 LLM 翻译
+    steps = []
+
+    # ── Step 1: 检查缓存 ──────────────────────────────────────
+    step_cache = None
+    if tracker:
+        step_cache = tracker.add_step("translation_cache", "查询翻译: 检查缓存")
+        step_cache.start()
+
+    from translation_cache import get_cache
+    cache = get_cache()
+    cached = cache.get(query)
+
+    if cached:
+        duration_ms = (time.time() - start_time) * 1000
+        step_info = {
+            "method": "cache",
+            "keywords": cached.keywords,
+            "confidence": cached.confidence,
+            "duration_ms": duration_ms,
+        }
+        steps.append(step_info)
+
+        if tracker:
+            step_cache.complete(step_info)
+
+        return TranslationResult(
+            original=query,
+            translated=cached.keywords,
+            method="cache",
+            confidence=cached.confidence,
+            duration_ms=duration_ms,
+            steps=steps,
+        )
+
+    if tracker and step_cache:
+        step_cache.complete({"hit": False})
+
+    # ── Step 2: LLM 翻译 ──────────────────────────────────────
+    step_llm = None
     if use_llm:
+        if tracker:
+            step_llm = tracker.add_step("llm_translate", "查询翻译: LLM 翻译 (MiMo)")
+            step_llm.start()
+
         try:
+            llm_start = time.time()
             keywords, confidence = await asyncio.wait_for(
                 _llm_translate(query),
                 timeout=timeout,
             )
+            llm_duration = (time.time() - llm_start) * 1000
+
             if keywords:
+                step_info = {
+                    "method": "llm",
+                    "keywords": keywords,
+                    "confidence": confidence,
+                    "duration_ms": llm_duration,
+                }
+                steps.append(step_info)
+
+                if tracker:
+                    step_llm.complete(step_info)
+
+                # 写入缓存
+                cache.set(query, keywords, "llm", confidence, auto_added=True)
+                # 自动扩充词典
+                cache.add_to_dict(query, keywords)
+
+                duration_ms = (time.time() - start_time) * 1000
                 return TranslationResult(
                     original=query,
                     translated=keywords,
                     method="llm",
                     confidence=confidence,
+                    duration_ms=duration_ms,
+                    steps=steps,
                 )
-        except asyncio.TimeoutError:
-            print(f"[query_translator] LLM 翻译超时 ({timeout}s)，降级到词典")
-        except Exception as e:
-            print(f"[query_translator] LLM 翻译异常: {e}，降级到词典")
 
-    # 2. 降级到本地词典
+            if tracker and step_llm:
+                step_llm.complete({"keywords": [], "reason": "LLM 返回空"})
+
+        except asyncio.TimeoutError:
+            llm_duration = (time.time() - llm_start) * 1000
+            step_info = {
+                "method": "llm",
+                "keywords": [],
+                "confidence": 0.0,
+                "duration_ms": llm_duration,
+                "error": f"超时 ({timeout}s)",
+            }
+            steps.append(step_info)
+
+            if tracker and step_llm:
+                step_llm.fail(f"超时 ({timeout}s)")
+
+        except Exception as e:
+            llm_duration = (time.time() - llm_start) * 1000
+            step_info = {
+                "method": "llm",
+                "keywords": [],
+                "confidence": 0.0,
+                "duration_ms": llm_duration,
+                "error": str(e),
+            }
+            steps.append(step_info)
+
+            if tracker and step_llm:
+                step_llm.fail(str(e))
+
+    # ── Step 3: MyMemory API 翻译 ─────────────────────────────
+    step_mymemory = None
+    if tracker:
+        step_mymemory = tracker.add_step("mymemory_translate", "查询翻译: MyMemory API")
+        step_mymemory.start()
+
+    try:
+        mymemory_start = time.time()
+        keywords, confidence = await asyncio.to_thread(_mymemory_translate, query)
+        mymemory_duration = (time.time() - mymemory_start) * 1000
+
+        if keywords:
+            step_info = {
+                "method": "mymemory",
+                "keywords": keywords,
+                "confidence": confidence,
+                "duration_ms": mymemory_duration,
+            }
+            steps.append(step_info)
+
+            if tracker and step_mymemory:
+                step_mymemory.complete(step_info)
+
+            # 写入缓存
+            cache.set(query, keywords, "mymemory", confidence, auto_added=True)
+            # 自动扩充词典
+            cache.add_to_dict(query, keywords)
+
+            duration_ms = (time.time() - start_time) * 1000
+            return TranslationResult(
+                original=query,
+                translated=keywords,
+                method="mymemory",
+                confidence=confidence,
+                duration_ms=duration_ms,
+                steps=steps,
+            )
+
+        if tracker and step_mymemory:
+            step_mymemory.complete({"keywords": [], "reason": "MyMemory 返回空"})
+
+    except Exception as e:
+        mymemory_duration = (time.time() - mymemory_start) * 1000
+        step_info = {
+            "method": "mymemory",
+            "keywords": [],
+            "confidence": 0.0,
+            "duration_ms": mymemory_duration,
+            "error": str(e),
+        }
+        steps.append(step_info)
+
+        if tracker and step_mymemory:
+            step_mymemory.fail(str(e))
+
+    # ── Step 4: 本地词典 ──────────────────────────────────────
+    step_dict = None
+    if tracker:
+        step_dict = tracker.add_step("dict_translate", "查询翻译: 本地词典")
+        step_dict.start()
+
+    dict_start = time.time()
     keywords, confidence = _dict_translate(query)
+    dict_duration = (time.time() - dict_start) * 1000
+
     if keywords:
+        step_info = {
+            "method": "dict",
+            "keywords": keywords,
+            "confidence": confidence,
+            "duration_ms": dict_duration,
+        }
+        steps.append(step_info)
+
+        if tracker and step_dict:
+            step_dict.complete(step_info)
+
+        duration_ms = (time.time() - start_time) * 1000
         return TranslationResult(
             original=query,
             translated=keywords,
             method="dict",
             confidence=confidence,
+            duration_ms=duration_ms,
+            steps=steps,
         )
 
-    # 3. 最终降级：返回原查询
+    if tracker and step_dict:
+        step_dict.complete({"keywords": [], "reason": "词典无匹配"})
+
+    # ── Step 5: 最终降级：单字回退 ─────────────────────────────
+    step_fallback = None
+    if tracker:
+        step_fallback = tracker.add_step("fallback", "查询翻译: 单字回退")
+        step_fallback.start()
+
+    fallback_keywords = list(query)  # 按字符拆分
+    fallback_duration = 0.0
+
+    step_info = {
+        "method": "fallback",
+        "keywords": fallback_keywords,
+        "confidence": 0.0,
+        "duration_ms": fallback_duration,
+    }
+    steps.append(step_info)
+
+    if tracker and step_fallback:
+        step_fallback.complete(step_info)
+
+    duration_ms = (time.time() - start_time) * 1000
     return TranslationResult(
         original=query,
-        translated=[query],
-        method="none",
+        translated=fallback_keywords,
+        method="fallback",
         confidence=0.0,
+        duration_ms=duration_ms,
+        steps=steps,
     )
 
 
-def translate_query_sync(query: str, use_llm: bool = True, timeout: float = 3.0) -> TranslationResult:
+def translate_query_sync(query: str, use_llm: bool = True, timeout: float = 3.0, tracker=None) -> TranslationResult:
     """同步包装（给非 async 上下文用）"""
     try:
         return asyncio.run(
-            translate_query_async(query, use_llm=use_llm, timeout=timeout)
+            translate_query_async(query, use_llm=use_llm, timeout=timeout, tracker=tracker)
         )
     except RuntimeError:
         # 已有 event loop 的情况（FastAPI 内），降级到纯词典
+        from translation_cache import get_cache
+        cache = get_cache()
+
+        # 检查缓存
+        cached = cache.get(query)
+        if cached:
+            return TranslationResult(
+                original=query,
+                translated=cached.keywords,
+                method="cache",
+                confidence=cached.confidence,
+            )
+
+        # 降级到词典
         keywords, confidence = _dict_translate(query)
         return TranslationResult(
             original=query,
@@ -338,6 +601,6 @@ if __name__ == "__main__":
     kw, conf = _dict_translate(q)
     print(f"词典翻译: {kw} (置信度: {conf:.2f})")
 
-    # LLM 翻译
+    # 完整翻译流程
     result = translate_query_sync(q, use_llm=True, timeout=5.0)
     print(f"最终结果: {result}")

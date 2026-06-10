@@ -1,35 +1,101 @@
-<!-- 代码搜索 tab：搜索输入 + 模式/筛选 + 结果区 -->
+<!-- 代码搜索 tab：三列布局 — 左：搜索输入+筛选；中：结果；右：翻译流程+搜索流程 -->
 
-<div class="flex flex-col gap-4 h-full">
-    <!-- 搜索栏 -->
-    <div class="panel">
-        <div class="flex gap-2">
-            <input id="codeSearchInput" type="text" placeholder="搜索代码..." class="input flex-1" onkeypress="if(event.key==='Enter')codeSearch()">
-            <select id="codeSearchMode" class="input shrink-0" style="width: auto;">
-                <option value="hybrid">混合</option>
-                <option value="vector" selected>语义</option>
-                <option value="keyword">关键词</option>
-            </select>
-            <select id="codeSearchRepo" class="input shrink-0" style="width: auto; max-width: 160px;">
-                <option value="">全部仓库</option>
-            </select>
-            <select id="codeSearchLang" class="input shrink-0" style="width: auto; max-width: 120px;">
-                <option value="">全部语言</option>
-            </select>
-            <button onclick="codeSearch()" class="btn btn-accent shrink-0">搜索</button>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <!-- 左侧：搜索栏 + 筛选 (4列) -->
+    <div class="lg:col-span-4 space-y-4">
+        <div class="panel">
+            <h3 class="font-semibold text-sm mb-3" style="color: var(--color-foreground);">🔍 代码搜索</h3>
+            <div class="flex flex-col gap-2">
+                <input id="codeSearchInput" type="text" placeholder="搜索代码..." class="input" onkeypress="if(event.key==='Enter')codeSearch()">
+                <button onclick="codeSearch()" class="btn btn-accent w-full">搜索</button>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h3 class="font-semibold text-sm mb-3" style="color: var(--color-foreground);">⚙️ 模式与筛选</h3>
+            <div class="space-y-3">
+                <label class="block">
+                    <span class="text-xs" style="color: var(--color-muted);">搜索模式</span>
+                    <select id="codeSearchMode" class="input w-full mt-1">
+                        <option value="hybrid">混合</option>
+                        <option value="vector" selected>语义</option>
+                        <option value="keyword">关键词</option>
+                    </select>
+                </label>
+                <label class="block">
+                    <span class="text-xs" style="color: var(--color-muted);">仓库</span>
+                    <select id="codeSearchRepo" class="input w-full mt-1">
+                        <option value="">全部仓库</option>
+                    </select>
+                </label>
+                <label class="block">
+                    <span class="text-xs" style="color: var(--color-muted);">语言</span>
+                    <select id="codeSearchLang" class="input w-full mt-1">
+                        <option value="">全部语言</option>
+                    </select>
+                </label>
+            </div>
         </div>
     </div>
 
-    <!-- 搜索结果 -->
-    <div id="codeSearchResults" class="panel flex-1 overflow-y-auto">
-        <div class="p-6 text-center text-sm" style="color: var(--color-muted);">输入关键词搜索代码</div>
+    <!-- 中间：搜索结果 (4列) -->
+    <div class="lg:col-span-4 space-y-4">
+        <div class="panel" style="padding: 0;">
+            <div class="px-4 py-2" style="border-bottom: 1px solid var(--color-border);">
+                <h3 class="font-semibold text-sm" style="color: var(--color-foreground);">搜索结果</h3>
+            </div>
+            <div id="codeSearchResults" class="max-h-[700px] overflow-y-auto">
+                <div class="p-6 text-center text-sm" style="color: var(--color-muted);">输入关键词搜索代码</div>
+            </div>
+        </div>
     </div>
 
-    <!-- 搜索步骤 -->
-    <div id="codeSteps" class="space-y-2 text-xs" style="color: var(--color-muted);"></div>
+    <!-- 右侧：执行流程 (4列) -->
+    <div class="lg:col-span-4 space-y-4">
+        <!-- 翻译流程 -->
+        <div id="codeTranslationPanel" class="panel" style="padding: 0; display: none;">
+            <div class="px-4 py-3 flex items-center justify-between"
+                 style="border-bottom: 1px solid var(--color-border);">
+                <h3 class="font-semibold text-sm flex items-center" style="color: var(--color-foreground);">
+                    <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] mr-2"
+                          style="background-color: rgba(34, 197, 94, 0.15); color: var(--color-accent);">🌐</span>
+                    翻译流程
+                </h3>
+                <span id="codeTranslationDuration" class="text-[10px]" style="color: var(--color-muted);"></span>
+            </div>
+            <div class="p-4 max-h-[350px] overflow-y-auto">
+                <div id="codeTranslationStepsList" class="space-y-2"></div>
+            </div>
+        </div>
+
+        <!-- 搜索流程 -->
+        <div class="panel" style="padding: 0;">
+            <div class="px-4 py-3 flex items-center justify-between"
+                 style="border-bottom: 1px solid var(--color-border);">
+                <h3 class="font-semibold text-sm flex items-center" style="color: var(--color-foreground);">
+                    <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] mr-2"
+                          style="background-color: rgba(34, 197, 94, 0.15); color: var(--color-accent);">🔍</span>
+                    搜索流程
+                </h3>
+                <span id="codeSearchDuration" class="text-[10px]" style="color: var(--color-muted);"></span>
+            </div>
+            <div class="p-4 max-h-[350px] overflow-y-auto">
+                <div id="codeSearchStepsList" class="space-y-2">
+                    <div class="text-center text-xs py-3" style="color: var(--color-muted);">执行搜索后显示流程</div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
+/* ============================================================
+ * 代码搜索 tab — 页面脚本
+ *
+ * initCodeSearch() 由 router.js 路由命中后调用
+ * 依赖 shared.js 暴露的 escapeHtml
+ * ============================================================ */
+
 // ── 搜索筛选器加载 ───────────────────────────────────────────
 async function codeLoadSearchFilters() {
     try {
@@ -72,9 +138,7 @@ async function codeSearch() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail);
 
-        if (typeof codeRenderSteps === 'function') {
-            codeRenderSteps(data.steps || []);
-        }
+        codeSearchRenderSteps(data.steps || [], data.translation);
         codeRenderResults(data.results || [], query);
     } catch (e) {
         showToast('搜索失败: ' + e.message, 'error');
@@ -127,6 +191,104 @@ function codeHighlightRepo(filePath) {
     console.log('Navigate to:', filePath);
 }
 
+// ── 渲染执行流程（翻译 + 搜索） ────────────────────────────
+// 注意：不使用 codeRenderSteps 名称，避免覆盖 shared.js 中的同名函数
+function codeSearchRenderSteps(steps, translation) {
+    // 1) 翻译流程面板（仅在有翻译数据时显示）
+    const transPanel = document.getElementById('codeTranslationPanel');
+    const transList  = document.getElementById('codeTranslationStepsList');
+    const transDur   = document.getElementById('codeTranslationDuration');
+
+    if (translation && transPanel && transList) {
+        transPanel.style.display = '';
+        const transSteps = translation.steps || [];
+        const totalMs    = translation.duration_ms
+            || transSteps.reduce((s, x) => s + (x.duration_ms || 0), 0);
+
+        if (transDur) transDur.textContent = `${(totalMs || 0).toFixed(0)}ms`;
+
+        transList.innerHTML = transSteps.map(codeRenderTranslationStep).join('');
+    } else if (transPanel) {
+        transPanel.style.display = 'none';
+    }
+
+    // 2) 搜索流程面板
+    const searchList = document.getElementById('codeSearchStepsList');
+    const searchDur  = document.getElementById('codeSearchDuration');
+    if (!searchList) return;
+
+    if (!steps || steps.length === 0) {
+        searchList.innerHTML = '<p class="text-xs" style="color: var(--color-muted);">无步骤信息</p>';
+        if (searchDur) searchDur.textContent = '';
+        return;
+    }
+
+    const totalMs = steps.reduce((s, x) => s + (x.duration_ms || 0), 0);
+    if (searchDur) searchDur.textContent = `${totalMs.toFixed(0)}ms`;
+
+    searchList.innerHTML = steps.map(codeRenderSearchStep).join('');
+}
+
+// 翻译流程中的单步（cache / llm / mymemory / dict / fallback）
+function codeRenderTranslationStep(step) {
+    const method = step.method || 'unknown';
+    const status = step.keywords && step.keywords.length > 0
+        ? (step.error ? 'warn' : 'ok')
+        : (method === 'fallback' ? 'ok' : 'skip');
+    const icon = status === 'ok' ? '✅'
+        : status === 'warn' ? '⚠️'
+        : '⏳';
+    const labelMap = {
+        cache: '缓存命中',
+        llm: 'LLM 翻译',
+        mymemory: 'MyMemory API',
+        dict: '本地词典',
+        fallback: '单字回退',
+    };
+    const label = labelMap[method] || method;
+    const kws = (step.keywords || []).slice(0, 4).join(', ') || (step.error ? `错误: ${step.error}` : '空');
+    const dur = step.duration_ms != null ? `${step.duration_ms.toFixed(0)}ms` : '-';
+
+    return `
+        <div class="rounded p-2" style="background-color: rgba(255, 255, 255, 0.04);">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-1.5">
+                    <span class="text-xs">${icon}</span>
+                    <span class="text-xs font-medium" style="color: var(--color-foreground);">${escapeHtml(label)}</span>
+                </div>
+                <span class="text-[10px]" style="color: var(--color-muted);">${dur}</span>
+            </div>
+            <div class="ml-5 mt-1 text-[10px]" style="color: var(--color-muted);">${escapeHtml(kws)}</div>
+        </div>`;
+}
+
+// 搜索流程中的单步（vector_search / keyword_search / hybrid_search / rrf_fusion 等）
+function codeRenderSearchStep(step, i) {
+    const dur = (step.duration_ms || 0).toFixed(0);
+    let badge = '';
+    if (step.details) {
+        const d = step.details;
+        if (d.results_count != null) badge = `${d.results_count} 条结果`;
+        else if (d.vector_hits != null || d.keyword_hits != null) {
+            badge = `向量 ${d.vector_hits || 0} · 关键词 ${d.keyword_hits || 0} · 符号 ${d.symbol_hits || 0}`;
+        } else if (d.merged != null) {
+            badge = `融合 ${d.merged} 条`;
+        }
+    }
+    return `
+        <div class="rounded p-2" style="background-color: rgba(255, 255, 255, 0.04);">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-1.5">
+                    <span class="w-4 h-4 rounded-full text-white text-[10px] flex items-center justify-center"
+                          style="background-color: var(--color-accent);">${i + 1}</span>
+                    <span class="text-xs font-medium" style="color: var(--color-foreground);">${escapeHtml(step.description || step.name || '')}</span>
+                </div>
+                <span class="text-[10px]" style="color: var(--color-muted);">${dur}ms</span>
+            </div>
+            ${badge ? `<div class="ml-5 mt-1 text-[10px]" style="color: var(--color-muted);">${escapeHtml(badge)}</div>` : ''}
+        </div>`;
+}
+
 // ── 路由入口 ────────────────────────────────────────────────
 window.initCodeSearch = function() {
     document.getElementById('codeSearchInput')?.focus();
@@ -136,6 +298,7 @@ window.initCodeSearch = function() {
 // 暴露到 window
 window.codeSearch = codeSearch;
 window.codeRenderResults = codeRenderResults;
+window.codeSearchRenderSteps = codeSearchRenderSteps;
 window.codeHighlightRepo = codeHighlightRepo;
 </script>
 
