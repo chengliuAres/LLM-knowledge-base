@@ -212,14 +212,20 @@
     <!-- ─────────── 脚本 ─────────── -->
     <script src="js/shared.js?v=5"></script>
     <script src="js/router.js?v=7"></script>
+    <!-- 排除规则业务 JS（依赖 shared.js 的 escapeHtml/showToast）
+         ⚠️ 必须保持在 router.js 之后、body 末尾：上方 #skip-rules-modal 静态 DOM 已就绪，
+         initSkipRuleSelects() IIFE 才能同步访问 #skip-dir-category 等 select 节点。
+         如改用 defer 或挪到 <head>，需先确保 DOMContentLoaded 后再初始化。 -->
+    <script src="js/skip-rules.js?v=1"></script>
     <!-- 术语词典 + tooltip（依赖 shared.js 的 window 全局） -->
     <script src="js/glossary.js?v=1"></script>
     <script src="js/glossary-tooltip.js?v=1"></script>
     <script>
         // Tab 文件缓存版本号（router.js 用 ?v= 参数强制刷新）
-        // bump 6: 图例字号 10→11, 颜色改继承父, 提升可读性
         // bump 7: codeRefreshRepo 改走 SSE 拿真实 chunks（修 toast undefined 根因）
-        window.__TAB_VERSION = '8';
+        // bump 8: (前一会话)
+        // bump 9: 修复排除规则三个 bug — switchSkipTab 未定义 / 旧 modal 重复 ID / JS 在 code-repos 内联加载太晚
+        window.__TAB_VERSION = '9';
         // 显式启动路由（router.js 也会在 DOMContentLoaded 时自启，这里双保险）
         if (typeof initRouter === "function") {
             initRouter();
