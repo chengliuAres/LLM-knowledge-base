@@ -218,7 +218,9 @@
     <script>
         // Tab 文件缓存版本号（router.js 用 ?v= 参数强制刷新）
         // bump 6: 图例字号 10→11, 颜色改继承父, 提升可读性
-        window.__TAB_VERSION = '6';
+        // bump 7: 仓库刷新/删除按钮加 hover 提示
+        // bump 8: codeRefreshRepo 改走 SSE 拿真实 chunks（修 toast undefined 根因）
+        window.__TAB_VERSION = '8';
         // 显式启动路由（router.js 也会在 DOMContentLoaded 时自启，这里双保险）
         if (typeof initRouter === "function") {
             initRouter();
