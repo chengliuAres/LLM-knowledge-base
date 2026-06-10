@@ -1264,7 +1264,7 @@ async def demo_search(req: DemoSearchRequest):
 import threading
 
 _agent_config_lock = threading.Lock()
-_AGENT_CONFIG_PATH = os.path.join(DATA_DIR, "code_agent_config.json")
+_AGENT_CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "code_agent_config.json")
 
 DEFAULT_AGENT_PROMPT = """你是 Email Wiki 知识库管理员，负责基于已索引的代码仓库回答问题。
 
@@ -1312,7 +1312,7 @@ def _load_agent_config() -> dict:
 
 def _save_agent_config(config: dict) -> None:
     """保存 Agent 配置"""
-    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(_AGENT_CONFIG_PATH), exist_ok=True)
     with open(_AGENT_CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
 
