@@ -129,6 +129,22 @@ async function codeSearch() {
     if (repo) filters.repo_name = repo;
     if (lang) filters.language = lang;
 
+    // 显示搜索状态
+    const btn = document.querySelector('#codeSearchInput + .btn');
+    const resultsEl = document.getElementById('codeSearchResults');
+    if (btn) { btn.disabled = true; btn.textContent = '搜索中...'; }
+    if (resultsEl) {
+        resultsEl.innerHTML = `<div class="p-6 text-center" style="color: var(--color-muted);">
+            <div class="animate-spin rounded-full h-6 w-6 border-b-2 mx-auto mb-3" style="border-color: var(--color-accent);"></div>
+            <p class="text-sm">正在搜索...</p>
+        </div>`;
+    }
+    // 清空翻译/搜索流程面板
+    const transPanel = document.getElementById('codeTranslationPanel');
+    const searchList = document.getElementById('codeSearchStepsList');
+    if (transPanel) transPanel.style.display = 'none';
+    if (searchList) searchList.innerHTML = '<div class="text-center text-xs py-3" style="color: var(--color-muted);">正在执行...</div>';
+
     try {
         const res = await fetch('/api/code/search', {
             method: 'POST',
@@ -142,6 +158,9 @@ async function codeSearch() {
         codeRenderResults(data.results || [], query);
     } catch (e) {
         showToast('搜索失败: ' + e.message, 'error');
+        if (resultsEl) resultsEl.innerHTML = `<div class="p-6 text-center text-sm" style="color: var(--color-error, #ef4444);">搜索失败: ${escapeHtml(e.message)}</div>`;
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '搜索'; }
     }
 }
 
