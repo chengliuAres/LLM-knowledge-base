@@ -540,6 +540,10 @@ def search_symbol_by_keywords(
         """
         escaped_kw = kw.replace("%", "\\%").replace("_", "\\_")
         like_pattern = f"%{escaped_kw}%"
+        glob_prefix_cap = f"??{kw.capitalize()}*"
+        glob_prefix_low = f"??{kw.lower()}*"
+        glob_cap = f"*{kw.capitalize()}*"
+        glob_low = f"*{kw.lower()}*"
         params: list = [like_pattern, like_pattern]
 
         if repo_name:
@@ -552,7 +556,27 @@ def search_symbol_by_keywords(
             sql += " AND chunk_type = ?"
             params.append(chunk_type)
 
-        sql += " LIMIT 50"
+        sql += """
+            GROUP BY file_path, symbol_name
+            ORDER BY (
+                CASE 
+                    WHEN symbol_name GLOB ? THEN 1
+                    WHEN symbol_name GLOB ? THEN 1.5
+                    WHEN symbol_name GLOB ? THEN 2
+                    WHEN symbol_name GLOB ? THEN 3
+                    WHEN file_path GLOB ? THEN 4
+                    WHEN file_path GLOB ? THEN 5
+                    ELSE 6
+                END
+            ) ASC, (
+                CASE 
+                    WHEN symbol_name LIKE '%ViewController%' OR symbol_name LIKE '%VC%' THEN 1
+                    ELSE 2
+                END
+            ) ASC, length(symbol_name) ASC
+            LIMIT 100
+        """
+        params.extend([glob_prefix_cap, glob_prefix_low, glob_cap, glob_low, glob_cap, glob_low])
 
         try:
             rows = conn.execute(sql, params).fetchall()

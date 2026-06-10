@@ -225,7 +225,8 @@
         // bump 7: codeRefreshRepo 改走 SSE 拿真实 chunks（修 toast undefined 根因）
         // bump 8: (前一会话)
         // bump 9: 修复排除规则三个 bug — switchSkipTab 未定义 / 旧 modal 重复 ID / JS 在 code-repos 内联加载太晚
-        window.__TAB_VERSION = '9';
+        // bump 10: 代码搜索默认模式从「语义 vector」改为「混合 hybrid」,让符号路 1.5x 加权生效
+        window.__TAB_VERSION = '10';
         // 显式启动路由（router.js 也会在 DOMContentLoaded 时自启，这里双保险）
         if (typeof initRouter === "function") {
             initRouter();

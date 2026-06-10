@@ -217,9 +217,11 @@ def search_code(
             step_hybrid = tracker.add_step("hybrid_search", "混合搜索 (向量+关键词+符号名)")
             step_hybrid.start()
 
+        pool_k = max(top_k * 5, 100)
+
         # 路径A: FTS5 关键词搜索（搜原始中文 content）
         keyword_results = search_keyword(
-            query=query, top_k=top_k,
+            query=query, top_k=pool_k,
             repo_name=repo_name, language=language,
             chunk_type=chunk_type, file_path=file_path,
             symbol_name=symbol_name,
@@ -229,7 +231,7 @@ def search_code(
         search_text = " ".join(translated_keywords) if translated_keywords else query
         query_vec = embed_query(search_text)
         vector_results = search_vector(
-            query_vector=query_vec, top_k=top_k,
+            query_vector=query_vec, top_k=pool_k,
             repo_name=repo_name, language=language,
             chunk_type=chunk_type, file_path=file_path,
         )
@@ -238,7 +240,7 @@ def search_code(
         symbol_results = []
         if translated_keywords:
             symbol_results = search_symbol_by_keywords(
-                keywords=translated_keywords, top_k=top_k,
+                keywords=translated_keywords, top_k=pool_k,
                 repo_name=repo_name, language=language,
                 chunk_type=chunk_type,
             )

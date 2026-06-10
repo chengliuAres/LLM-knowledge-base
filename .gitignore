@@ -35,3 +35,9 @@ diagram/*@2x.png
 backend/node_modules/
 frontend/vendor/
 
+# Runtime artifacts (PID files, debug screenshots, MCP caches)
+.start.pid
+.playwright-mcp/
+read-letter-search-results.png
+*.pid
+
