@@ -168,12 +168,12 @@ def search_code(
 
     if mode == "vector":
         if tracker:
-            step = tracker.add_step("vector_search", "向量搜索 (bge-small-en)")
+            step = tracker.add_step("vector_search", "向量搜索 (e5-small 跨语言)")
             step.start()
 
         from code_embedder import embed_query
-        # 向量搜索用翻译后的英文关键词（如果有）
-        search_text = " ".join(translated_keywords) if translated_keywords else query
+        # 向量搜索直接用中文原文（e5 跨语言模型不再需要翻译）
+        search_text = query
         query_vec = embed_query(search_text)
 
         results = search_vector(
@@ -225,8 +225,8 @@ def search_code(
             symbol_name=symbol_name,
         )
 
-        # 路径B: 向量搜索（用翻译后的英文关键词 embed）
-        search_text = " ".join(translated_keywords) if translated_keywords else query
+        # 路径B: 向量搜索（直接用中文原文，e5 跨语言模型不再翻译）
+        search_text = query
         query_vec = embed_query(search_text)
         vector_results = search_vector(
             query_vector=query_vec, top_k=top_k,
