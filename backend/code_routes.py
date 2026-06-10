@@ -879,23 +879,18 @@ async def delete_repo_endpoint(name: str):
 
 @router.post("/repos/{name}/refresh")
 async def refresh_repo_endpoint(name: str):
-    """全量刷新仓库索引 (幂等)"""
+    """刷新仓库索引 (增量：按 mtime 新增/更新/删除)"""
     repo_config = get_repo_config(name)
     if not repo_config:
         raise HTTPException(404, detail=f"仓库 {name} 不存在")
 
-    # 清空旧数据
-    delete_by_repo(name)
-
-    # 复用 scan 接口的逻辑
+    # 直接触发增量扫描（scan 内部通过 mtime diff 自动处理新增/更新/删除）
     req = ScanRequest(
         repo_name=name,
         repo_path=repo_config["repo_path"],
         project_type=repo_config.get("project_type", "generic"),
         languages=repo_config.get("languages", []),
     )
-
-    # 直接调用 scan endpoint 逻辑 (不经过 HTTP)
     return await scan_repo_endpoint(req)
 
 

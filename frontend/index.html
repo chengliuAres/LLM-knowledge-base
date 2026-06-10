@@ -23,7 +23,7 @@
 </head>
 <body class="h-screen">
     <div class="flex h-screen overflow-hidden">
-        <!-- 侧边栏：固定宽 224px（w-56），暗色背景由 .sidebar 提供 -->
+        <!-- 侧边栏：宽度由 .sidebar 类（theme.css 的 --sidebar-width）控制 -->
         <aside class="sidebar">
             <!-- 头部：品牌 + 版本号 -->
             <div class="px-5 pb-4 mb-2 border-b" style="border-color: var(--color-border);">
@@ -71,8 +71,8 @@
 
     <!-- ─────────── 日志抽屉（可折叠，浮动悬浮） ─────────── -->
     <div id="log-panel"
-         class="hidden fixed bottom-0 left-56 right-0 h-72 z-50 flex flex-col"
-         style="background-color: #0F172A; color: #E2E8F0; border-top: 2px solid var(--color-border);">
+         class="hidden fixed bottom-0 right-0 h-72 z-50 flex flex-col"
+         style="left: var(--sidebar-width); background-color: #0F172A; color: #E2E8F0; border-top: 2px solid var(--color-border);">
         <div class="flex items-center justify-between px-4 py-2"
              style="background-color: #1E293B; border-bottom: 1px solid var(--color-border);">
             <span class="text-sm font-semibold">📜 日志（最近 100 条）</span>
