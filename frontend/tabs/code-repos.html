@@ -175,8 +175,8 @@ async function codeLoadRepos() {
                     <div class="text-xs mt-1" style="color: var(--color-muted);">${r.total_chunks || 0} chunks · ${(r.languages || []).join(', ')}</div>
                     <div class="text-[10px] mt-1" style="color: var(--color-muted);">${r.last_scanned ? new Date(r.last_scanned).toLocaleString() : '未扫描'}</div>
                     <div class="flex gap-1 mt-2">
-                        <button onclick="codeRefreshRepo('${escapeHtml(r.name)}')" class="btn btn-secondary text-[10px] py-0.5 px-2">刷新</button>
-                        <button onclick="codeDeleteRepo('${escapeHtml(r.name)}')" class="btn btn-danger text-[10px] py-0.5 px-2">删除</button>
+                        <button onclick="codeRefreshRepo('${escapeHtml(r.name)}')" class="btn btn-secondary text-[10px] py-0.5 px-2" title="增量扫描：对比 mtime，新增/更新/删除变化的文件索引">刷新</button>
+                        <button onclick="codeDeleteRepo('${escapeHtml(r.name)}')" class="btn btn-danger text-[10px] py-0.5 px-2" title="删除该仓库的所有索引（LanceDB向量 + SQLite全文 + 调用关系 + 配置），不影响源代码">删除</button>
                     </div>
                 </div>
             `).join('');
@@ -558,16 +558,51 @@ async function codeOpenInFinder() {
     }
 }
 
-// 刷新指定仓库
+// 刷新指定仓库（与 codeScanRepo 一致的 SSE 体验）
 async function codeRefreshRepo(name) {
     if (!confirm(`确认刷新仓库 ${name}？`)) return;
+
+    const stepsEl = document.getElementById('codeSteps');
+    if (stepsEl) stepsEl.innerHTML = '';
+
     try {
         const res = await fetch(`/api/code/repos/${name}/refresh`, {method: 'POST'});
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail);
-        codeRenderSteps('codeScanProgress', data.steps || []);
-        showToast(`刷新完成: ${data.total_chunks} chunks`, 'success');
-        codeLoadRepos();
+
+        // 后端返回 {status, scan_id, repo_name, message}，订阅 SSE 看进度
+        const scanId = data.scan_id;
+        if (!scanId) throw new Error('后端未返回 scan_id');
+
+        const evtSource = new EventSource(`/api/code/scan/${scanId}/sse`);
+        let steps = [];
+
+        evtSource.addEventListener('progress', (e) => {
+            const entry = JSON.parse(e.data);
+            steps.push(entry);
+            codeRenderScanProgress(steps);
+        });
+
+        evtSource.addEventListener('done', (e) => {
+            const result = JSON.parse(e.data);
+            evtSource.close();
+
+            if (result.status === 'completed') {
+                // done 事件的 data.stats 来自 code_db.get_stats()，含 total_chunks
+                const totalChunks = (result.stats && result.stats.total_chunks) || 0;
+                showToast(`刷新完成: ${totalChunks} chunks`, 'success');
+                codeLoadRepos();
+            } else if (result.status === 'cancelled') {
+                showToast('刷新已取消', 'warning');
+            } else if (result.status === 'error') {
+                showToast('刷新出错: ' + (result.error || ''), 'error');
+            }
+        });
+
+        evtSource.onerror = () => {
+            evtSource.close();
+            showToast('刷新失败: SSE 连接异常', 'error');
+        };
     } catch (e) {
         showToast('刷新失败: ' + e.message, 'error');
     }
