@@ -54,12 +54,14 @@ class TranslationCache:
             self.cache = {}
     
     def _save(self):
-        """保存缓存到文件"""
+        """保存缓存到文件（原子写入：先写临时文件，再 replace）"""
         try:
             os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
             data = {query: asdict(entry) for query, entry in self.cache.items()}
-            with open(self.cache_file, 'w', encoding='utf-8') as f:
+            tmp_file = self.cache_file + '.tmp'
+            with open(tmp_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_file, self.cache_file)
         except Exception as e:
             print(f"[cache] 保存缓存失败: {e}")
     

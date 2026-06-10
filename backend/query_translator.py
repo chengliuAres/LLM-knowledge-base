@@ -533,7 +533,7 @@ async def translate_query_async(
         step_fallback = tracker.add_step("fallback", "查询翻译: 单字回退")
         step_fallback.start()
 
-    fallback_keywords = list(query)  # 按字符拆分
+    fallback_keywords = [query]  # 保留完整查询，让 FTS5 搜索中文 content
     fallback_duration = 0.0
 
     step_info = {
