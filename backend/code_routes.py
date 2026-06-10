@@ -1438,7 +1438,8 @@ async def open_in_finder(payload: dict):
         return {"path": path, "skipped": True, "reason": f"不支持的系统: {system}"}
 
     try:
-        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # start_new_session=True 让子进程脱离父进程组，避免成为 zombie
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     except FileNotFoundError:
         return {"path": path, "skipped": True, "reason": f"未找到命令: {cmd[0]}"}
     return {"path": path, "opened": True}

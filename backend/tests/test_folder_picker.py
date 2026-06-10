@@ -9,7 +9,7 @@
 
 import os
 import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -187,3 +187,17 @@ def test_open_in_finder_missing_path():
     """payload 没 path → 400"""
     res = client.post("/api/code/open-in-finder", json={})
     assert res.status_code == 400
+
+
+def test_open_in_finder_command_not_found(tmp_path, monkeypatch):
+    """系统命令不存在 → skipped: True（最小化 Linux 环境）"""
+    target = tmp_path / "mydir"
+    target.mkdir()
+    monkeypatch.setattr("platform.system", lambda: "Linux")
+
+    with patch("code_routes.subprocess.Popen", side_effect=FileNotFoundError):
+        res = client.post("/api/code/open-in-finder", json={"path": str(target)})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["skipped"] is True
+        assert "未找到命令" in data["reason"]
