@@ -151,18 +151,6 @@ function reloadCurrentTab() {
 }
 
 /**
- * HTML 转义
- */
-function escapeHtml(str) {
-  return window.escapeHtml ? window.escapeHtml(str) : String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-/**
  * 初始化路由
  */
 let _routerInitialized = false;
