@@ -5,21 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Email Wiki — 知识库管理</title>
 
-    <!-- Tailwind CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind runtime（本地 vendor 副本，避免 CDN 慢/被墙） -->
+    <script src="vendor/js/tailwindcss.js"></script>
 
-    <!-- Google Fonts: Fira Code (mono) + Fira Sans (UI) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@300;400;500;600;700&display=swap"
-        rel="stylesheet">
+    <!-- Google Fonts: Fira Code/Sans — 暂时用系统字体（UI 已有 -apple-system/Segoe UI 兜底），避免外部依赖 -->
 
     <!-- 全局暗色主题（侧边栏/侧边栏项/面板/按钮/输入框等） -->
     <link rel="stylesheet" href="css/theme.css">
+    <!-- 术语 hover tooltip 样式 -->
+    <link rel="stylesheet" href="css/glossary.css?v=1">
 
-    <!-- Chart.js（看板图表需要） -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- Chart.js（看板图表需要）— 本地 vendor 副本 -->
+    <script defer src="vendor/js/chart.umd.min.js"></script>
 </head>
 <body class="h-screen">
     <div class="flex h-screen overflow-hidden">
@@ -87,12 +84,140 @@
              style="font-family: var(--font-mono);"></pre>
     </div>
 
+    <!-- ─────────── Agent 设置模态框（body 直属层级，fixed 相对 viewport） ─────────── -->
+    <div id="agent-settings-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+         style="background: rgba(0,0,0,0.6);">
+        <div class="rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+             style="background: var(--color-primary); border: 1px solid var(--color-border);">
+            <div class="flex items-center justify-between gap-2 px-5 py-3 shrink-0"
+                 style="border-bottom: 1px solid var(--color-border);">
+                <h3 class="font-semibold text-base shrink-0" style="color: var(--color-foreground);">⚙️ Agent 设置</h3>
+                <div class="flex items-center gap-2 flex-wrap justify-end">
+                    <button onclick="resetAgentSettings()" class="btn btn-secondary text-xs py-1 px-2.5">恢复默认</button>
+                    <button onclick="saveAgentSettings()" class="btn btn-accent text-xs py-1 px-2.5">保存</button>
+                    <button onclick="closeAgentSettings()" class="btn btn-secondary text-xs py-1 px-2.5">关闭</button>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5 space-y-4" style="min-height: 0;">
+                <div>
+                    <label class="block text-sm font-medium mb-1" style="color: var(--color-foreground);">机器人名称</label>
+                    <input id="agent-bot-name" type="text" class="input text-sm" placeholder="如：知识库管理员">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1" style="color: var(--color-foreground);">风格描述</label>
+                    <input id="agent-bot-style" type="text" class="input text-sm" placeholder="如：专业、严谨、以数据说话">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1" style="color: var(--color-foreground);">System Prompt</label>
+                    <p class="text-xs mb-2" style="color: var(--color-muted);">定义 Agent 的能力范围、工作原则和回答格式</p>
+                    <textarea id="agent-system-prompt" class="input text-sm" rows="16"
+                              style="font-family: var(--font-mono); resize: vertical;"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─────────── 排除规则模态框（body 直属层级，fixed 相对 viewport） ───────────
+         与 agent-settings-modal 同列：避免嵌在 .tab-page 内被 fadeIn transform 干扰。 -->
+    <div id="skip-rules-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.5);">
+        <div class="rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col" style="background: var(--color-primary); border: 1px solid var(--color-border);">
+            <!-- 头部（shrink-0 防止主体溢出时头部被压缩/挤出视口） -->
+            <div class="flex items-center justify-between px-5 py-3 shrink-0" style="border-bottom: 1px solid var(--color-border);">
+                <h3 class="font-semibold text-base shrink-0" style="color: var(--color-foreground);">⚙️ 排除规则</h3>
+                <div class="flex items-center gap-2 flex-wrap justify-end">
+                    <button onclick="refreshSkipRules()" id="skip-rules-refresh-btn" class="btn btn-secondary text-xs py-1 px-2.5">🔄 刷新</button>
+                    <button onclick="openSkipRulesInFinder()" class="btn btn-secondary text-xs py-1 px-2.5">📂 Finder</button>
+                    <button onclick="resetSkipRules()" class="btn btn-secondary text-xs py-1 px-2.5">恢复默认</button>
+                    <button onclick="saveSkipRules()" class="btn btn-accent text-xs py-1 px-2.5">保存</button>
+                    <button onclick="closeSkipRulesModal()" class="btn btn-secondary text-xs py-1 px-2.5">关闭</button>
+                </div>
+            </div>
+
+            <!-- 主体（min-height:0 让 flex-1 + overflow-y-auto 在 flex 容器里正确滚动；
+                 否则主体撑开 max-h-[85vh] 失效，整个 inner 跑出视口） -->
+            <div class="flex-1 overflow-y-auto p-5 space-y-5" style="min-height: 0;">
+                <!-- 预览统计 -->
+                <div id="skip-rules-preview-bar" class="rounded px-3 py-2 text-sm" style="background: rgba(255,255,255,0.04); color: var(--color-muted);">
+                    ⏳ 计算中...
+                </div>
+
+                <!-- .gitignore 目录 -->
+                <div class="rounded p-3" style="background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.25);">
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="text-sm font-semibold" style="color: var(--color-foreground);">📋 .gitignore 目录</h4>
+                        <label class="flex items-center gap-1.5 text-xs cursor-pointer" style="color: var(--color-muted);">
+                            <input id="gitignore-select-all" type="checkbox" checked onchange="toggleGitignoreAll(this.checked)" class="accent-green-600">
+                            <span>全选/取消全选</span>
+                        </label>
+                    </div>
+                    <div id="gitignore-dirs-body" class="text-xs">
+                        <div style="color: var(--color-muted);">加载中…</div>
+                    </div>
+                </div>
+
+                <!-- ── tab 切换：排除目录 / 排除扩展名 ── -->
+                <div class="flex gap-1 border-b shrink-0" style="border-color: var(--color-border);">
+                    <button type="button" data-tab="dirs" onclick="switchSkipTab('dirs')"
+                        class="skip-tab-btn skip-tab-btn-active px-4 py-2 text-sm font-medium">
+                        📁 排除目录
+                    </button>
+                    <button type="button" data-tab="exts" onclick="switchSkipTab('exts')"
+                        class="skip-tab-btn px-4 py-2 text-sm font-medium">
+                        📄 排除扩展名
+                    </button>
+                </div>
+
+                <!-- 排除目录 pane（默认显示） -->
+                <div id="skip-pane-dirs">
+                    <!-- 添加区：移到 tab 内首行（标题下、表格上） -->
+                    <div class="flex gap-2 mb-3">
+                        <input id="skip-dir-input" type="text" placeholder="目录名, 如 node_modules" class="input flex-1 text-xs" style="padding: 6px 10px;">
+                        <select id="skip-dir-category" class="input text-xs shrink-0" style="width: auto; padding: 6px 10px;"></select>
+                        <button onclick="addSkipRule('dirs')" class="btn btn-accent text-xs py-1 px-3 shrink-0">+ 添加</button>
+                    </div>
+                    <table class="w-full rounded text-left text-sm" style="border: 1px solid var(--color-border);">
+                        <thead style="background: rgba(255,255,255,0.04); color: var(--color-muted);">
+                            <tr>
+                                <th class="py-1.5 px-2 font-semibold w-1/3 text-xs">名称</th>
+                                <th class="py-1.5 px-2 font-semibold w-1/3 text-xs">分类</th>
+                                <th class="py-1.5 px-2 font-semibold w-1/3 text-right text-xs">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="skip-dirs-body"></tbody>
+                    </table>
+                </div>
+
+                <!-- 排除扩展名 pane（默认隐藏） -->
+                <div id="skip-pane-exts" class="hidden">
+                    <div class="flex gap-2 mb-3">
+                        <input id="skip-ext-input" type="text" placeholder="扩展名, 如 .lock" class="input flex-1 text-xs" style="padding: 6px 10px;">
+                        <select id="skip-ext-category" class="input text-xs shrink-0" style="width: auto; padding: 6px 10px;"></select>
+                        <button onclick="addSkipRule('exts')" class="btn btn-accent text-xs py-1 px-3 shrink-0">+ 添加</button>
+                    </div>
+                    <table class="w-full rounded text-left text-sm" style="border: 1px solid var(--color-border);">
+                        <thead style="background: rgba(255,255,255,0.04); color: var(--color-muted);">
+                            <tr>
+                                <th class="py-1.5 px-2 font-semibold w-1/3 text-xs">名称</th>
+                                <th class="py-1.5 px-2 font-semibold w-1/3 text-xs">分类</th>
+                                <th class="py-1.5 px-2 font-semibold w-1/3 text-right text-xs">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="skip-exts-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ─────────── 脚本 ─────────── -->
     <script src="js/shared.js?v=5"></script>
     <script src="js/router.js?v=7"></script>
+    <!-- 术语词典 + tooltip（依赖 shared.js 的 window 全局） -->
+    <script src="js/glossary.js?v=1"></script>
+    <script src="js/glossary-tooltip.js?v=1"></script>
     <script>
         // Tab 文件缓存版本号（router.js 用 ?v= 参数强制刷新）
-        window.__TAB_VERSION = '3';
+        window.__TAB_VERSION = '4';
         // 显式启动路由（router.js 也会在 DOMContentLoaded 时自启，这里双保险）
         if (typeof initRouter === "function") {
             initRouter();
