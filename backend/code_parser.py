@@ -4,10 +4,20 @@
 """
 
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
 from code_skip_rules import get_skip_dirs, get_skip_exts
+
+# ── 注释剥离（embedding 前清洗，避免中文注释/字符串干扰跨语言检索）──
+# C 系语言: // 单行 + /* */ 多行
+_C_COMMENT_RE = re.compile(r'//[^\n]*|/\*[\s\S]*?\*/')
+# Python/Ruby/Shell/YAML: # 单行注释
+_HASH_COMMENT_RE = re.compile(r'#[^\n]*')
+# 中文字符连续串：代码中几乎是噪声（注释已被剥离，剩余多为硬编码字符串/测试数据）
+# 剥离后避免跨语言 embedding 模型被中文 query 匹配到代码里的中文字面量
+_CN_STRIP_RE = re.compile(r'[一-鿿㐀-䶿\U00020000-\U0002a6df]+')
 
 # ── tree-sitter Parser 全局缓存 ─────────────────────────────────────
 # tree_sitter_language_pack 的 get_parser() 每次创建全新的 Language+Parser
@@ -776,11 +786,20 @@ def _make_display_text(
     content: str,
     language: str,
 ) -> str:
-    """构造带上下文头部的 display_text，用于 embedding 提升检索质量"""
+    """构造带上下文头部的 display_text，用于 embedding 提升检索质量
+
+    注释会被剥离——中文注释/字符串字面量会误导跨语言 embedding 模型
+    （如中文 query 匹配代码里的中文注释而非符号语义）。
+    """
     if language in ('python', 'ruby', 'shell', 'yaml', 'json'):
         prefix = '#'
+        clean_content = _HASH_COMMENT_RE.sub('', content)
     else:
         prefix = '//'
+        clean_content = _C_COMMENT_RE.sub('', content)
+
+    # 剥离中文字符串（硬编码字符串/测试数据，干扰跨语言检索）
+    clean_content = _CN_STRIP_RE.sub('', clean_content)
 
     if chunk_type == 'file':
         type_info = 'file'
@@ -788,7 +807,7 @@ def _make_display_text(
         type_info = f"{chunk_type}: {symbol_name}"
 
     header = f"{prefix} File: {rel_path} | {type_info} | Lines {line_start}-{line_end}"
-    return f"{header}\n{content}"
+    return f"{header}\n{clean_content}"
 
 
 def chunk_code(

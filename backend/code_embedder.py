@@ -1,7 +1,7 @@
-"""代码 Embedding - multilingual-e5-small
+"""代码 Embedding - bge-small-en-v1.5
 
-multilingual-e5-small: 118M，384-dim，512-token，94语言跨语言模型。
-原生支持中文 query → 英文代码的跨语言检索，不再依赖翻译层架桥。
+bge-small-en-v1.5: 33M，384-dim，512-token，英文通用模型。
+配合 query_translator 中文→英文翻译层，实现中文查询搜索英文代码。
 """
 
 import os
@@ -14,12 +14,11 @@ log = logging.getLogger(__name__)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_CACHE_DIR = os.path.join(PROJECT_ROOT, "models")
 
-_MODEL_NAME = "intfloat/multilingual-e5-small"
+_MODEL_NAME = "BAAI/bge-small-en-v1.5"
 _DIMENSION = 384
-_QUERY_PREFIX = "query: "
-_PASSAGE_PREFIX = "passage: "
-# e5-small token 上限 512；英文代码 ~3 chars/token，1100 chars 在安全域内；
-# 中文注释密集区可能超限，超出截断并 warning
+_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+# bge 模型 passage 侧不加前缀，只在 query 侧加
+# e5-small token 上限 512；英文代码 ~3 chars/token，1100 chars 在安全域内
 _MAX_CHARS = 1100
 
 _model = None
@@ -60,17 +59,17 @@ def get_model() -> SentenceTransformer:
 
 
 def embed_text(text: str) -> list[float]:
-    """passage embedding（索引阶段用，加 passage: 前缀）"""
+    """passage embedding（索引阶段用，不加前缀）"""
     model = get_model()
     if len(text) > _MAX_CHARS:
         log.warning(f"文本过长 ({len(text)} > {_MAX_CHARS})，已截断")
     safe_text = text[:_MAX_CHARS] if len(text) > _MAX_CHARS else text
-    embedding = model.encode(_PASSAGE_PREFIX + safe_text, normalize_embeddings=True)
+    embedding = model.encode(safe_text, normalize_embeddings=True)
     return embedding.tolist()
 
 
 def embed_query(text: str) -> list[float]:
-    """query embedding（搜索阶段用，加 query: 前缀）"""
+    """query embedding（搜索阶段用，加 bge 前缀）"""
     model = get_model()
     if len(text) > _MAX_CHARS:
         log.warning(f"查询过长 ({len(text)} > {_MAX_CHARS})，已截断")
@@ -80,12 +79,12 @@ def embed_query(text: str) -> list[float]:
 
 
 def embed_batch(texts: list[str]) -> list[list[float]]:
-    """批量 embedding（索引阶段用，加 passage: 前缀）"""
+    """批量 embedding（索引阶段用，不加前缀）"""
     model = get_model()
     truncated = sum(1 for t in texts if len(t) > _MAX_CHARS)
     if truncated:
         log.warning(f"批量 embedding: {truncated}/{len(texts)} 条文本过长，已截断")
-    safe_texts = [_PASSAGE_PREFIX + (t[:_MAX_CHARS] if len(t) > _MAX_CHARS else t) for t in texts]
+    safe_texts = [(t[:_MAX_CHARS] if len(t) > _MAX_CHARS else t) for t in texts]
     embeddings = model.encode(safe_texts, normalize_embeddings=True, batch_size=64)
     return embeddings.tolist()
 
