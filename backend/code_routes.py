@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from step_tracker import StepTracker
 from code_parser import parse_repo, scan_directory
-from code_db import insert_chunks, delete_by_repo, delete_by_file, get_stats
+from code_db import insert_chunks, delete_by_repo, delete_by_file, get_stats, get_storage_stats
 from code_skip_rules import get_skip_rules, save_skip_rules, reset_skip_rules, parse_gitignore_dirs, open_config_in_finder, get_skip_dirs, get_skip_exts
 from code_search import search_code
 from code_config import (
@@ -674,11 +674,12 @@ async def stats_endpoint():
 
 @router.get("/dashboard")
 async def code_dashboard_endpoint():
-    """代码知识库仪表盘：总览 + 仓库清单 + embedder 信息"""
+    """代码知识库仪表盘：总览 + 仓库清单 + embedder 信息 + 存储占用"""
     from code_embedder import get_code_model_info
 
     db_stats = get_stats()
     repos_cfg = list_repos()
+    storage_stats = get_storage_stats()
 
     # 合并 stats 与 config：按 repo_name 索引以便补充 last_scanned/languages
     by_repo = db_stats.get("by_repo", {})  # {repo_name: count}
@@ -701,6 +702,7 @@ async def code_dashboard_endpoint():
         "by_chunk_type": db_stats.get("by_chunk_type", {}),
         "repos": repos_view,
         "embedder": get_code_model_info(),
+        "storage": storage_stats,
     }
 
 

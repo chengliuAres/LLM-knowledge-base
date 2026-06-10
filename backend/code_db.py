@@ -627,6 +627,96 @@ def get_stats() -> dict:
         return {"total_chunks": 0, "total_repos": 0, "by_language": {}, "by_chunk_type": {}, "by_repo": {}}
 
 
+def get_storage_stats() -> dict:
+    """获取代码知识库存储占用统计"""
+    import os
+    
+    def get_dir_size(path):
+        """获取目录大小（字节）"""
+        total = 0
+        try:
+            with os.scandir(path) as it:
+                for entry in it:
+                    if entry.is_file():
+                        total += entry.stat().st_size
+                    elif entry.is_dir():
+                        total += get_dir_size(entry.path)
+        except (OSError, PermissionError):
+            pass
+        return total
+    
+    def get_file_size(path):
+        """获取文件大小（字节）"""
+        try:
+            return os.path.getsize(path)
+        except OSError:
+            return 0
+    
+    def format_size(size_bytes):
+        """格式化文件大小"""
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        elif size_bytes < 1024 * 1024:
+            return f"{size_bytes / 1024:.1f} KB"
+        elif size_bytes < 1024 * 1024 * 1024:
+            return f"{size_bytes / (1024 * 1024):.1f} MB"
+        else:
+            return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+    
+    # 数据目录路径
+    data_dir = os.path.join(PROJECT_ROOT, "data")
+    
+    # 各个文件/目录的大小
+    storage_info = {
+        "code_lancedb": {
+            "path": LANCEDB_PATH,
+            "size_bytes": get_dir_size(LANCEDB_PATH),
+            "size_formatted": format_size(get_dir_size(LANCEDB_PATH)),
+            "description": "代码向量数据库 (LanceDB)"
+        },
+        "code_index_db": {
+            "path": SQLITE_PATH,
+            "size_bytes": get_file_size(SQLITE_PATH),
+            "size_formatted": format_size(get_file_size(SQLITE_PATH)),
+            "description": "代码索引 (SQLite FTS5)"
+        },
+        "code_repos_json": {
+            "path": os.path.join(data_dir, "code_repos.json"),
+            "size_bytes": get_file_size(os.path.join(data_dir, "code_repos.json")),
+            "size_formatted": format_size(get_file_size(os.path.join(data_dir, "code_repos.json"))),
+            "description": "仓库配置 (JSON)"
+        },
+        "code_skip_rules_json": {
+            "path": os.path.join(data_dir, "code_skip_rules.json"),
+            "size_bytes": get_file_size(os.path.join(data_dir, "code_skip_rules.json")),
+            "size_formatted": format_size(get_file_size(os.path.join(data_dir, "code_skip_rules.json"))),
+            "description": "跳过规则 (JSON)"
+        },
+        "code_agent_config_json": {
+            "path": os.path.join(data_dir, "code_agent_config.json"),
+            "size_bytes": get_file_size(os.path.join(data_dir, "code_agent_config.json")),
+            "size_formatted": format_size(get_file_size(os.path.join(data_dir, "code_agent_config.json"))),
+            "description": "Agent 配置 (JSON)"
+        },
+        "translation_cache_json": {
+            "path": os.path.join(data_dir, "translation_cache.json"),
+            "size_bytes": get_file_size(os.path.join(data_dir, "translation_cache.json")),
+            "size_formatted": format_size(get_file_size(os.path.join(data_dir, "translation_cache.json"))),
+            "description": "翻译缓存 (JSON)"
+        }
+    }
+    
+    # 计算总大小
+    total_size = sum(item["size_bytes"] for item in storage_info.values())
+    
+    return {
+        "storage": storage_info,
+        "total_size_bytes": total_size,
+        "total_size_formatted": format_size(total_size),
+        "data_directory": data_dir
+    }
+
+
 def get_chunks_by_file(repo_name: str, file_path: str) -> list[dict]:
     """获取指定文件的所有 chunks (用于 code_file_context MCP tool)"""
     table = get_table()

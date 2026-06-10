@@ -142,11 +142,13 @@
                     <p class="font-medium text-sm" style="color: var(--color-foreground);">代码向量数据库 (LanceDB)</p>
                     <code class="text-xs block mt-1 px-2 py-1 rounded"
                           style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">data/code_lancedb/</code>
+                    <p id="cdStorageLanceDB" class="text-xs mt-1" style="color: var(--color-muted);">-</p>
                 </div>
                 <div>
                     <p class="font-medium text-sm" style="color: var(--color-foreground);">代码索引 (SQLite FTS5)</p>
                     <code class="text-xs block mt-1 px-2 py-1 rounded"
                           style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">data/code_index.db</code>
+                    <p id="cdStorageSQLite" class="text-xs mt-1" style="color: var(--color-muted);">-</p>
                 </div>
             </div>
             <div class="space-y-3">
@@ -154,11 +156,38 @@
                     <p class="font-medium text-sm" style="color: var(--color-foreground);">仓库配置 (JSON)</p>
                     <code class="text-xs block mt-1 px-2 py-1 rounded"
                           style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">data/code_repos.json</code>
+                    <p id="cdStorageReposJson" class="text-xs mt-1" style="color: var(--color-muted);">-</p>
                 </div>
                 <div>
                     <p class="font-medium text-sm" style="color: var(--color-foreground);">跳过规则 (JSON)</p>
                     <code class="text-xs block mt-1 px-2 py-1 rounded"
                           style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">data/code_skip_rules.json</code>
+                    <p id="cdStorageSkipRules" class="text-xs mt-1" style="color: var(--color-muted);">-</p>
+                </div>
+            </div>
+        </div>
+        <!-- 存储占用总览 -->
+        <div class="mt-4 pt-4" style="border-top: 1px solid var(--color-border);">
+            <div class="flex items-center justify-between">
+                <p class="font-medium text-sm" style="color: var(--color-foreground);">📊 存储占用总览</p>
+                <p id="cdStorageTotal" class="text-lg font-bold" style="color: #C4B5FD;">-</p>
+            </div>
+            <div class="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2">
+                <div class="text-center p-2 rounded" style="background-color: rgba(168, 85, 247, 0.10);">
+                    <p class="text-xs" style="color: #D8B4FE;">LanceDB</p>
+                    <p id="cdStorageLanceDBPercent" class="text-sm font-bold" style="color: #E9D5FF;">-</p>
+                </div>
+                <div class="text-center p-2 rounded" style="background-color: rgba(59, 130, 246, 0.10);">
+                    <p class="text-xs" style="color: #93C5FD;">SQLite</p>
+                    <p id="cdStorageSQLitePercent" class="text-sm font-bold" style="color: #BFDBFE;">-</p>
+                </div>
+                <div class="text-center p-2 rounded" style="background-color: rgba(34, 197, 94, 0.10);">
+                    <p class="text-xs" style="color: #86EFAC;">配置文件</p>
+                    <p id="cdStorageConfigPercent" class="text-sm font-bold" style="color: #BBF7D0;">-</p>
+                </div>
+                <div class="text-center p-2 rounded" style="background-color: rgba(245, 158, 11, 0.10);">
+                    <p class="text-xs" style="color: #FCD34D;">其他</p>
+                    <p id="cdStorageOtherPercent" class="text-sm font-bold" style="color: #FDE68A;">-</p>
                 </div>
             </div>
         </div>
@@ -177,7 +206,7 @@
  *   /api/code/repos          → 仓库明细
  *   /api/performance/trend   → 趋势（type=code_search/code_chat/code_trace）
  *   /api/performance/breakdown → Step 拆解
- *   /api/stats?db_type=code  → Code LanceDB 磁盘（待后端扩展，暂显示 -）
+ *   /api/code/dashboard      → 存储占用统计
  * ============================================================ */
 
 // Chart 实例引用（避免重复创建）
@@ -197,7 +226,7 @@ window.initCodeDashboard = function () {
     refreshCodeDashboard();
 };
 
-// ─── 刷新看板（拉取 stats + repos + 趋势 + 拆解 + 性能） ─────
+// ─── 刷新看板（拉取 stats + repos + 趋势 + 拆解 + 性能 + 存储） ─────
 async function refreshCodeDashboard() {
     const btn = document.getElementById('codeDashRefreshBtn');
     const icon = document.getElementById('codeDashRefreshIcon');
@@ -217,6 +246,7 @@ async function refreshCodeDashboard() {
         renderCodeRepoTable(repos.repos || []);
         await Promise.all([loadCodeTrend(), loadCodeBreakdown()]);
         await loadCodePerfCards();
+        await loadCodeStorageStats();
         const now = new Date();
         const hh = String(now.getHours()).padStart(2, '0');
         const mm = String(now.getMinutes()).padStart(2, '0');
@@ -331,6 +361,54 @@ async function loadCodePerfCards() {
     }));
 }
 
+// ─── 存储占用统计 ──────────────────────────────────────
+async function loadCodeStorageStats() {
+    try {
+        const res = await fetch('/api/code/dashboard');
+        const data = await res.json();
+        const storage = data.storage || {};
+        const storageInfo = storage.storage || {};
+        
+        // 更新各个存储项的大小显示
+        const lanceDB = storageInfo.code_lancedb || {};
+        const sqlite = storageInfo.code_index_db || {};
+        const reposJson = storageInfo.code_repos_json || {};
+        const skipRules = storageInfo.code_skip_rules_json || {};
+        
+        document.getElementById('cdStorageLanceDB').textContent = lanceDB.size_formatted || '-';
+        document.getElementById('cdStorageSQLite').textContent = sqlite.size_formatted || '-';
+        document.getElementById('cdStorageReposJson').textContent = reposJson.size_formatted || '-';
+        document.getElementById('cdStorageSkipRules').textContent = skipRules.size_formatted || '-';
+        
+        // 更新总览
+        const totalSize = storage.total_size_bytes || 0;
+        const totalFormatted = storage.total_size_formatted || '-';
+        document.getElementById('cdStorageTotal').textContent = totalFormatted;
+        
+        // 计算百分比
+        if (totalSize > 0) {
+            const lanceDBPercent = ((lanceDB.size_bytes || 0) / totalSize * 100).toFixed(1);
+            const sqlitePercent = ((sqlite.size_bytes || 0) / totalSize * 100).toFixed(1);
+            
+            // 配置文件总大小
+            const configSize = (reposJson.size_bytes || 0) + (skipRules.size_bytes || 0) + 
+                              (storageInfo.code_agent_config_json?.size_bytes || 0) + 
+                              (storageInfo.translation_cache_json?.size_bytes || 0);
+            const configPercent = (configSize / totalSize * 100).toFixed(1);
+            
+            // 其他
+            const otherPercent = (100 - parseFloat(lanceDBPercent) - parseFloat(sqlitePercent) - parseFloat(configPercent)).toFixed(1);
+            
+            document.getElementById('cdStorageLanceDBPercent').textContent = `${lanceDBPercent}%`;
+            document.getElementById('cdStorageSQLitePercent').textContent = `${sqlitePercent}%`;
+            document.getElementById('cdStorageConfigPercent').textContent = `${configPercent}%`;
+            document.getElementById('cdStorageOtherPercent').textContent = `${otherPercent}%`;
+        }
+    } catch (err) {
+        console.error('loadCodeStorageStats failed:', err);
+    }
+}
+
 // ─── 耗时趋势图（折线） ──────────────────────────────────
 async function loadCodeTrend() {
     const type = document.getElementById('cdTrendType').value;
@@ -409,6 +487,7 @@ window.renderCodeRepoTable = renderCodeRepoTable;
 window.loadCodePerfCards = loadCodePerfCards;
 window.loadCodeTrend = loadCodeTrend;
 window.loadCodeBreakdown = loadCodeBreakdown;
+window.loadCodeStorageStats = loadCodeStorageStats;
 
 // 术语图例渲染（与 doc-dashboard 共享实现；如已定义则跳过）
 if (typeof renderBreakdownGlossary === "undefined") {
