@@ -48,11 +48,11 @@ def test_resolve_path_multiple(tmp_path):
     assert "matches" in data
     assert len(data["matches"]) == 2
     assert str(tmp_path / "myrepo") in data["matches"]
+    assert str(tmp_path / "sub" / "myrepo") in data["matches"]
 
 
 def test_resolve_path_not_found(tmp_path):
     """无匹配 → 404"""
-    (tmp_path / "other").mkdir()
     res = client.get(f"/api/code/resolve-path?name=missing&parent={tmp_path}")
     assert res.status_code == 404
 
@@ -60,7 +60,7 @@ def test_resolve_path_not_found(tmp_path):
 def test_resolve_path_skips_hidden(tmp_path):
     """隐藏目录不被算入"""
     (tmp_path / ".hiddenrepo").mkdir()
-    res = client.get(f"/api/code/resolve-path?name=hiddenrepo&parent={tmp_path}")
+    res = client.get(f"/api/code/resolve-path?name=.hiddenrepo&parent={tmp_path}")
     assert res.status_code == 404
 
 
