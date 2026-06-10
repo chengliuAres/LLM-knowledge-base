@@ -333,12 +333,14 @@ function renderBreakdownGlossary(containerId, labels) {
     // 收集所有出现过的术语 key (去重)
     const seen = new Set();
     const items = [];
+    // 提一次排序 + 用 SSOT 的转义函数, 避免 key 含正则元字符时崩
+    const keys = Object.keys(window.GLOSSARY || {}).sort((a, b) => b.length - a.length);
+    const escape = window._glossaryEscapeRegExp || (s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
     for (const label of labels) {
         if (typeof label !== "string") continue;
-        const keys = Object.keys(window.GLOSSARY || {}).sort((a, b) => b.length - a.length);
         for (const key of keys) {
             if (seen.has(key)) continue;
-            const re = new RegExp(key, "i");
+            const re = new RegExp(escape(key), "i");
             if (re.test(label)) {
                 seen.add(key);
                 items.push(key);
