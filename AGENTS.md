@@ -141,3 +141,33 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 | 端点 | 说明 |
 |------|------|
 | `/mcp/sse` | MCP SSE 传输端点，暴露 code_search / code_chat / code_list_repos / code_file_context / code_trace 五个 tools |
+
+## 前端开发规范
+
+### Tab HTML 修改必须 bump `__TAB_VERSION`
+
+**位置**：`frontend/index.html:220` 附近的 `window.__TAB_VERSION = 'N';`
+
+**触发场景**：任何对 `frontend/tabs/*.html` 文件的修改（新增/删除/重命名 DOM 元素、改 JS、改 CSS 引用）。
+
+**为什么必做**：
+- `frontend/js/router.js:71` 用 `?v=__TAB_VERSION` 作为 cache-busting query 拉 tab HTML
+- router 在 `_cache[key]` 命中时**不会重新 fetch**（只在新 URL `?v=` 变化时才会重新走 fetch 分支）
+- 不 bump 会导致：开发时改了 tab 文件，浏览器看到的还是上次 fetch 的旧 DOM，**修改不生效**（用户报"代码改完没反应"）
+
+**正确做法**：
+1. 改完 `tabs/*.html` 后，**同步**把 `frontend/index.html` 的 `__TAB_VERSION` 数字 +1
+2. 在 commit message 中说明 bump（如 `fix(xxx): 改 Y 后 bump __TAB_VERSION=6`）
+3. 提醒用户浏览器**硬刷新**（Cmd+Shift+R）或 console 跑 `window.reloadCurrentTab()`
+
+**反面教材**：2026-06-10 glossary 功能 commit 后没 bump，柳哥访问 code/dashboard tab 时图例容器加载不出来，调试 5 分钟才发现是 cache 问题。
+
+### 全局资源引入位置
+
+| 类型 | 引入位置 | 顺序要求 |
+|------|----------|----------|
+| CSS | `frontend/index.html:14-16` 区域（`theme.css` 之后） | 自身 CSS 在被引用的 CSS 之后 |
+| JS | `frontend/index.html:212-217` 区域（`router.js` 之后） | 自身 JS 在依赖的 JS 之后 |
+| 共享 JS 函数 | 优先在 `frontend/js/shared.js`；不污染则放模块自带的 `js/` | — |
+
+修改全局 JS 暴露的 `window.*` API 时，记得同步检查 4 个面板 + shared.js 的使用点。
