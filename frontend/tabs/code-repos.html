@@ -17,15 +17,6 @@
                 <div id="codeQuickPaths" class="flex flex-wrap gap-1 mb-2"></div>
                 <!-- 目录浏览器 -->
                 <div id="codeFolderBrowser" class="hidden border rounded max-h-48 overflow-y-auto text-sm mb-2" style="background: var(--color-background); border-color: var(--color-border);"></div>
-                <select id="codeProjectType" class="input w-full mb-2">
-                    <option value="ios">iOS</option>
-                    <option value="macos">macOS</option>
-                    <option value="android">Android</option>
-                    <option value="flutter">Flutter</option>
-                    <option value="rn">React Native</option>
-                    <option value="kmp">KMP</option>
-                    <option value="generic">通用</option>
-                </select>
                 <div class="flex gap-2">
                     <button onclick="codeScanRepo()" id="codeScanBtn" class="btn btn-accent flex-1">🔍 开始扫描</button>
                     <button onclick="openSkipRulesModal()" class="btn btn-secondary shrink-0" title="排除规则">⚙️</button>
@@ -305,7 +296,6 @@ function _resetScanBtn() {
 async function codeScanRepo() {
     const name = document.getElementById('codeRepoName').value.trim();
     const path = document.getElementById('codeRepoPath').value.trim();
-    const type = document.getElementById('codeProjectType').value;
     if (!name || !path) return showToast('请填写仓库名和路径', 'warning');
 
     const btn = document.getElementById('codeScanBtn');
@@ -323,7 +313,7 @@ async function codeScanRepo() {
         const res = await fetch('/api/code/scan', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({repo_name: name, repo_path: path, project_type: type, languages: []}),
+            body: JSON.stringify({repo_name: name, repo_path: path, languages: []}),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || '扫描启动失败');
