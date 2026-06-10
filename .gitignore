@@ -30,3 +30,8 @@ Thumbs.db
 # Generated diagram PNGs (rebuild from SVGs)
 diagram/*@2x.png
 .superpowers/
+
+# Node / vendor
+backend/node_modules/
+frontend/vendor/
+

@@ -12,10 +12,13 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 # 一键启动（自动创建 venv 并安装依赖）
 ./start.sh
 
+# 一键停止
+./stop.sh
+
 # 手动启动
 cd backend
 source venv/bin/activate
-python3 main.py
+python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 # 访问: http://localhost:8000
 ```
 
@@ -30,14 +33,14 @@ LLM_BASE_URL=https://api.openai.com/v1
 LLM_MODEL=gpt-3.5-turbo
 ```
 
-> **注意**：`llm_client.py` 中硬编码了小米 MiMo 的 API Key 作为默认值，`LLM_PROVIDER` 未设置时默认走 xiaomi。
+> **注意**：`llm_client.py` 优先读取环境变量，`LLM_PROVIDER` 未设置时默认走 xiaomi（小米 MiMo）。API Key 配置在 `backend/.env` 中。
 
 ## 架构要点
 
 ### 数据流
 
 ```
-文档上传 → parser.py（分块）→ embedder.py（384维向量）→ db.py（LanceDB）
+文档上传 → parser.py（分块）→ embedder.py（768维向量）→ db.py（LanceDB）
 邮件导入 → email_db.py（SQLite）→ email_parser.py（转换分块）→ embedder.py → db.py
 代码扫描 → code_parser.py（tree-sitter AST 分块 + 调用关系提取）→ code_embedder.py → code_db.py（LanceDB + SQLite FTS5 + code_relations）
 用户查询 → embedder.py（查询向量化）→ db.py/code_db.py（向量搜索）→ llm_client.py（RAG）
@@ -52,7 +55,7 @@ MCP 调用 → code_mcp.py（MCP tools）→ code_search.py / llm_client.py
 - **相似度计算**：LanceDB 使用余弦距离（cosine），通过 `(1 - distance + 1) / 2` 转换为 `[0,1]` 相似度分数，低于 0.3 的结果被过滤
 - **搜索能力边界**：`/api/search` 和 `/api/chat` 走向量搜索（LanceDB）；`/api/emails/search` 走 SQL `LIKE`（仅搜 SQLite 原始邮件，不走向量）
 - **步骤追踪**：`StepTracker` 贯穿搜索/问答/导入全链路，每步耗时透传前端展示
-- **前端**：Hash SPA 路由 + 懒加载 tab HTML 片段（10 个独立 tab），Tailwind CDN + 暗色主题 CSS 变量，无构建步骤，FastAPI 直接 serve
+- **前端**：Hash SPA 路由 + 懒加载 tab HTML 片段（10 个独立 tab），Tailwind 本地运行时（vendor/js/tailwindcss.js）+ 暗色主题 CSS 变量，无构建步骤，FastAPI 直接 serve
 
 ### LanceDB 表结构（`documents` 表）
 
@@ -90,10 +93,16 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 | `data/code_lancedb/` | 代码向量数据库（独立目录） |
 | `data/code_index.db` | 代码 SQLite FTS5 全文索引 + 调用关系表（`code_relations`） |
 | `data/code_repos.json` | 已索引仓库的配置和状态 |
+| `data/code_skip_rules.json` | 代码扫描跳过规则配置 |
+| `data/code_agent_config.json` | Agent 配置（bot_name/system_prompt） |
+| `data/metrics.db` | 性能指标数据库（step 级耗时记录 + 基线快照） |
+| `data/translation_cache.json` | 翻译缓存（中文→英文代码关键词） |
+| `data/logs/` | 应用日志目录（app.log，TimedRotatingFileHandler） |
 | `uploads/` | 用户上传的原始文件 |
 
 ### 各模块职责
 
+**核心模块：**
 - `main.py`：FastAPI 路由入口，协调各模块
 - `parser.py`：PDF/TXT/MD/DOCX 解析 → 按段落分块（≤500字符）
 - `embedder.py`：sentence-transformers 单例封装，`embed_text` / `embed_batch`
@@ -102,14 +111,32 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 - `email_parser.py`：邮件 dict → LanceDB 兼容的 chunk 列表（file_type=`.eml`）
 - `llm_client.py`：OpenAI 兼容客户端，支持流式/非流式，`build_rag_prompt` 构造提示词
 - `step_tracker.py`：轻量执行步骤记录器（`Step` dataclass）
-- `code_parser.py`：tree-sitter AST 解析 + 混合分块 + 调用关系提取（代码知识库）
-- `code_db.py`：LanceDB + SQLite FTS5 双存储 + 调用关系表 `code_relations`（代码知识库）
-- `code_search.py`：混合搜索 + RRF 融合排序 + `trace_code` 调用链追踪（代码知识库）
+
+**代码知识库模块：**
+- `code_parser.py`：tree-sitter AST 解析 + 混合分块 + 调用关系提取
+- `code_embedder.py`：代码专用 Embedding 模型封装（BAAI/bge-small-en-v1.5）
+- `code_db.py`：LanceDB + SQLite FTS5 双存储 + 调用关系表 `code_relations`
+- `code_search.py`：混合搜索 + RRF 融合排序 + `trace_code` 调用链追踪
 - `code_routes.py`：代码知识库 REST API 路由
 - `code_mcp.py`：MCP server + tools（SSE 传输）
 - `code_config.py`：扫描配置管理（code_repos.json）
+- `code_skip_rules.py`：可配置排除规则（skip_dirs/skip_exts）
+
+**工具模块：**
+- `text_utils.py`：中文文本处理（jieba 分词 + FTS5 查询适配）
+- `query_translator.py`：中文查询 → 英文代码关键词翻译（本地词典 > 缓存 > API > LLM）
+- `translation_cache.py`：翻译缓存层，持久化缓存翻译结果
+- `match_reasons.py`：搜索结果归因，解释每条结果为什么被匹配上
+
+**运维模块：**
+- `logging_setup.py`：日志系统 SSOT（唯一初始化入口，幂等）
+- `log_routes.py`：日志对外 API（tail 拉最近 N 行 + export zip 下载）
+- `metrics_db.py`：性能指标数据库（SQLite 存储 step 级耗时记录与基线快照）
+- `lancedb_inspect.py`：LanceDB 内省工具（schema/count/fragments/versions 只读探查）
 
 ## API 接口
+
+### 文档与邮件
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -118,23 +145,103 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 | POST | `/api/chat` | RAG 问答，支持 `stream: true` |
 | POST | `/api/emails/import` | 从 SQLite 邮件库导入到 LanceDB |
 | GET | `/api/documents` | 文档列表（按文件名聚合） |
+| GET | `/api/documents/{filename}/open` | 用系统默认应用打开文档 |
+| GET | `/api/documents/{filename}/show-in-finder` | 在 Finder 中显示文档 |
 | GET | `/api/emails` | 邮件列表 |
 | GET | `/api/emails/search` | 关键词搜索邮件 |
 | DELETE | `/api/documents/{filename}` | 删除文档及其所有 chunks |
 | GET | `/api/stats` | 文档库 + 邮件库统计 |
 
+### 性能监控
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/performance/trend` | 性能趋势数据 |
+| GET | `/api/performance/breakdown` | 性能分析 breakdown |
+| GET | `/api/performance/baselines` | 性能基线快照 |
+
+### LanceDB 检查
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/lancedb/inspect` | 文档 LanceDB schema/统计 |
+| GET | `/api/lancedb/rows` | 文档 LanceDB 行数据 |
+| POST | `/api/lancedb/demo/insert` | 演示插入数据 |
+| POST | `/api/lancedb/demo/search` | 演示搜索数据 |
+
+### 日志系统
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/logs/tail` | 拉最近 N 行日志 |
+| GET | `/api/logs/export` | zip 下载日志文件 |
+
+### 用户
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/user/home` | 用户 home 目录路径 |
+
 ### 代码知识库 API（`code_routes.py`）
+
+**扫描与搜索：**
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/code/scan` | 扫描目录，建立代码索引 |
+| GET | `/api/code/scan/{scan_id}/sse` | 扫描进度 SSE 流 |
+| POST | `/api/code/scan/{scan_id}/cancel` | 取消扫描 |
 | POST | `/api/code/search` | 混合搜索（向量+关键词） |
 | POST | `/api/code/chat` | RAG 代码问答，支持流式 |
-| GET | `/api/code/repos` | 已索引的仓库列表 |
-| GET | `/api/code/stats` | 代码索引统计信息 |
-| DELETE | `/api/code/repos/{name}` | 删除仓库索引 |
-| POST | `/api/code/repos/{name}/refresh` | 全量刷新仓库（幂等） |
 | POST | `/api/code/trace` | 调用链追踪（symbol/direction/depth） |
+| GET | `/api/code/browse` | 浏览代码文件 |
+
+**仓库管理：**
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/code/repos` | 已索引的仓库列表 |
+| DELETE | `/api/code/repos` | 删除所有仓库索引 |
+| DELETE | `/api/code/repos/{name}` | 删除指定仓库索引 |
+| POST | `/api/code/repos/{name}/refresh` | 全量刷新仓库（幂等） |
+
+**扫描配置：**
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/code/skip-rules` | 获取跳过规则 |
+| PUT | `/api/code/skip-rules` | 更新跳过规则 |
+| POST | `/api/code/skip-rules/reset` | 重置为默认规则 |
+| POST | `/api/code/skip-rules/preview` | 预览规则效果 |
+| POST | `/api/code/skip-rules/open-finder` | 在 Finder 中打开规则文件 |
+| GET | `/api/code/gitignore-dirs` | 获取 gitignore 中的目录列表 |
+
+**Agent 配置：**
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/code/agent-config` | 获取 agent 配置（bot_name/system_prompt） |
+| PUT | `/api/code/agent-config` | 更新 agent 配置 |
+| POST | `/api/code/agent-config/reset` | 重置为默认配置 |
+
+**LanceDB 检查：**
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/code/stats` | 代码索引统计信息 |
+| GET | `/api/code/dashboard` | 代码仪表盘数据 |
+| GET | `/api/code/lancedb/inspect` | 代码 LanceDB schema/统计 |
+| GET | `/api/code/lancedb/rows` | 代码 LanceDB 行数据 |
+| POST | `/api/code/lancedb/demo/insert` | 演示插入代码数据 |
+| POST | `/api/code/lancedb/demo/search` | 演示搜索代码数据 |
+| POST | `/api/code/fts/migrate-chinese` | 中文分词迁移 |
+
+**工具：**
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/code/resolve-path` | 解析路径（相对→绝对） |
+| POST | `/api/code/open-in-finder` | 在 Finder 中打开路径 |
 
 ### MCP 端点
 
@@ -171,3 +278,29 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 | 共享 JS 函数 | 优先在 `frontend/js/shared.js`；不污染则放模块自带的 `js/` | — |
 
 修改全局 JS 暴露的 `window.*` API 时，记得同步检查 4 个面板 + shared.js 的使用点。
+
+## 项目文件说明
+
+### TODO.md — 待解决问题追踪
+
+**作用**：记录项目中已知但尚未修复的问题（性能瓶颈、UI 卡顿、待优化项等），按类别分组，每条包含现象、实测数据、可疑根因、优化方案和优先级。
+
+**何时更新**：
+- 发现新的性能问题或体验 bug 但当前不修时，追加到对应分类
+- 问题修复后，从 TODO.md 中删除对应条目（可移入 CHANGELOG.md 记录）
+
+**何时读取**：
+- 开始新功能开发前，检查是否有相关待办需要顺手解决
+- 做性能优化专项时，作为问题清单
+
+### REGRESSION_TEST.md — 回归测试文档
+
+**作用**：记录项目的回归测试用例，覆盖服务启动、API 巡检、代码搜索、前端功能等测试点，每个测试点包含测试方法和预期结果。
+
+**何时更新**：
+- 新增 API 端点后，补充对应的测试用例
+- 发现新的测试场景或边界条件时
+
+**何时读取**：
+- 重大改动前，确认测试覆盖范围
+- 提交 PR 前，跑一遍回归测试确认无破坏性变更

@@ -38,34 +38,7 @@
     </div>
 </div>
 
-<!-- Agent 设置模态框 -->
-<div id="agent-settings-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.5);">
-    <div class="rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col" style="background: var(--color-primary); border: 1px solid var(--color-border);">
-        <div class="flex items-center justify-between px-5 py-3" style="border-bottom: 1px solid var(--color-border);">
-            <h3 class="font-semibold text-base" style="color: var(--color-foreground);">⚙️ Agent 设置</h3>
-            <div class="flex items-center gap-2">
-                <button onclick="resetAgentSettings()" class="btn btn-secondary text-xs py-1 px-2.5">恢复默认</button>
-                <button onclick="saveAgentSettings()" class="btn btn-accent text-xs py-1 px-2.5">保存</button>
-                <button onclick="closeAgentSettings()" class="btn btn-secondary text-xs py-1 px-2.5">关闭</button>
-            </div>
-        </div>
-        <div class="flex-1 overflow-y-auto p-5 space-y-4">
-            <div>
-                <label class="block text-sm font-medium mb-1" style="color: var(--color-foreground);">机器人名称</label>
-                <input id="agent-bot-name" type="text" class="input text-sm" placeholder="如：知识库管理员">
-            </div>
-            <div>
-                <label class="block text-sm font-medium mb-1" style="color: var(--color-foreground);">风格描述</label>
-                <input id="agent-bot-style" type="text" class="input text-sm" placeholder="如：专业、严谨、以数据说话">
-            </div>
-            <div>
-                <label class="block text-sm font-medium mb-1" style="color: var(--color-foreground);">System Prompt</label>
-                <p class="text-xs mb-2" style="color: var(--color-muted);">定义 Agent 的能力范围、工作原则和回答格式</p>
-                <textarea id="agent-system-prompt" class="input text-sm" rows="16" style="font-family: var(--font-mono); resize: vertical;"></textarea>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- Agent 设置模态框定义在 index.html（body 直属层级），避免被 main 的 overflow 裁剪 -->
 
 <script>
 let isCodeChatting = false;
@@ -93,6 +66,24 @@ window.initCodeChat = function () {
         });
     }
 };
+
+// ── 渲染参考来源 ────────────────────────────────────────────
+function renderCodeSources(sources) {
+    if (!sources || sources.length === 0) return;
+    document.getElementById('codeChatSources').classList.remove('hidden');
+    document.getElementById('codeSourcesList').innerHTML = sources.map((s, i) => `
+        <div class="rounded p-3" style="background-color: rgba(255, 255, 255, 0.04); border-left: 2px solid var(--color-accent);">
+            <div class="flex items-start gap-2 flex-wrap">
+                <span class="text-xs font-medium" style="color: var(--color-accent);">[${i + 1}]</span>
+                <code class="text-xs" style="color: var(--color-foreground); font-family: var(--font-mono);">${escapeHtml(s.file_path || '')}</code>
+                <span class="text-xs px-1.5 py-0.5 rounded" style="background: var(--color-border); color: var(--color-muted);">L${s.line_start}-${s.line_end || s.line_start}</span>
+                ${s.symbol_name ? `<span class="text-xs font-medium" style="color: var(--color-accent);">${escapeHtml(s.symbol_name)}</span>` : ''}
+                ${s.score ? `<span class="text-xs ml-auto" style="color: var(--color-muted);">${(s.score * 100).toFixed(1)}%</span>` : ''}
+            </div>
+            ${s.content ? `<pre class="text-xs mt-2 px-2 py-1.5 rounded overflow-x-auto" style="background: var(--color-background); color: var(--color-muted); font-family: var(--font-mono); max-height: 120px; white-space: pre-wrap;">${escapeHtml(s.content.substring(0, 300))}</pre>` : ''}
+        </div>
+    `).join('');
+}
 
 // ── 发送问答 ────────────────────────────────────────────────
 async function handleCodeChat() {
@@ -151,39 +142,55 @@ async function handleCodeChat() {
         const res = await fetch('/api/code/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, top_k: 5, filters, stream: false }),
+            body: JSON.stringify({ question, top_k: 5, filters, stream: true }),
         });
         if (!res.ok) {
             let detail = `HTTP ${res.status}`;
             try { const errData = await res.json(); detail = errData.detail || detail; } catch (_) {}
             throw new Error(detail);
         }
-        const data = await res.json();
 
-        // 替换 AI 占位为实际回答
+        // ── 流式 SSE 解析 ─────────────────────────────────
+        // 拿到 AI 占位的 bubble，后续增量写入
         const aiMsg = document.getElementById(aiMsgId);
-        if (aiMsg) {
-            const bubble = aiMsg.querySelector('.rounded-lg.px-4.py-3');
-            if (bubble) {
-                bubble.innerHTML = `<p class="text-sm leading-relaxed whitespace-pre-wrap" style="color: var(--color-foreground);">${escapeHtml(data.answer || '抱歉，无法生成回答')}</p>`;
-            }
+        const bubble = aiMsg ? aiMsg.querySelector('.rounded-lg.px-4.py-3') : null;
+        if (bubble) {
+            bubble.innerHTML = `<p class="text-sm leading-relaxed whitespace-pre-wrap" style="color: var(--color-foreground);"></p>`;
         }
+        const contentEl = bubble ? bubble.querySelector('p') : null;
+        let fullAnswer = '';
 
-        // 渲染参考来源
-        if (data.sources && data.sources.length > 0) {
-            document.getElementById('codeChatSources').classList.remove('hidden');
-            document.getElementById('codeSourcesList').innerHTML = data.sources.map((s, i) => `
-                <div class="rounded p-3" style="background-color: rgba(255, 255, 255, 0.04); border-left: 2px solid var(--color-accent);">
-                    <div class="flex items-start gap-2 flex-wrap">
-                        <span class="text-xs font-medium" style="color: var(--color-accent);">[${i + 1}]</span>
-                        <code class="text-xs" style="color: var(--color-foreground); font-family: var(--font-mono);">${escapeHtml(s.file_path)}</code>
-                        <span class="text-xs px-1.5 py-0.5 rounded" style="background: var(--color-border); color: var(--color-muted);">L${s.line_start}-${s.line_end || s.line_start}</span>
-                        ${s.symbol_name ? `<span class="text-xs font-medium" style="color: var(--color-accent);">${escapeHtml(s.symbol_name)}</span>` : ''}
-                        ${s.score ? `<span class="text-xs ml-auto" style="color: var(--color-muted);">${(s.score * 100).toFixed(1)}%</span>` : ''}
-                    </div>
-                    ${s.content ? `<pre class="text-xs mt-2 px-2 py-1.5 rounded overflow-x-auto" style="background: var(--color-background); color: var(--color-muted); font-family: var(--font-mono); max-height: 120px; white-space: pre-wrap;">${escapeHtml(s.content.substring(0, 300))}</pre>` : ''}
-                </div>
-            `).join('');
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            // 按 \n\n 切 SSE 事件
+            const events = buffer.split('\n\n');
+            buffer = events.pop() || '';  // 保留未完整的事件
+
+            for (const ev of events) {
+                const line = ev.split('\n').find(l => l.startsWith('data: '));
+                if (!line) continue;
+                const payload = line.slice(6);
+                if (payload === '[DONE]') continue;
+
+                let msg;
+                try { msg = JSON.parse(payload); } catch (_) { continue; }
+
+                if (msg.type === 'content' && contentEl) {
+                    fullAnswer += msg.data;
+                    contentEl.textContent = fullAnswer;
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                } else if (msg.type === 'sources' && msg.data) {
+                    renderCodeSources(msg.data);
+                }
+                // 'steps' 事件先忽略（UI 没接 step 面板，避免复杂度）
+            }
         }
     } catch (err) {
         const aiMsg = document.getElementById(aiMsgId);

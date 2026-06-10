@@ -500,6 +500,7 @@ def scan_directory(
     allowed_langs = set(languages) if languages else None
 
     files = []
+    stats = {"skipped_files": []}
     for root, dirs, filenames in os.walk(repo_path):
         # 原地修改 dirs 来跳过目录
         dirs[:] = [d for d in dirs if d not in effective_skip_dirs]

@@ -55,6 +55,10 @@ async function navigate(hash) {
   // 1. 隐藏所有 tab（防御重复显示）
   Object.values(_cache).forEach(c => c.wrapper.classList.remove("tab-active"));
 
+  // 1.5 关闭所有模态框（避免 modal 跨 tab 飘在新页面）
+  document.getElementById('agent-settings-modal')?.classList.add('hidden');
+  document.getElementById('skip-rules-modal')?.classList.add('hidden');
+
   // 2. 获取或创建目标 tab 的 DOM
   if (!_cache[key]) {
     // 首次访问：清除 content-area 默认占位（"加载中…"）

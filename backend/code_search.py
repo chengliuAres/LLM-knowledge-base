@@ -30,7 +30,10 @@ def _has_chinese(text: str) -> bool:
 # ── RRF 融合 ─────────────────────────────────────────────────────
 
 RRF_K = 60  # RRF 公式常量
-MIN_VECTOR_SIMILARITY = 0.0   # 向量搜索结果最低相似度阈值 (0=不过滤)
+# 向量结果最低相似度阈值。score = (1 + 余弦相似度) / 2，所以 0.5 = 正交(完全不相关)。
+# 设 0.5 表示只保留与查询「正相关」的向量结果，砍掉「最近邻但语义无关」的长尾噪声。
+# 可按实际分数分布调高(更严)或调低(更宽)。
+MIN_VECTOR_SIMILARITY = 0.5
 
 
 def rrf_fusion(
@@ -291,6 +294,18 @@ def search_code(
                 "symbol_hits": len(symbol_results),
                 "merged": len(results),
             })
+
+        # ── 按 file_name 去重：每组只保留 score 最高的一条 ──
+        if results:
+            best_by_file: dict[str, dict] = {}
+            for r in results:
+                repo = r.get("repo_name") or ""
+                fname = r.get("file_path") or r.get("file_name") or ""
+                dedup_key = f"{repo}::{fname}"
+                cur = best_by_file.get(dedup_key)
+                if cur is None or r.get("score", 0) > cur.get("score", 0):
+                    best_by_file[dedup_key] = r
+            results = list(best_by_file.values())
 
     # match_reason
     for r in results:

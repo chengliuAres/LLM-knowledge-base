@@ -23,6 +23,16 @@
                     </select>
                 </label>
                 <label class="block">
+                    <span class="text-xs" style="color: var(--color-muted);">Top-K</span>
+                    <select id="codeSearchTopK" class="input w-full mt-1">
+                        <option value="1">1</option>
+                        <option value="5">5</option>
+                        <option value="10" selected>10</option>
+                        <option value="15">15</option>
+                        <option value="20">20</option>
+                    </select>
+                </label>
+                <label class="block">
                     <span class="text-xs" style="color: var(--color-muted);">仓库</span>
                     <select id="codeSearchRepo" class="input w-full mt-1">
                         <option value="">全部仓库</option>
@@ -123,6 +133,7 @@ async function codeSearch() {
     if (!query) return;
 
     const mode = document.getElementById('codeSearchMode').value;
+    const topK = parseInt(document.getElementById('codeSearchTopK').value, 10) || 10;
     const filters = {};
     const repo = document.getElementById('codeSearchRepo')?.value;
     const lang = document.getElementById('codeSearchLang')?.value;
@@ -149,7 +160,7 @@ async function codeSearch() {
         const res = await fetch('/api/code/search', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({query, mode, top_k: 10, filters}),
+            body: JSON.stringify({query, mode, top_k: topK, filters}),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail);

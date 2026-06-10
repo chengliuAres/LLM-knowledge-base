@@ -69,6 +69,9 @@ TERM_MAP: dict[str, list[str]] = {
     "草稿箱": ["drafts"],
     "未读": ["unread"],
     "已读": ["read"],
+    "读信": ["read", "mail", "message"],
+    "读邮件": ["read", "mail", "message"],
+    "阅读": ["read"],
     "来信": ["incoming", "received"],
     "收信": ["receive", "fetch"],
     "发信": ["send", "compose"],
@@ -559,10 +562,9 @@ async def translate_query_async(
             if tracker and step_mymemory:
                 step_mymemory.complete(step_info)
 
-            # 写入缓存
-            cache.set(query, keywords, "mymemory", confidence, auto_added=True)
-            # 自动扩充词典
-            cache.add_to_dict(query, keywords)
+            # 注意：MyMemory 是字面直译，常脱离代码命名习惯（如「读信」→letter/reading），
+            # 置信度不足，故不写入缓存、也不自动扩充词典，避免错误翻译被固化污染后续搜索。
+            # 仅本次查询使用该结果。
 
             duration_ms = (time.time() - start_time) * 1000
             return TranslationResult(
