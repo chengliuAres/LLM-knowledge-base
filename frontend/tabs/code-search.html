@@ -300,7 +300,7 @@ function codeRenderSearchStep(step, i) {
                 <div class="flex items-center space-x-1.5">
                     <span class="w-4 h-4 rounded-full text-white text-[10px] flex items-center justify-center"
                           style="background-color: var(--color-accent);">${i + 1}</span>
-                    <span class="text-xs font-medium" style="color: var(--color-foreground);">${escapeHtml(step.description || step.name || '')}</span>
+                    <span class="text-xs font-medium" style="color: var(--color-foreground);">${wrapTerm(step.description || step.name || '')}</span>
                 </div>
                 <span class="text-[10px]" style="color: var(--color-muted);">${dur}ms</span>
             </div>
