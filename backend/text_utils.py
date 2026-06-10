@@ -10,7 +10,9 @@ import re
 import jieba
 
 # 中文字符范围（含 CJK 统一表意文字 + 扩展区）
-_CN_CHAR = re.compile(r'[一-龥㐀-䶿豈-﫿]+')
+_CN_CHAR = re.compile(r'[一-龥㐀-䶿豈-﫿]+')
+# 中英文边界：在中文和英文/数字之间插入空格，让 jieba 正确分词
+_CN_EN_BOUNDARY = re.compile(r'(?<=[一-龥㐀-䶿豈-﫿])(?=[a-zA-Z0-9])|(?<=[a-zA-Z0-9])(?=[一-龥㐀-䶿-䶿豈-﫿])')
 
 
 def segment_for_fts(text: str) -> str:
@@ -19,12 +21,19 @@ def segment_for_fts(text: str) -> str:
     让 FTS5 unicode61 tokenizer 将每个中文词作为独立 token 索引。
     非中文部分（英文、代码等）原样保留。
 
+    处理中英文混排：先在中英文边界插入空格，再分词。
+    例如 "设置android状态栏" → "设置 android 状态栏"
+
     Example:
         "用户登录页面控制器" → "用户 登录 页面 控制器"
+        "设置android状态栏为透明" → "设置 android 状态栏 为 透明"
         "func login() { /* 登录 */ }" → "func login() { /* 登录 */ }"
     """
     if not text:
         return text
+
+    # 先在中英文边界插入空格，防止 jieba 将 "设置android状态栏" 当作一个 token
+    text = _CN_EN_BOUNDARY.sub(' ', text)
 
     def _segment(m: re.Match) -> str:
         cn_block = m.group(0)
