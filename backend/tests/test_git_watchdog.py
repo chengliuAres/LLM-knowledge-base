@@ -98,15 +98,23 @@ def test_schedule_scan_merges_consecutive_changes(fresh_module, monkeypatch):
     monkeypatch.setattr(fresh_module, "_do_scan", fake_do_scan)
 
     pending = {}
-    # 1s 内连续 schedule 3 次（debounce=2s 缩短测试时间）
-    fresh_module._schedule_scan("repo1", debounce=2, pending=pending)
-    time.sleep(0.3)
-    fresh_module._schedule_scan("repo1", debounce=2, pending=pending)
-    time.sleep(0.3)
-    fresh_module._schedule_scan("repo1", debounce=2, pending=pending)
+    try:
+        # 1s 内连续 schedule 3 次（debounce=2s 缩短测试时间）
+        fresh_module._schedule_scan("repo1", debounce=2, pending=pending)
+        time.sleep(0.3)
+        fresh_module._schedule_scan("repo1", debounce=2, pending=pending)
+        time.sleep(0.3)
+        fresh_module._schedule_scan("repo1", debounce=2, pending=pending)
 
-    # 等最后一个 timer 触发
-    time.sleep(2.5)
+        # 等最后一个 timer 触发
+        time.sleep(2.5)
+    finally:
+        # tear down 前 cancel 所有 pending timer, 避免 pytest 退出时 daemon timer 触发 _do_scan
+        # 导致 import lancedb 触发 atexit 注册失败
+        for t in list(pending.values()):
+            t.cancel()
+        for t in list(pending.values()):
+            t.join(timeout=1)
 
     assert len(calls) == 1, f"应该只触发 1 次，实际 {len(calls)} 次"
     assert calls[0] == "repo1"
@@ -120,9 +128,15 @@ def test_schedule_scan_does_not_merge_different_repos(fresh_module, monkeypatch)
     monkeypatch.setattr(fresh_module, "_do_scan", fake_do_scan)
 
     pending = {}
-    fresh_module._schedule_scan("repo1", debounce=1, pending=pending)
-    fresh_module._schedule_scan("repo2", debounce=1, pending=pending)
-    time.sleep(1.5)
+    try:
+        fresh_module._schedule_scan("repo1", debounce=1, pending=pending)
+        fresh_module._schedule_scan("repo2", debounce=1, pending=pending)
+        time.sleep(1.5)
+    finally:
+        for t in list(pending.values()):
+            t.cancel()
+        for t in list(pending.values()):
+            t.join(timeout=1)
 
     assert sorted(calls) == ["repo1", "repo2"]
 
@@ -130,12 +144,18 @@ def test_schedule_scan_does_not_merge_different_repos(fresh_module, monkeypatch)
 def test_schedule_scan_replaces_previous_timer(fresh_module, monkeypatch):
     """连续 schedule 时，前一个 timer 应当被替换"""
     pending = {}
-    fresh_module._schedule_scan("repo1", debounce=2, pending=pending)
-    first_timer = pending["repo1"]
-    fresh_module._schedule_scan("repo1", debounce=2, pending=pending)
-    second_timer = pending["repo1"]
-    assert first_timer is not second_timer
-    # dict 已被替换，第一个 timer 不会被触发（debounce 行为已由上一个 test 验证）
+    try:
+        fresh_module._schedule_scan("repo1", debounce=2, pending=pending)
+        first_timer = pending["repo1"]
+        fresh_module._schedule_scan("repo1", debounce=2, pending=pending)
+        second_timer = pending["repo1"]
+        assert first_timer is not second_timer
+        # dict 已被替换，第一个 timer 不会被触发（debounce 行为已由上一个 test 验证）
+    finally:
+        for t in list(pending.values()):
+            t.cancel()
+        for t in list(pending.values()):
+            t.join(timeout=1)
 
 
 # ── 主循环 + 生命周期 ───────────────────────────────────────────
