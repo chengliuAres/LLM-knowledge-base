@@ -1,6 +1,6 @@
 """查询翻译层 — 中文查询 → 英文代码关键词
 
-优先级: 缓存 > LLM 翻译 > MyMemory API > 本地词典 > jieba 分词降级
+优先级: 本地词典 > 缓存 > MyMemory API > LLM 翻译 > 完整查询回退
 用于代码搜索场景：用户输入中文"登录"，翻译成 "login, signin, auth" 等英文符号关键词。
 
 特性：
@@ -27,6 +27,7 @@ class TranslationResult:
     confidence: float = 0.0           # 置信度 0-1
     duration_ms: float = 0.0          # 翻译耗时（毫秒）
     steps: list = field(default_factory=list)  # 翻译步骤详情
+    suggestion: str = ""              # 建议（如 LLM 超时时建议走关键字搜索）
 
 
 # ── 中文检测 ──────────────────────────────────────────────────────
@@ -303,10 +304,16 @@ async def _llm_translate(query: str) -> tuple[list[str], float]:
 async def translate_query_async(
     query: str,
     use_llm: bool = True,
-    timeout: float = 3.0,
+    timeout: float = 5.0,
     tracker=None,  # StepTracker 实例
 ) -> TranslationResult:
     """异步翻译入口（带步骤追踪）
+
+    翻译流程顺序：
+    1. 本地词典 + 缓存（快速路径）
+    2. MyMemory API（第三方翻译）
+    3. LLM 翻译（最后手段）
+    4. 完整查询回退（FTS5 搜索中文）
 
     Args:
         query: 原始查询（可能含中文）
@@ -329,7 +336,47 @@ async def translate_query_async(
 
     steps = []
 
-    # ── Step 1: 检查缓存 ──────────────────────────────────────
+    # ── Step 1: 本地词典 ──────────────────────────────────────
+    step_dict = None
+    if tracker:
+        step_dict = tracker.add_step("dict_translate", "查询翻译: 本地词典")
+        step_dict.start()
+
+    dict_start = time.time()
+    keywords, confidence = _dict_translate(query)
+    dict_duration = (time.time() - dict_start) * 1000
+
+    if keywords:
+        step_info = {
+            "method": "dict",
+            "keywords": keywords,
+            "confidence": confidence,
+            "duration_ms": dict_duration,
+        }
+        steps.append(step_info)
+
+        if tracker and step_dict:
+            step_dict.complete(step_info)
+
+        # 写入缓存
+        from translation_cache import get_cache
+        cache = get_cache()
+        cache.set(query, keywords, "dict", confidence)
+
+        duration_ms = (time.time() - start_time) * 1000
+        return TranslationResult(
+            original=query,
+            translated=keywords,
+            method="dict",
+            confidence=confidence,
+            duration_ms=duration_ms,
+            steps=steps,
+        )
+
+    if tracker and step_dict:
+        step_dict.complete({"keywords": [], "reason": "词典无匹配"})
+
+    # ── Step 2: 检查缓存 ──────────────────────────────────────
     step_cache = None
     if tracker:
         step_cache = tracker.add_step("translation_cache", "查询翻译: 检查缓存")
@@ -349,7 +396,7 @@ async def translate_query_async(
         }
         steps.append(step_info)
 
-        if tracker:
+        if tracker and step_cache:
             step_cache.complete(step_info)
 
         return TranslationResult(
@@ -363,79 +410,6 @@ async def translate_query_async(
 
     if tracker and step_cache:
         step_cache.complete({"hit": False})
-
-    # ── Step 2: LLM 翻译 ──────────────────────────────────────
-    step_llm = None
-    if use_llm:
-        if tracker:
-            step_llm = tracker.add_step("llm_translate", "查询翻译: LLM 翻译 (MiMo)")
-            step_llm.start()
-
-        try:
-            llm_start = time.time()
-            keywords, confidence = await asyncio.wait_for(
-                _llm_translate(query),
-                timeout=timeout,
-            )
-            llm_duration = (time.time() - llm_start) * 1000
-
-            if keywords:
-                step_info = {
-                    "method": "llm",
-                    "keywords": keywords,
-                    "confidence": confidence,
-                    "duration_ms": llm_duration,
-                }
-                steps.append(step_info)
-
-                if tracker:
-                    step_llm.complete(step_info)
-
-                # 写入缓存
-                cache.set(query, keywords, "llm", confidence, auto_added=True)
-                # 自动扩充词典
-                cache.add_to_dict(query, keywords)
-
-                duration_ms = (time.time() - start_time) * 1000
-                return TranslationResult(
-                    original=query,
-                    translated=keywords,
-                    method="llm",
-                    confidence=confidence,
-                    duration_ms=duration_ms,
-                    steps=steps,
-                )
-
-            if tracker and step_llm:
-                step_llm.complete({"keywords": [], "reason": "LLM 返回空"})
-
-        except asyncio.TimeoutError:
-            llm_duration = (time.time() - llm_start) * 1000
-            step_info = {
-                "method": "llm",
-                "keywords": [],
-                "confidence": 0.0,
-                "duration_ms": llm_duration,
-                "error": f"超时 ({timeout}s)",
-            }
-            steps.append(step_info)
-
-            if tracker and step_llm:
-                step_llm.fail(f"超时 ({timeout}s)")
-
-        except Exception as e:
-            llm_duration = (time.time() - llm_start) * 1000
-            step_info = {
-                "method": "llm",
-                "keywords": [],
-                "confidence": 0.0,
-                "duration_ms": llm_duration,
-                "error": str(e),
-            }
-            steps.append(step_info)
-
-            if tracker and step_llm:
-                step_llm.fail(str(e))
 
     # ── Step 3: MyMemory API 翻译 ─────────────────────────────
     step_mymemory = None
@@ -492,45 +466,85 @@ async def translate_query_async(
         if tracker and step_mymemory:
             step_mymemory.fail(str(e))
 
-    # ── Step 4: 本地词典 ──────────────────────────────────────
-    step_dict = None
-    if tracker:
-        step_dict = tracker.add_step("dict_translate", "查询翻译: 本地词典")
-        step_dict.start()
+    # ── Step 4: LLM 翻译 ──────────────────────────────────────
+    step_llm = None
+    if use_llm:
+        if tracker:
+            step_llm = tracker.add_step("llm_translate", "查询翻译: LLM 翻译 (MiMo)")
+            step_llm.start()
 
-    dict_start = time.time()
-    keywords, confidence = _dict_translate(query)
-    dict_duration = (time.time() - dict_start) * 1000
+        llm_start = time.time()
+        try:
+            llm_start = time.time()
+            keywords, confidence = await asyncio.wait_for(
+                _llm_translate(query),
+                timeout=timeout,
+            )
+            llm_duration = (time.time() - llm_start) * 1000
 
-    if keywords:
-        step_info = {
-            "method": "dict",
-            "keywords": keywords,
-            "confidence": confidence,
-            "duration_ms": dict_duration,
-        }
-        steps.append(step_info)
+            if keywords:
+                step_info = {
+                    "method": "llm",
+                    "keywords": keywords,
+                    "confidence": confidence,
+                    "duration_ms": llm_duration,
+                }
+                steps.append(step_info)
 
-        if tracker and step_dict:
-            step_dict.complete(step_info)
+                if tracker and step_llm:
+                    step_llm.complete(step_info)
 
-        duration_ms = (time.time() - start_time) * 1000
-        return TranslationResult(
-            original=query,
-            translated=keywords,
-            method="dict",
-            confidence=confidence,
-            duration_ms=duration_ms,
-            steps=steps,
-        )
+                # 写入缓存
+                cache.set(query, keywords, "llm", confidence, auto_added=True)
+                # 自动扩充词典
+                cache.add_to_dict(query, keywords)
 
-    if tracker and step_dict:
-        step_dict.complete({"keywords": [], "reason": "词典无匹配"})
+                duration_ms = (time.time() - start_time) * 1000
+                return TranslationResult(
+                    original=query,
+                    translated=keywords,
+                    method="llm",
+                    confidence=confidence,
+                    duration_ms=duration_ms,
+                    steps=steps,
+                )
 
-    # ── Step 5: 最终降级：单字回退 ─────────────────────────────
+            if tracker and step_llm:
+                step_llm.complete({"keywords": [], "reason": "LLM 返回空"})
+
+        except asyncio.TimeoutError:
+            llm_duration = (time.time() - llm_start) * 1000
+            step_info = {
+                "method": "llm",
+                "keywords": [],
+                "confidence": 0.0,
+                "duration_ms": llm_duration,
+                "error": f"超时 ({timeout}s)",
+                "suggestion": "英文语义匹配失败，建议走关键字搜索",
+            }
+            steps.append(step_info)
+
+            if tracker and step_llm:
+                step_llm.fail(f"超时 ({timeout}s)")
+
+        except Exception as e:
+            llm_duration = (time.time() - llm_start) * 1000
+            step_info = {
+                "method": "llm",
+                "keywords": [],
+                "confidence": 0.0,
+                "duration_ms": llm_duration,
+                "error": str(e),
+            }
+            steps.append(step_info)
+
+            if tracker and step_llm:
+                step_llm.fail(str(e))
+
+    # ── Step 5: 最终降级：完整查询回退 ─────────────────────────
     step_fallback = None
     if tracker:
-        step_fallback = tracker.add_step("fallback", "查询翻译: 单字回退")
+        step_fallback = tracker.add_step("fallback", "查询翻译: 完整查询回退")
         step_fallback.start()
 
     fallback_keywords = [query]  # 保留完整查询，让 FTS5 搜索中文 content
@@ -541,6 +555,7 @@ async def translate_query_async(
         "keywords": fallback_keywords,
         "confidence": 0.0,
         "duration_ms": fallback_duration,
+        "suggestion": "英文语义匹配失败，建议走关键字搜索",
     }
     steps.append(step_info)
 
@@ -555,10 +570,11 @@ async def translate_query_async(
         confidence=0.0,
         duration_ms=duration_ms,
         steps=steps,
+        suggestion="英文语义匹配失败，建议走关键字搜索",
     )
 
 
-def translate_query_sync(query: str, use_llm: bool = True, timeout: float = 3.0, tracker=None) -> TranslationResult:
+def translate_query_sync(query: str, use_llm: bool = True, timeout: float = 5.0, tracker=None) -> TranslationResult:
     """同步包装（给非 async 上下文用）"""
     try:
         loop = asyncio.get_event_loop()
