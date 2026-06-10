@@ -128,6 +128,8 @@
                 </select>
             </div>
             <div class="h-64"><canvas id="cdBreakdownChart"></canvas></div>
+            <!-- 术语图例（hover 解释旁路）-->
+            <div id="codeBreakdownGlossary" class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px]" style="color: var(--color-muted);"></div>
         </div>
     </div>
 
@@ -394,6 +396,7 @@ async function loadCodeBreakdown() {
                 }
             }
         });
+        renderBreakdownGlossary('codeBreakdownGlossary', labels);
     } catch (err) { console.error('code breakdown load failed:', err); }
 }
 
@@ -406,4 +409,39 @@ window.renderCodeRepoTable = renderCodeRepoTable;
 window.loadCodePerfCards = loadCodePerfCards;
 window.loadCodeTrend = loadCodeTrend;
 window.loadCodeBreakdown = loadCodeBreakdown;
+
+// 术语图例渲染（与 doc-dashboard 共享实现；如已定义则跳过）
+if (typeof renderBreakdownGlossary === "undefined") {
+    function renderBreakdownGlossary(containerId, labels) {
+        const el = document.getElementById(containerId);
+        if (!el) return;
+        if (!labels || labels.length === 0) {
+            el.innerHTML = '<span style="color: var(--color-muted);">该类型暂无数据</span>';
+            return;
+        }
+        const seen = new Set();
+        const items = [];
+        // 提一次排序 + 用 SSOT 的转义函数, 避免 key 含正则元字符时崩
+        const keys = Object.keys(window.GLOSSARY || {}).sort((a, b) => b.length - a.length);
+        const escape = window._glossaryEscapeRegExp || (s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+        for (const label of labels) {
+            if (typeof label !== "string") continue;
+            for (const key of keys) {
+                if (seen.has(key)) continue;
+                const re = new RegExp(escape(key), "i");
+                if (re.test(label)) {
+                    seen.add(key);
+                    items.push(key);
+                }
+            }
+        }
+        if (items.length === 0) {
+            el.innerHTML = '';
+            return;
+        }
+        el.innerHTML = '<span style="margin-right: 4px;">💡 术语:</span>' +
+            items.map(k => `<span class="glossary-term" data-glossary="${k}" tabindex="0">${k}</span>`).join(', ');
+    }
+    window.renderBreakdownGlossary = renderBreakdownGlossary;
+}
 </script>
