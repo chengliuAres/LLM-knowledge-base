@@ -9,6 +9,8 @@
                 <input id="codeRepoName" type="text" placeholder="仓库名 (自动填入)" class="input w-full mb-2">
                 <div class="flex gap-1 mb-2">
                     <input id="codeRepoPath" type="text" placeholder="粘贴路径或点下方快捷入口" class="input flex-1" oninput="codeAutoFillName(this.value)">
+                    <button onclick="codePickFolder()" class="btn btn-secondary shrink-0" title="选择目录（系统原生）">📁</button>
+                    <button onclick="codeOpenInFinder()" class="btn btn-secondary shrink-0" title="在系统文件管理器中打开">🔍</button>
                     <button onclick="codeBrowseFolder()" class="btn btn-secondary shrink-0" title="浏览目录">📂</button>
                 </div>
                 <!-- 快捷路径 -->
@@ -474,6 +476,91 @@ function codeSelectDir(fullPath, name) {
     document.getElementById('codeFolderBrowser').classList.add('hidden');
 }
 
+// 隐藏的 webkitdirectory input（页面加载时插入一次）
+let __webkitInput = null;
+function __ensureWebkitInput() {
+    if (__webkitInput) return __webkitInput;
+    __webkitInput = document.createElement('input');
+    __webkitInput.type = 'file';
+    __webkitInput.webkitdirectory = true;
+    __webkitInput.style.display = 'none';
+    document.body.appendChild(__webkitInput);
+    return __webkitInput;
+}
+
+// 📁 选择：能力探测（showDirectoryPicker → webkitdirectory → 现有目录浏览器）
+async function codePickFolder() {
+    // A. 优先 showDirectoryPicker（Chrome 86+ / Edge）
+    if (window.showDirectoryPicker) {
+        try {
+            const dir = await window.showDirectoryPicker();
+            const name = dir.name;
+            const path = await __resolvePathByName(name);
+            codeSelectDir(path, name);
+            return;
+        } catch (e) {
+            if (e.name === 'AbortError') return;  // 用户取消
+            console.warn('showDirectoryPicker 失败, 降级:', e);
+        }
+    }
+    // B. 降级 webkitdirectory（Safari / Firefox）
+    const input = __ensureWebkitInput();
+    input.value = '';  // 允许重复选同一目录
+    input.onchange = async () => {
+        const file = input.files[0];
+        if (!file) return;
+        const name = file.webkitRelativePath.split('/')[0];
+        try {
+            const path = await __resolvePathByName(name);
+            codeSelectDir(path, name);
+        } catch (e) {
+            alert('选择目录失败: ' + e.message);
+        }
+    };
+    input.click();
+}
+
+// 通过名字反查真实路径（同名多个时弹层让用户选）
+async function __resolvePathByName(name) {
+    const home = window.__USER_HOME || '';
+    const url = `/api/code/resolve-path?name=${encodeURIComponent(name)}&parent=${encodeURIComponent(home)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '反查失败');
+    if (data.matches && data.matches.length > 1) {
+        const choice = prompt(`找到 ${data.matches.length} 个同名目录，请选择（输入序号）:\n` +
+            data.matches.map((p, i) => `${i + 1}. ${p}`).join('\n'));
+        const idx = parseInt(choice, 10) - 1;
+        if (isNaN(idx) || !data.matches[idx]) throw new Error('无效选择');
+        return data.matches[idx];
+    }
+    return data.path;
+}
+
+// 🔍 Finder：在系统文件管理器中打开当前路径
+async function codeOpenInFinder() {
+    const path = document.getElementById('codeRepoPath').value.trim();
+    if (!path) { alert('请先输入路径'); return; }
+    try {
+        const res = await fetch('/api/code/open-in-finder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail);
+        if (data.skipped) {
+            // 非 macOS 或命令缺失 → 复制到剪贴板兜底
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(data.path);
+            }
+            alert(`已复制路径到剪贴板: ${data.path}\n(${data.reason})`);
+        }
+    } catch (e) {
+        alert('打开失败: ' + e.message);
+    }
+}
+
 // 刷新指定仓库
 async function codeRefreshRepo(name) {
     if (!confirm(`确认刷新仓库 ${name}？`)) return;
@@ -798,6 +885,8 @@ window.codeScanRepo = codeScanRepo;
 window.codeCancelScan = codeCancelScan;
 window.codeAutoFillName = codeAutoFillName;
 window.codeQuickPath = codeQuickPath;
+window.codePickFolder = codePickFolder;
+window.codeOpenInFinder = codeOpenInFinder;
 window.codeBrowseFolder = codeBrowseFolder;
 window.codeLoadDirs = codeLoadDirs;
 window.codeSelectDir = codeSelectDir;
