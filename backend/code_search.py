@@ -143,13 +143,15 @@ def search_code(
             step_trans.start()
 
         from query_translator import translate_query_sync
-        translation = translate_query_sync(query, use_llm=True, timeout=3.0)
+        translation = translate_query_sync(query, use_llm=True, timeout=3.0, tracker=tracker)
         translated_keywords = translation.translated
         translation_info = {
             "original": translation.original,
             "translated": translated_keywords,
             "method": translation.method,
             "confidence": translation.confidence,
+            "duration_ms": getattr(translation, "duration_ms", 0.0),
+            "steps": getattr(translation, "steps", []) or [],
         }
 
         if tracker and step_trans:
