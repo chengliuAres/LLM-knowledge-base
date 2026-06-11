@@ -45,7 +45,7 @@ def has_chinese(text: str) -> bool:
 
 # 词典文件路径
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_DICT_FILE = os.path.join(_PROJECT_ROOT, "data", "translation_dict.json")
+_DICT_FILE = os.path.join(_PROJECT_ROOT, "config", "translation_dict.json")
 
 # 高频中文 → 英文代码词根映射（从 data/translation_dict.json 加载）
 TERM_MAP: dict[str, list[str]] = {}

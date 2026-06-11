@@ -16,7 +16,7 @@ from typing import Optional
 from dataclasses import dataclass, asdict
 
 # 缓存文件路径
-CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
+CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config")
 CACHE_FILE = os.path.join(CACHE_DIR, "translation_cache.json")
 
 # 过期时间（秒）

@@ -1,0 +1,440 @@
+{
+  "skip_dirs": [
+    {
+      "name": ".git",
+      "category": "版本控制"
+    },
+    {
+      "name": ".svn",
+      "category": "版本控制"
+    },
+    {
+      "name": ".hg",
+      "category": "版本控制"
+    },
+    {
+      "name": "node_modules",
+      "category": "依赖"
+    },
+    {
+      "name": "Pods",
+      "category": "依赖"
+    },
+    {
+      "name": "Carthage",
+      "category": "依赖"
+    },
+    {
+      "name": ".build",
+      "category": "依赖"
+    },
+    {
+      "name": "vendor",
+      "category": "依赖"
+    },
+    {
+      "name": "bundle",
+      "category": "依赖"
+    },
+    {
+      "name": "bower_components",
+      "category": "依赖"
+    },
+    {
+      "name": "build",
+      "category": "构建产物"
+    },
+    {
+      "name": "dist",
+      "category": "构建产物"
+    },
+    {
+      "name": "DerivedData",
+      "category": "构建产物"
+    },
+    {
+      "name": "target",
+      "category": "构建产物"
+    },
+    {
+      "name": "out",
+      "category": "构建产物"
+    },
+    {
+      "name": ".idea",
+      "category": "IDE"
+    },
+    {
+      "name": ".vscode",
+      "category": "IDE"
+    },
+    {
+      "name": ".xcodeproj",
+      "category": "IDE"
+    },
+    {
+      "name": ".xcworkspace",
+      "category": "IDE"
+    },
+    {
+      "name": ".xcassets",
+      "category": "资源"
+    },
+    {
+      "name": "Assets.xcassets",
+      "category": "资源"
+    },
+    {
+      "name": ".lproj",
+      "category": "资源"
+    },
+    {
+      "name": "Resource",
+      "category": "资源"
+    },
+    {
+      "name": "__pycache__",
+      "category": "缓存"
+    },
+    {
+      "name": ".mypy_cache",
+      "category": "缓存"
+    },
+    {
+      "name": ".pytest_cache",
+      "category": "缓存"
+    },
+    {
+      "name": ".ruff_cache",
+      "category": "缓存"
+    },
+    {
+      "name": ".gradle",
+      "category": "缓存"
+    },
+    {
+      "name": ".dart_tool",
+      "category": "缓存"
+    },
+    {
+      "name": ".packages",
+      "category": "缓存"
+    },
+    {
+      "name": ".next",
+      "category": "缓存"
+    },
+    {
+      "name": ".nuxt",
+      "category": "缓存"
+    },
+    {
+      "name": ".cache",
+      "category": "缓存"
+    },
+    {
+      "name": "coverage",
+      "category": "缓存"
+    },
+    {
+      "name": ".nyc_output",
+      "category": "缓存"
+    },
+    {
+      "name": "venv",
+      "category": "虚拟环境"
+    },
+    {
+      "name": ".venv",
+      "category": "虚拟环境"
+    },
+    {
+      "name": "virtualenv",
+      "category": "虚拟环境"
+    },
+    {
+      "name": "env",
+      "category": "虚拟环境"
+    },
+    {
+      "name": ".tox",
+      "category": "虚拟环境"
+    },
+    {
+      "name": "third",
+      "category": "第三方"
+    },
+    {
+      "name": "third_party",
+      "category": "第三方"
+    },
+    {
+      "name": "lottie",
+      "category": "第三方"
+    },
+    {
+      "name": "keystore",
+      "category": "第三方"
+    },
+    {
+      "name": "gradleScripts",
+      "category": "第三方"
+    },
+    {
+      "name": "buildSrc",
+      "category": "第三方"
+    },
+    {
+      "name": ".ios",
+      "category": "第三方"
+    },
+    {
+      "name": ".android",
+      "category": "第三方"
+    },
+    {
+      "name": "ohosApp",
+      "category": "第三方"
+    },
+    {
+      "name": "flutter",
+      "category": "SDK源码"
+    },
+    {
+      "name": "rnbase-for-native",
+      "category": "React Native"
+    },
+    {
+      "name": "VisionWidgetKit.xcframework",
+      "category": "预编译框架"
+    },
+    {
+      "name": "GHPodRes",
+      "category": "资源文件"
+    }
+  ],
+  "skip_exts": [
+    {
+      "name": ".png",
+      "category": "图片"
+    },
+    {
+      "name": ".jpg",
+      "category": "图片"
+    },
+    {
+      "name": ".jpeg",
+      "category": "图片"
+    },
+    {
+      "name": ".gif",
+      "category": "图片"
+    },
+    {
+      "name": ".ico",
+      "category": "图片"
+    },
+    {
+      "name": ".svg",
+      "category": "图片"
+    },
+    {
+      "name": ".woff",
+      "category": "字体"
+    },
+    {
+      "name": ".woff2",
+      "category": "字体"
+    },
+    {
+      "name": ".ttf",
+      "category": "字体"
+    },
+    {
+      "name": ".eot",
+      "category": "字体"
+    },
+    {
+      "name": ".strings",
+      "category": "iOS/Mac资源"
+    },
+    {
+      "name": ".plist",
+      "category": "iOS/Mac资源"
+    },
+    {
+      "name": ".storyboard",
+      "category": "iOS/Mac资源"
+    },
+    {
+      "name": ".xib",
+      "category": "iOS/Mac资源"
+    },
+    {
+      "name": ".xml",
+      "category": "Android资源"
+    },
+    {
+      "name": ".pro",
+      "category": "Android资源"
+    },
+    {
+      "name": ".json",
+      "category": "配置/数据"
+    },
+    {
+      "name": ".js",
+      "category": "自定义"
+    },
+    {
+      "name": ".javascript",
+      "category": "自定义"
+    },
+    {
+      "name": ".framework",
+      "category": "配置/数据"
+    },
+    {
+      "name": ".xcframework",
+      "category": "图片"
+    }
+  ],
+  "gitignore_selections": [
+    {
+      "name": ".DS_Store",
+      "selected": true
+    },
+    {
+      "name": ".Trashes",
+      "selected": true
+    },
+    {
+      "name": "local.properties",
+      "selected": true
+    },
+    {
+      "name": "gradle-local.properties",
+      "selected": true
+    },
+    {
+      "name": ".classpath",
+      "selected": true
+    },
+    {
+      "name": ".project",
+      "selected": true
+    },
+    {
+      "name": ".navigation",
+      "selected": true
+    },
+    {
+      "name": "bin",
+      "selected": true
+    },
+    {
+      "name": "gen",
+      "selected": true
+    },
+    {
+      "name": "out",
+      "selected": true
+    },
+    {
+      "name": ".gradle",
+      "selected": true
+    },
+    {
+      "name": "build",
+      "selected": true
+    },
+    {
+      "name": "captures",
+      "selected": true
+    },
+    {
+      "name": ".externalNativeBuild",
+      "selected": true
+    },
+    {
+      "name": ".externalToolBuilders",
+      "selected": true
+    },
+    {
+      "name": ".cxx",
+      "selected": true
+    },
+    {
+      "name": ".directory",
+      "selected": true
+    },
+    {
+      "name": "Thumbs.db",
+      "selected": true
+    },
+    {
+      "name": "$RECYCLE.BIN",
+      "selected": true
+    },
+    {
+      "name": "vcs.xml",
+      "selected": true
+    },
+    {
+      "name": "fluttermodule/build",
+      "selected": true
+    },
+    {
+      "name": "hotfix",
+      "selected": true
+    },
+    {
+      "name": "packtools/Log",
+      "selected": true
+    },
+    {
+      "name": "webui/tmp",
+      "selected": true
+    },
+    {
+      "name": ".codemaker.codebase.md",
+      "selected": true
+    },
+    {
+      "name": ".opencode",
+      "selected": true
+    },
+    {
+      "name": "git-flow-plus.config",
+      "selected": true
+    },
+    {
+      "name": "node_modules",
+      "selected": true
+    },
+    {
+      "name": "AGENTS.md",
+      "selected": true
+    },
+    {
+      "name": ".settings",
+      "selected": true
+    },
+    {
+      "name": "popo-doc-full.md",
+      "selected": true
+    },
+    {
+      "name": "popo-snapshot.yml",
+      "selected": true
+    },
+    {
+      "name": ".sisyphus",
+      "selected": true
+    },
+    {
+      "name": ".super-openspec",
+      "selected": true
+    }
+  ]
+}

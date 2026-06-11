@@ -722,6 +722,7 @@ def get_storage_stats() -> dict:
     
     # 数据目录路径
     data_dir = os.path.join(PROJECT_ROOT, "data")
+    config_dir = os.path.join(PROJECT_ROOT, "config")
     
     # 各个文件/目录的大小
     storage_info = {
@@ -738,33 +739,33 @@ def get_storage_stats() -> dict:
             "description": "代码索引 (SQLite FTS5)"
         },
         "code_repos_json": {
-            "path": os.path.join(data_dir, "code_repos.json"),
-            "size_bytes": get_file_size(os.path.join(data_dir, "code_repos.json")),
-            "size_formatted": format_size(get_file_size(os.path.join(data_dir, "code_repos.json"))),
+            "path": os.path.join(config_dir, "code_repos.json"),
+            "size_bytes": get_file_size(os.path.join(config_dir, "code_repos.json")),
+            "size_formatted": format_size(get_file_size(os.path.join(config_dir, "code_repos.json"))),
             "description": "仓库配置 (JSON)"
         },
         "code_skip_rules_json": {
-            "path": os.path.join(data_dir, "code_skip_rules.json"),
-            "size_bytes": get_file_size(os.path.join(data_dir, "code_skip_rules.json")),
-            "size_formatted": format_size(get_file_size(os.path.join(data_dir, "code_skip_rules.json"))),
+            "path": os.path.join(config_dir, "code_skip_rules.json"),
+            "size_bytes": get_file_size(os.path.join(config_dir, "code_skip_rules.json")),
+            "size_formatted": format_size(get_file_size(os.path.join(config_dir, "code_skip_rules.json"))),
             "description": "跳过规则 (JSON)"
         },
         "code_agent_config_json": {
-            "path": os.path.join(data_dir, "code_agent_config.json"),
-            "size_bytes": get_file_size(os.path.join(data_dir, "code_agent_config.json")),
-            "size_formatted": format_size(get_file_size(os.path.join(data_dir, "code_agent_config.json"))),
+            "path": os.path.join(config_dir, "code_agent_config.json"),
+            "size_bytes": get_file_size(os.path.join(config_dir, "code_agent_config.json")),
+            "size_formatted": format_size(get_file_size(os.path.join(config_dir, "code_agent_config.json"))),
             "description": "Agent 配置 (JSON)"
         },
         "translation_cache_json": {
-            "path": os.path.join(data_dir, "translation_cache.json"),
-            "size_bytes": get_file_size(os.path.join(data_dir, "translation_cache.json")),
-            "size_formatted": format_size(get_file_size(os.path.join(data_dir, "translation_cache.json"))),
+            "path": os.path.join(config_dir, "translation_cache.json"),
+            "size_bytes": get_file_size(os.path.join(config_dir, "translation_cache.json")),
+            "size_formatted": format_size(get_file_size(os.path.join(config_dir, "translation_cache.json"))),
             "description": "翻译缓存 (JSON)"
         },
         "translation_dict_json": {
-            "path": os.path.join(data_dir, "translation_dict.json"),
-            "size_bytes": get_file_size(os.path.join(data_dir, "translation_dict.json")),
-            "size_formatted": format_size(get_file_size(os.path.join(data_dir, "translation_dict.json"))),
+            "path": os.path.join(config_dir, "translation_dict.json"),
+            "size_bytes": get_file_size(os.path.join(config_dir, "translation_dict.json")),
+            "size_formatted": format_size(get_file_size(os.path.join(config_dir, "translation_dict.json"))),
             "description": "翻译词典 (JSON)"
         }
     }

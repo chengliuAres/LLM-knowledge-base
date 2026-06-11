@@ -11,8 +11,9 @@ import subprocess
 
 # 项目根目录 + 配置文件路径
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CONFIG_DIR = os.path.join(PROJECT_ROOT, "config")
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
-CONFIG_PATH = os.path.join(DATA_DIR, "code_skip_rules.json")
+CONFIG_PATH = os.path.join(CONFIG_DIR, "code_skip_rules.json")
 
 
 # ── 默认规则（按分类） ────────────────────────────────────────────

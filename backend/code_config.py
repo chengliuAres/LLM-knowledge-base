@@ -8,7 +8,7 @@ from typing import Optional
 
 # 项目根目录
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CONFIG_PATH = os.path.join(PROJECT_ROOT, "data", "code_repos.json")
+CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "code_repos.json")
 
 # 扫描锁 (防止同仓库并发扫描)
 _scan_locks: dict[str, threading.Lock] = {}

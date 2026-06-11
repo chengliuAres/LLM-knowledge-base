@@ -11,7 +11,9 @@ backend/.env
 
 # Auto-generated data (rebuilt on first run)
 data/
-models/
+
+# ML models (too large for git, downloaded on first run)
+config/models/
 
 # IDE
 .idea/
@@ -40,4 +42,3 @@ frontend/vendor/
 .playwright-mcp/
 read-letter-search-results.png
 *.pid
-

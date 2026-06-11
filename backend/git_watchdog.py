@@ -17,7 +17,7 @@ from typing import Optional
 # 项目根目录 + 配置文件路径（测试时 monkeypatch）
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
-CONFIG_PATH = os.path.join(DATA_DIR, "code_repos.json")
+CONFIG_PATH = os.path.join(os.path.join(PROJECT_ROOT, "config"), "code_repos.json")
 
 log = logging.getLogger("code_kb.watchdog")
 

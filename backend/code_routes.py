@@ -292,13 +292,13 @@ def _run_scan(job: ScanJob):
         # 处理最后一批
         _process_batch()
 
+        # 6. 更新配置（先于"写入完成"日志，避免服务重启时丢失注册）
+        _finalize_scan(job, files, effective_type)
+
         job.update("parse_done", f"解析完成: {total_chunks} chunks (⚠️ {parse_warnings} 降级)",
                    total_chunks=total_chunks, parse_warnings=parse_warnings)
         job.update("store_done", f"写入完成: {total_chunks} chunks")
         log.info(f"[scan:{job.scan_id}] 写入完成: {total_chunks} chunks")
-
-        # 6. 更新配置
-        _finalize_scan(job, files, effective_type)
 
     except Exception as e:
         job.status = "error"
@@ -1419,7 +1419,7 @@ async def demo_search(req: DemoSearchRequest):
 import threading
 
 _agent_config_lock = threading.Lock()
-_AGENT_CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "code_agent_config.json")
+_AGENT_CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "code_agent_config.json")
 
 DEFAULT_AGENT_PROMPT = """你是 Email Wiki 知识库管理员，负责基于已索引的代码仓库回答问题。
 

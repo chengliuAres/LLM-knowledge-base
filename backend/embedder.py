@@ -12,7 +12,7 @@ from sentence_transformers import SentenceTransformer
 log = logging.getLogger(__name__)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MODEL_CACHE_DIR = os.path.join(PROJECT_ROOT, "models")
+MODEL_CACHE_DIR = os.path.join(PROJECT_ROOT, "config", "models")
 
 _model = None
 _model_name = "BAAI/bge-base-zh-v1.5"  # 中文优化，768-dim，512-token，102M

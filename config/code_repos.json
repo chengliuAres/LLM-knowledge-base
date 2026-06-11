@@ -6,30 +6,31 @@
       "project_type": "ios",
       "languages": [],
       "total_files": 0,
-      "total_chunks": 62917,
+      "total_chunks": 124537,
       "by_language": {
-        "cpp": 6407,
+        "cpp": 21133,
         "dart": 2754,
-        "kotlin": 363,
-        "objc": 52663,
-        "python": 360,
+        "java": 29326,
+        "kotlin": 14198,
+        "objc": 56176,
+        "python": 469,
         "ruby": 70,
-        "shell": 64,
+        "shell": 113,
         "swift": 142,
-        "yaml": 94
+        "yaml": 156
       },
       "by_chunk_type": {
-        "class": 3032,
+        "class": 41085,
         "extension": 26,
-        "file": 18980,
-        "function": 848,
+        "file": 37158,
+        "function": 1705,
         "implementation": 36613,
-        "interface": 3046,
-        "object": 181,
+        "interface": 3747,
+        "object": 4011,
         "protocol": 182,
-        "struct": 9
+        "struct": 10
       },
-      "last_scanned": "2026-06-11T18:13:14.793094"
+      "last_scanned": "2026-06-11T18:31:43.910227"
     }
   },
   "watchdog": {

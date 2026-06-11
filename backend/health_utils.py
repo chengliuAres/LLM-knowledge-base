@@ -72,8 +72,8 @@ def check_model_status() -> dict:
     try:
         # 模型根目录在项目根的 models/ 下，按 HuggingFace 缓存布局查找
         candidates = [
-            os.path.join(_PROJECT_ROOT, "models", "models--BAAI--bge-base-zh-v1.5"),
-            os.path.join(_PROJECT_ROOT, "models", "BAAI", "bge-base-zh-v1.5"),
+            os.path.join(_PROJECT_ROOT, "config", "models", "models--BAAI--bge-base-zh-v1.5"),
+            os.path.join(_PROJECT_ROOT, "config", "models", "BAAI", "bge-base-zh-v1.5"),
         ]
         for candidate in candidates:
             if os.path.isdir(candidate):

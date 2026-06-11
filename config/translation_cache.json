@@ -1,0 +1,283 @@
+{
+  "通知栏": {
+    "keywords": [
+      "notification",
+      "notify",
+      "栏"
+    ],
+    "method": "dict",
+    "confidence": 0.5,
+    "timestamp": 1781064130.2576509,
+    "auto_added": false
+  },
+  "股市": {
+    "keywords": [
+      "stock",
+      "market"
+    ],
+    "method": "dict",
+    "confidence": 0.9,
+    "timestamp": 1781066528.271722,
+    "auto_added": false
+  },
+  "状态栏": {
+    "keywords": [
+      "statusbar",
+      "status_bar",
+      "StatusBar",
+      "statusBar"
+    ],
+    "method": "dict",
+    "confidence": 0.9,
+    "timestamp": 1781070644.839374,
+    "auto_added": false
+  },
+  "flutter页面的导航栏是怎么实现呢": {
+    "keywords": [
+      "flutter",
+      "page",
+      "view",
+      "screen",
+      "的",
+      "nav",
+      "navigation",
+      "栏是",
+      "怎么",
+      "实现",
+      "呢"
+    ],
+    "method": "dict",
+    "confidence": 0.375,
+    "timestamp": 1781066968.960128,
+    "auto_added": false
+  },
+  "导航栏": {
+    "keywords": [
+      "nav",
+      "navigation",
+      "栏"
+    ],
+    "method": "dict",
+    "confidence": 0.5,
+    "timestamp": 1781067155.134179,
+    "auto_added": false
+  },
+  "邮箱登录": {
+    "keywords": [
+      "邮箱",
+      "login",
+      "signin",
+      "sign_in",
+      "auth",
+      "authenticate"
+    ],
+    "method": "dict",
+    "confidence": 0.5,
+    "timestamp": 1781076694.745928,
+    "auto_added": false
+  },
+  "读信顶部的引导条是如何实现的？": {
+    "keywords": [
+      "读信",
+      "顶部",
+      "的",
+      "引导",
+      "条是",
+      "如何",
+      "实现",
+      "的",
+      "？"
+    ],
+    "method": "dict",
+    "confidence": 0.1111111111111111,
+    "timestamp": 1781077114.162223,
+    "auto_added": false
+  },
+  "读信": {
+    "keywords": [
+      "read"
+    ],
+    "method": "dict",
+    "confidence": 0.9,
+    "timestamp": 1781169803.167232,
+    "auto_added": false
+  },
+  "读信引导": {
+    "keywords": [
+      "letter",
+      "reading",
+      "guidance"
+    ],
+    "method": "dict",
+    "confidence": 0.9,
+    "timestamp": 1781077537.107594,
+    "auto_added": false
+  },
+  "下载文件": {
+    "keywords": [
+      "download",
+      "文件"
+    ],
+    "method": "dict",
+    "confidence": 0.5,
+    "timestamp": 1781086578.902386,
+    "auto_added": false
+  },
+  "读信页": {
+    "keywords": [
+      "read",
+      "mail",
+      "message"
+    ],
+    "method": "dict",
+    "confidence": 1.0,
+    "timestamp": 1781092547.638575,
+    "auto_added": false
+  },
+  "列表": {
+    "keywords": [
+      "list"
+    ],
+    "method": "dict",
+    "confidence": 0.9,
+    "timestamp": 1781169814.246293,
+    "auto_added": false
+  },
+  "邮件列表": {
+    "keywords": [
+      "mail",
+      "email",
+      "message",
+      "list"
+    ],
+    "method": "dict",
+    "confidence": 1.0,
+    "timestamp": 1781167149.4039612,
+    "auto_added": false
+  },
+  "列表的分页加载逻辑": {
+    "keywords": [
+      "list",
+      "的",
+      "pagination",
+      "paging",
+      "Pagination",
+      "load",
+      "逻辑"
+    ],
+    "method": "dict",
+    "confidence": 0.6,
+    "timestamp": 1781144252.8954072,
+    "auto_added": false
+  },
+  "读邮件": {
+    "keywords": [
+      "read",
+      "mail"
+    ],
+    "method": "dict",
+    "confidence": 0.9,
+    "timestamp": 1781154719.083443,
+    "auto_added": false
+  },
+  "我的页面": {
+    "keywords": [
+      "mine",
+      "viewcontroller",
+      "vc",
+      "page",
+      "view"
+    ],
+    "method": "dict",
+    "confidence": 0.7,
+    "timestamp": 1781169841.516553,
+    "auto_added": false
+  },
+  "代办": {
+    "keywords": [
+      "todo"
+    ],
+    "method": "dict",
+    "confidence": 0.9,
+    "timestamp": 1781164563.5631301,
+    "auto_added": false
+  },
+  "代办页面": {
+    "keywords": [
+      "todo",
+      "viewcontroller",
+      "vc",
+      "page",
+      "view"
+    ],
+    "method": "dict",
+    "confidence": 1.0,
+    "timestamp": 1781164596.007544,
+    "auto_added": false
+  },
+  "文件执行": {
+    "keywords": [
+      "file"
+    ],
+    "method": "dict",
+    "confidence": 0.7,
+    "timestamp": 1781170063.4338748,
+    "auto_added": false
+  },
+  "邮件发送": {
+    "keywords": [
+      "mail",
+      "email",
+      "message"
+    ],
+    "method": "dict",
+    "confidence": 0.7,
+    "timestamp": 1781173761.152582,
+    "auto_added": false
+  },
+  "邮件发送怎么工作": {
+    "keywords": [
+      "mail",
+      "email",
+      "message"
+    ],
+    "method": "dict",
+    "confidence": 0.7,
+    "timestamp": 1781173768.562046,
+    "auto_added": false
+  },
+  "MailBox 邮件列表": {
+    "keywords": [
+      "mail",
+      "email",
+      "message",
+      "list"
+    ],
+    "method": "dict",
+    "confidence": 0.7,
+    "timestamp": 1781173003.5546088,
+    "auto_added": false
+  },
+  "asdfqwer不存在": {
+    "keywords": [
+      "asdfqwer",
+      "不",
+      "存在"
+    ],
+    "method": "dict",
+    "confidence": 0.3333333333333333,
+    "timestamp": 1781173073.938561,
+    "auto_added": false
+  },
+  "sendMail 怎么工作": {
+    "keywords": [
+      "sendMail",
+      "怎么",
+      "工作"
+    ],
+    "method": "dict",
+    "confidence": 0.3333333333333333,
+    "timestamp": 1781173090.0193658,
+    "auto_added": false
+  }
+}

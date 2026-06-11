@@ -1,0 +1,1417 @@
+{
+  "version": 1,
+  "terms": {
+    "登录": {
+      "translations": [
+        "login",
+        "signin",
+        "sign_in",
+        "auth",
+        "authenticate"
+      ],
+      "category": "认证/账号"
+    },
+    "注册": {
+      "translations": [
+        "register",
+        "signup",
+        "sign_up"
+      ],
+      "category": "认证/账号"
+    },
+    "登出": {
+      "translations": [
+        "logout",
+        "signout",
+        "sign_out"
+      ],
+      "category": "认证/账号"
+    },
+    "密码": {
+      "translations": [
+        "password",
+        "passwd",
+        "pwd"
+      ],
+      "category": "认证/账号"
+    },
+    "账号": {
+      "translations": [
+        "account"
+      ],
+      "category": "认证/账号"
+    },
+    "验证": {
+      "translations": [
+        "verify",
+        "validation",
+        "auth"
+      ],
+      "category": "认证/账号"
+    },
+    "授权": {
+      "translations": [
+        "authorize",
+        "auth",
+        "oauth"
+      ],
+      "category": "认证/账号"
+    },
+    "令牌": {
+      "translations": [
+        "token"
+      ],
+      "category": "认证/账号"
+    },
+    "邮件": {
+      "translations": [
+        "mail",
+        "email",
+        "message"
+      ],
+      "category": "邮件核心"
+    },
+    "收件": {
+      "translations": [
+        "inbox",
+        "receive"
+      ],
+      "category": "邮件核心"
+    },
+    "发件": {
+      "translations": [
+        "send",
+        "outbox",
+        "sent"
+      ],
+      "category": "邮件核心"
+    },
+    "草稿": {
+      "translations": [
+        "draft"
+      ],
+      "category": "邮件核心"
+    },
+    "附件": {
+      "translations": [
+        "attachment",
+        "attach"
+      ],
+      "category": "邮件核心"
+    },
+    "转发": {
+      "translations": [
+        "forward"
+      ],
+      "category": "邮件核心"
+    },
+    "回复": {
+      "translations": [
+        "reply"
+      ],
+      "category": "邮件核心"
+    },
+    "抄送": {
+      "translations": [
+        "cc",
+        "carbon_copy"
+      ],
+      "category": "邮件核心"
+    },
+    "密送": {
+      "translations": [
+        "bcc"
+      ],
+      "category": "邮件核心"
+    },
+    "主题": {
+      "translations": [
+        "theme",
+        "subject"
+      ],
+      "category": "邮件核心"
+    },
+    "正文": {
+      "translations": [
+        "body",
+        "content"
+      ],
+      "category": "邮件核心"
+    },
+    "收件箱": {
+      "translations": [
+        "inbox"
+      ],
+      "category": "邮件核心"
+    },
+    "已发送": {
+      "translations": [
+        "sent",
+        "outbox"
+      ],
+      "category": "邮件核心"
+    },
+    "草稿箱": {
+      "translations": [
+        "draft box"
+      ],
+      "category": "邮件核心"
+    },
+    "未读": {
+      "translations": [
+        "unread"
+      ],
+      "category": "邮件核心"
+    },
+    "已读": {
+      "translations": [
+        "read"
+      ],
+      "category": "邮件核心"
+    },
+    "读信": {
+      "translations": [
+        "read"
+      ],
+      "category": "邮件核心"
+    },
+    "读邮件": {
+      "translations": [
+        "read",
+        "mail"
+      ],
+      "category": "邮件核心"
+    },
+    "阅读": {
+      "translations": [
+        "read"
+      ],
+      "category": "邮件核心"
+    },
+    "来信": {
+      "translations": [
+        "incoming",
+        "received"
+      ],
+      "category": "邮件核心"
+    },
+    "收信": {
+      "translations": [
+        "receive",
+        "fetch"
+      ],
+      "category": "邮件核心"
+    },
+    "发信": {
+      "translations": [
+        "send",
+        "compose"
+      ],
+      "category": "邮件核心"
+    },
+    "新邮件": {
+      "translations": [
+        "new_mail",
+        "new_message"
+      ],
+      "category": "邮件核心"
+    },
+    "退订": {
+      "translations": [
+        "unsubscribe"
+      ],
+      "category": "邮件核心"
+    },
+    "订阅": {
+      "translations": [
+        "subscribe",
+        "subscription"
+      ],
+      "category": "邮件核心"
+    },
+    "通讯录": {
+      "translations": [
+        "contacts",
+        "address_book"
+      ],
+      "category": "邮件核心"
+    },
+    "待办": {
+      "translations": [
+        "todo",
+        "task"
+      ],
+      "category": "邮件核心"
+    },
+    "下载": {
+      "translations": [
+        "download"
+      ],
+      "category": "操作"
+    },
+    "上传": {
+      "translations": [
+        "upload"
+      ],
+      "category": "操作"
+    },
+    "删除": {
+      "translations": [
+        "delete",
+        "remove"
+      ],
+      "category": "操作"
+    },
+    "保存": {
+      "translations": [
+        "save",
+        "store"
+      ],
+      "category": "操作"
+    },
+    "编辑": {
+      "translations": [
+        "edit",
+        "modify"
+      ],
+      "category": "操作"
+    },
+    "搜索": {
+      "translations": [
+        "search",
+        "query"
+      ],
+      "category": "操作"
+    },
+    "筛选": {
+      "translations": [
+        "filter"
+      ],
+      "category": "操作"
+    },
+    "排序": {
+      "translations": [
+        "sort",
+        "order"
+      ],
+      "category": "操作"
+    },
+    "刷新": {
+      "translations": [
+        "refresh",
+        "reload"
+      ],
+      "category": "操作"
+    },
+    "同步": {
+      "translations": [
+        "sync",
+        "synchronize"
+      ],
+      "category": "操作"
+    },
+    "加载": {
+      "translations": [
+        "load"
+      ],
+      "category": "操作"
+    },
+    "推送": {
+      "translations": [
+        "push",
+        "notification"
+      ],
+      "category": "操作"
+    },
+    "通知": {
+      "translations": [
+        "notification",
+        "notify"
+      ],
+      "category": "操作"
+    },
+    "标记": {
+      "translations": [
+        "flag",
+        "mark",
+        "tag"
+      ],
+      "category": "操作"
+    },
+    "收藏": {
+      "translations": [
+        "favorite",
+        "bookmark",
+        "star"
+      ],
+      "category": "操作"
+    },
+    "归档": {
+      "translations": [
+        "archive"
+      ],
+      "category": "操作"
+    },
+    "移动": {
+      "translations": [
+        "move"
+      ],
+      "category": "操作"
+    },
+    "复制": {
+      "translations": [
+        "copy"
+      ],
+      "category": "操作"
+    },
+    "跳转": {
+      "translations": [
+        "jump",
+        "navigate",
+        "redirect"
+      ],
+      "category": "操作"
+    },
+    "切换": {
+      "translations": [
+        "switch",
+        "toggle"
+      ],
+      "category": "操作"
+    },
+    "清除": {
+      "translations": [
+        "clear",
+        "reset"
+      ],
+      "category": "操作"
+    },
+    "移除": {
+      "translations": [
+        "remove",
+        "delete"
+      ],
+      "category": "操作"
+    },
+    "展开": {
+      "translations": [
+        "expand",
+        "unfold"
+      ],
+      "category": "操作"
+    },
+    "折叠": {
+      "translations": [
+        "collapse",
+        "fold",
+        "shrink"
+      ],
+      "category": "操作"
+    },
+    "收起": {
+      "translations": [
+        "collapse",
+        "fold",
+        "hide"
+      ],
+      "category": "操作"
+    },
+    "置顶": {
+      "translations": [
+        "pin",
+        "sticky",
+        "top"
+      ],
+      "category": "操作"
+    },
+    "全选": {
+      "translations": [
+        "select_all"
+      ],
+      "category": "操作"
+    },
+    "页面": {
+      "translations": [
+        "viewcontroller",
+        "vc",
+        "page",
+        "view"
+      ],
+      "category": "UI组件"
+    },
+    "列表": {
+      "translations": [
+        "list"
+      ],
+      "category": "UI组件"
+    },
+    "详情": {
+      "translations": [
+        "detail"
+      ],
+      "category": "UI组件"
+    },
+    "设置": {
+      "translations": [
+        "settings",
+        "config",
+        "preference"
+      ],
+      "category": "UI组件"
+    },
+    "按钮": {
+      "translations": [
+        "button",
+        "btn"
+      ],
+      "category": "UI组件"
+    },
+    "弹窗": {
+      "translations": [
+        "dialog",
+        "popup",
+        "alert"
+      ],
+      "category": "UI组件"
+    },
+    "菜单": {
+      "translations": [
+        "menu"
+      ],
+      "category": "UI组件"
+    },
+    "导航": {
+      "translations": [
+        "nav",
+        "navigation"
+      ],
+      "category": "UI组件"
+    },
+    "标签": {
+      "translations": [
+        "tab",
+        "tag",
+        "label"
+      ],
+      "category": "UI组件"
+    },
+    "工具栏": {
+      "translations": [
+        "toolbar"
+      ],
+      "category": "UI组件"
+    },
+    "侧边栏": {
+      "translations": [
+        "sidebar"
+      ],
+      "category": "UI组件"
+    },
+    "状态栏": {
+      "translations": [
+        "statusbar",
+        "status_bar",
+        "StatusBar",
+        "statusBar"
+      ],
+      "category": "UI组件"
+    },
+    "标题": {
+      "translations": [
+        "title",
+        "header"
+      ],
+      "category": "UI组件"
+    },
+    "输入框": {
+      "translations": [
+        "input",
+        "textfield",
+        "text_field",
+        "TextInput"
+      ],
+      "category": "UI组件"
+    },
+    "图标": {
+      "translations": [
+        "icon",
+        "Icon"
+      ],
+      "category": "UI组件"
+    },
+    "图片": {
+      "translations": [
+        "image",
+        "img",
+        "Image"
+      ],
+      "category": "UI组件"
+    },
+    "头像": {
+      "translations": [
+        "avatar",
+        "Avatar"
+      ],
+      "category": "UI组件"
+    },
+    "容器": {
+      "translations": [
+        "container",
+        "Container"
+      ],
+      "category": "UI组件"
+    },
+    "面板": {
+      "translations": [
+        "panel",
+        "Panel"
+      ],
+      "category": "UI组件"
+    },
+    "选择器": {
+      "translations": [
+        "picker",
+        "selector",
+        "Picker",
+        "Selector"
+      ],
+      "category": "UI组件"
+    },
+    "卡片": {
+      "translations": [
+        "card",
+        "Card"
+      ],
+      "category": "UI组件"
+    },
+    "角标": {
+      "translations": [
+        "badge",
+        "Badge"
+      ],
+      "category": "UI组件"
+    },
+    "徽章": {
+      "translations": [
+        "badge",
+        "Badge"
+      ],
+      "category": "UI组件"
+    },
+    "开关": {
+      "translations": [
+        "switch",
+        "toggle",
+        "Switch",
+        "Toggle"
+      ],
+      "category": "UI组件"
+    },
+    "复选框": {
+      "translations": [
+        "checkbox",
+        "Checkbox"
+      ],
+      "category": "UI组件"
+    },
+    "单选": {
+      "translations": [
+        "radio",
+        "Radio"
+      ],
+      "category": "UI组件"
+    },
+    "分割线": {
+      "translations": [
+        "divider",
+        "separator",
+        "Divider"
+      ],
+      "category": "UI组件"
+    },
+    "提示条": {
+      "translations": [
+        "toast",
+        "snackbar",
+        "Toast"
+      ],
+      "category": "UI组件"
+    },
+    "进度条": {
+      "translations": [
+        "progress",
+        "Progress"
+      ],
+      "category": "UI组件"
+    },
+    "滚动条": {
+      "translations": [
+        "scrollbar",
+        "Scrollbar"
+      ],
+      "category": "UI组件"
+    },
+    "搜索栏": {
+      "translations": [
+        "searchbar",
+        "search_bar",
+        "SearchBar"
+      ],
+      "category": "UI组件"
+    },
+    "导航栏": {
+      "translations": [
+        "navbar",
+        "navigation_bar",
+        "NavigationBar"
+      ],
+      "category": "UI组件"
+    },
+    "底部栏": {
+      "translations": [
+        "bottombar",
+        "bottom_bar",
+        "BottomBar"
+      ],
+      "category": "UI组件"
+    },
+    "标签栏": {
+      "translations": [
+        "tabbar",
+        "tab_bar",
+        "TabBar"
+      ],
+      "category": "UI组件"
+    },
+    "浮动按钮": {
+      "translations": [
+        "fab",
+        "floating_action_button",
+        "FloatingActionButton"
+      ],
+      "category": "UI组件"
+    },
+    "网格": {
+      "translations": [
+        "grid",
+        "Grid"
+      ],
+      "category": "UI组件"
+    },
+    "轮播": {
+      "translations": [
+        "carousel",
+        "swiper",
+        "Carousel"
+      ],
+      "category": "UI组件"
+    },
+    "抽屉": {
+      "translations": [
+        "drawer",
+        "Drawer"
+      ],
+      "category": "UI组件"
+    },
+    "骨架屏": {
+      "translations": [
+        "skeleton",
+        "Skeleton"
+      ],
+      "category": "UI组件"
+    },
+    "空状态": {
+      "translations": [
+        "empty_state",
+        "EmptyState"
+      ],
+      "category": "UI组件"
+    },
+    "加载指示器": {
+      "translations": [
+        "indicator",
+        "spinner",
+        "ActivityIndicator"
+      ],
+      "category": "UI组件"
+    },
+    "下拉菜单": {
+      "translations": [
+        "dropdown",
+        "Dropdown"
+      ],
+      "category": "UI组件"
+    },
+    "气泡": {
+      "translations": [
+        "bubble",
+        "tooltip",
+        "Tooltip"
+      ],
+      "category": "UI组件"
+    },
+    "遮罩": {
+      "translations": [
+        "mask",
+        "overlay",
+        "Overlay"
+      ],
+      "category": "UI组件"
+    },
+    "布局": {
+      "translations": [
+        "layout",
+        "Layout"
+      ],
+      "category": "UI属性/布局"
+    },
+    "圆角": {
+      "translations": [
+        "border_radius",
+        "cornerRadius",
+        "BorderRadius"
+      ],
+      "category": "UI属性/布局"
+    },
+    "边距": {
+      "translations": [
+        "margin",
+        "Margin"
+      ],
+      "category": "UI属性/布局"
+    },
+    "间距": {
+      "translations": [
+        "spacing",
+        "gap",
+        "Spacing"
+      ],
+      "category": "UI属性/布局"
+    },
+    "内边距": {
+      "translations": [
+        "padding",
+        "Padding"
+      ],
+      "category": "UI属性/布局"
+    },
+    "边框": {
+      "translations": [
+        "border",
+        "Border"
+      ],
+      "category": "UI属性/布局"
+    },
+    "阴影": {
+      "translations": [
+        "shadow",
+        "Shadow"
+      ],
+      "category": "UI属性/布局"
+    },
+    "透明": {
+      "translations": [
+        "transparent",
+        "opacity"
+      ],
+      "category": "UI属性/布局"
+    },
+    "透明度": {
+      "translations": [
+        "opacity",
+        "Opacity"
+      ],
+      "category": "UI属性/布局"
+    },
+    "背景色": {
+      "translations": [
+        "background_color",
+        "backgroundColor",
+        "BackgroundColor"
+      ],
+      "category": "UI属性/布局"
+    },
+    "文字大小": {
+      "translations": [
+        "font_size",
+        "fontSize",
+        "FontSize"
+      ],
+      "category": "UI属性/布局"
+    },
+    "字体": {
+      "translations": [
+        "font",
+        "font_family",
+        "Font"
+      ],
+      "category": "UI属性/布局"
+    },
+    "高度": {
+      "translations": [
+        "height",
+        "Height"
+      ],
+      "category": "UI属性/布局"
+    },
+    "宽度": {
+      "translations": [
+        "width",
+        "Width"
+      ],
+      "category": "UI属性/布局"
+    },
+    "居中": {
+      "translations": [
+        "center",
+        "Center"
+      ],
+      "category": "UI属性/布局"
+    },
+    "对齐": {
+      "translations": [
+        "align",
+        "alignment",
+        "Alignment"
+      ],
+      "category": "UI属性/布局"
+    },
+    "填充": {
+      "translations": [
+        "fill",
+        "padding",
+        "Fill"
+      ],
+      "category": "UI属性/布局"
+    },
+    "焦点": {
+      "translations": [
+        "focus",
+        "Focus"
+      ],
+      "category": "UI状态/交互"
+    },
+    "选中": {
+      "translations": [
+        "selected",
+        "Selected"
+      ],
+      "category": "UI状态/交互"
+    },
+    "高亮": {
+      "translations": [
+        "highlight",
+        "Highlight"
+      ],
+      "category": "UI状态/交互"
+    },
+    "禁用": {
+      "translations": [
+        "disabled",
+        "Disabled"
+      ],
+      "category": "UI状态/交互"
+    },
+    "可见": {
+      "translations": [
+        "visible",
+        "Visible"
+      ],
+      "category": "UI状态/交互"
+    },
+    "隐藏": {
+      "translations": [
+        "hidden",
+        "Hidden"
+      ],
+      "category": "UI状态/交互"
+    },
+    "激活": {
+      "translations": [
+        "active",
+        "Active"
+      ],
+      "category": "UI状态/交互"
+    },
+    "动画": {
+      "translations": [
+        "animation",
+        "Animation"
+      ],
+      "category": "UI状态/交互"
+    },
+    "过渡": {
+      "translations": [
+        "transition",
+        "Transition"
+      ],
+      "category": "UI状态/交互"
+    },
+    "渐变": {
+      "translations": [
+        "gradient",
+        "Gradient"
+      ],
+      "category": "UI状态/交互"
+    },
+    "点击": {
+      "translations": [
+        "click",
+        "tap",
+        "onTap"
+      ],
+      "category": "UI状态/交互"
+    },
+    "长按": {
+      "translations": [
+        "long_press",
+        "longPress",
+        "onLongPress"
+      ],
+      "category": "UI状态/交互"
+    },
+    "滑动": {
+      "translations": [
+        "swipe",
+        "slide",
+        "Swipe"
+      ],
+      "category": "UI状态/交互"
+    },
+    "拖拽": {
+      "translations": [
+        "drag",
+        "Drag"
+      ],
+      "category": "UI状态/交互"
+    },
+    "缩放": {
+      "translations": [
+        "scale",
+        "zoom",
+        "Scale"
+      ],
+      "category": "UI状态/交互"
+    },
+    "键盘": {
+      "translations": [
+        "keyboard",
+        "Keyboard"
+      ],
+      "category": "UI状态/交互"
+    },
+    "返回": {
+      "translations": [
+        "back",
+        "return",
+        "Back"
+      ],
+      "category": "UI状态/交互"
+    },
+    "沉浸式": {
+      "translations": [
+        "immersive",
+        "edge_to_edge"
+      ],
+      "category": "移动端"
+    },
+    "全屏": {
+      "translations": [
+        "fullscreen",
+        "FullScreen"
+      ],
+      "category": "移动端"
+    },
+    "横屏": {
+      "translations": [
+        "landscape"
+      ],
+      "category": "移动端"
+    },
+    "竖屏": {
+      "translations": [
+        "portrait"
+      ],
+      "category": "移动端"
+    },
+    "安全区": {
+      "translations": [
+        "safe_area",
+        "safeArea",
+        "SafeArea"
+      ],
+      "category": "移动端"
+    },
+    "手势": {
+      "translations": [
+        "gesture",
+        "Gesture"
+      ],
+      "category": "移动端"
+    },
+    "系统栏": {
+      "translations": [
+        "system_bars",
+        "SystemChrome"
+      ],
+      "category": "移动端"
+    },
+    "数据": {
+      "translations": [
+        "data",
+        "Data"
+      ],
+      "category": "数据/状态"
+    },
+    "颜色": {
+      "translations": [
+        "color",
+        "Color"
+      ],
+      "category": "数据/状态"
+    },
+    "样式": {
+      "translations": [
+        "style",
+        "Style"
+      ],
+      "category": "数据/状态"
+    },
+    "皮肤": {
+      "translations": [
+        "skin",
+        "theme",
+        "Theme"
+      ],
+      "category": "数据/状态"
+    },
+    "主题色": {
+      "translations": [
+        "theme_color",
+        "primary_color"
+      ],
+      "category": "数据/状态"
+    },
+    "模式": {
+      "translations": [
+        "mode",
+        "Mode"
+      ],
+      "category": "数据/状态"
+    },
+    "配置": {
+      "translations": [
+        "config",
+        "configuration",
+        "Config"
+      ],
+      "category": "数据/状态"
+    },
+    "分页": {
+      "translations": [
+        "pagination",
+        "paging",
+        "Pagination"
+      ],
+      "category": "数据/状态"
+    },
+    "占位": {
+      "translations": [
+        "placeholder",
+        "Placeholder"
+      ],
+      "category": "数据/状态"
+    },
+    "提示": {
+      "translations": [
+        "hint",
+        "tip",
+        "Hint"
+      ],
+      "category": "数据/状态"
+    },
+    "提醒": {
+      "translations": [
+        "alert",
+        "reminder",
+        "Alert"
+      ],
+      "category": "数据/状态"
+    },
+    "声音": {
+      "translations": [
+        "sound",
+        "Sound"
+      ],
+      "category": "数据/状态"
+    },
+    "振动": {
+      "translations": [
+        "vibration",
+        "haptic",
+        "Haptic"
+      ],
+      "category": "数据/状态"
+    },
+    "网络": {
+      "translations": [
+        "network",
+        "http",
+        "api"
+      ],
+      "category": "网络/存储"
+    },
+    "请求": {
+      "translations": [
+        "request"
+      ],
+      "category": "网络/存储"
+    },
+    "响应": {
+      "translations": [
+        "response"
+      ],
+      "category": "网络/存储"
+    },
+    "缓存": {
+      "translations": [
+        "cache"
+      ],
+      "category": "网络/存储"
+    },
+    "数据库": {
+      "translations": [
+        "database",
+        "db"
+      ],
+      "category": "网络/存储"
+    },
+    "存储": {
+      "translations": [
+        "storage",
+        "store"
+      ],
+      "category": "网络/存储"
+    },
+    "加载中": {
+      "translations": [
+        "loading"
+      ],
+      "category": "状态"
+    },
+    "错误": {
+      "translations": [
+        "error",
+        "err"
+      ],
+      "category": "状态"
+    },
+    "成功": {
+      "translations": [
+        "success"
+      ],
+      "category": "状态"
+    },
+    "失败": {
+      "translations": [
+        "fail",
+        "failure"
+      ],
+      "category": "状态"
+    },
+    "取消": {
+      "translations": [
+        "cancel"
+      ],
+      "category": "状态"
+    },
+    "确认": {
+      "translations": [
+        "confirm",
+        "ok"
+      ],
+      "category": "状态"
+    },
+    "重试": {
+      "translations": [
+        "retry"
+      ],
+      "category": "状态"
+    },
+    "警告": {
+      "translations": [
+        "warning",
+        "warn"
+      ],
+      "category": "状态"
+    },
+    "用户": {
+      "translations": [
+        "user"
+      ],
+      "category": "其他"
+    },
+    "联系人": {
+      "translations": [
+        "contact"
+      ],
+      "category": "其他"
+    },
+    "文件夹": {
+      "translations": [
+        "folder",
+        "directory"
+      ],
+      "category": "其他"
+    },
+    "签名": {
+      "translations": [
+        "signature"
+      ],
+      "category": "其他"
+    },
+    "模板": {
+      "translations": [
+        "template"
+      ],
+      "category": "其他"
+    },
+    "日志": {
+      "translations": [
+        "log"
+      ],
+      "category": "其他"
+    },
+    "版本": {
+      "translations": [
+        "version"
+      ],
+      "category": "其他"
+    },
+    "更新": {
+      "translations": [
+        "update"
+      ],
+      "category": "其他"
+    },
+    "帮助": {
+      "translations": [
+        "help"
+      ],
+      "category": "其他"
+    },
+    "管理": {
+      "translations": [
+        "manage",
+        "management",
+        "Manage"
+      ],
+      "category": "其他"
+    },
+    "权限": {
+      "translations": [
+        "permission",
+        "Permission"
+      ],
+      "category": "其他"
+    },
+    "隐私": {
+      "translations": [
+        "privacy",
+        "Privacy"
+      ],
+      "category": "其他"
+    },
+    "安全": {
+      "translations": [
+        "security",
+        "Security"
+      ],
+      "category": "其他"
+    },
+    "会员": {
+      "translations": [
+        "member",
+        "vip",
+        "Member"
+      ],
+      "category": "其他"
+    },
+    "个性化": {
+      "translations": [
+        "personalize",
+        "customization"
+      ],
+      "category": "其他"
+    },
+    "自定义": {
+      "translations": [
+        "custom",
+        "Custom"
+      ],
+      "category": "其他"
+    },
+    "智能": {
+      "translations": [
+        "smart",
+        "intelligent"
+      ],
+      "category": "其他"
+    },
+    "聚合": {
+      "translations": [
+        "aggregate",
+        "Aggregate"
+      ],
+      "category": "其他"
+    },
+    "视图": {
+      "translations": [
+        "view"
+      ],
+      "category": "邮件核心"
+    },
+    "大师号": {
+      "translations": [
+        "master"
+      ],
+      "category": "邮件核心"
+    },
+    "代办": {
+      "translations": [
+        "todo"
+      ],
+      "category": "邮件核心"
+    },
+    "我的": {
+      "translations": [
+        "mine"
+      ],
+      "category": "邮件核心"
+    },
+    "摘要": {
+      "translations": [
+        "abs"
+      ],
+      "category": "邮件核心"
+    },
+    "写信": {
+      "translations": [
+        "write"
+      ],
+      "category": "邮件核心"
+    },
+    "文件": {
+      "translations": [
+        "file"
+      ],
+      "category": "邮件核心"
+    },
+    "文件中心": {
+      "translations": [
+        "fileCenter"
+      ],
+      "category": "邮件核心"
+    }
+  }
+}
