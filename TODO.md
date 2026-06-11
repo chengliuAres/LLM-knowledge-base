@@ -53,3 +53,61 @@
 - **可疑根因**：`vendor/js/tailwindcss.js`（407KB 运行时）每次 tab 切换调用 `tailwind.refresh()` 同步扫描 DOM 生成 CSS，可能在浏览器内存压力/扩展干扰下阻塞主线程
 - **优化方案**：用 Tailwind CLI 预编译静态 CSS 替换运行时版本，消除不确定性
 - **优先级**：中（不频繁刷新时体验正常）
+
+## 架构重构 — 代码知识库数据库按 repo 隔离（方案 A）
+
+### 背景
+
+当前所有仓库共享 1 个 LanceDB 表 + 1 个 SQLite，靠 chunk_id 前缀区分。存在以下问题：
+
+| 问题 | 说明 |
+|------|------|
+| 删除慢 | 删一个 repo 需全表扫描过滤（LanceDB 无索引，SQLite LIKE 匹配） |
+| 故障耦合 | 一个 repo 数据损坏影响全部仓库 |
+| 备份粒度粗 | 无法单 repo 备份/恢复 |
+| 中断清理难 | 扫描中断后孤立数据清理需扫全表（2026-06-11 实际遇到） |
+
+### 方案
+
+采用 Codex 推荐的**方案 A：按 repo 物理隔离**。CC 推荐的 B+（共享存储+靶向优化）更务实但治标不治本，等 repo 数量上去再改成本更高。
+
+### 实施步骤（低风险顺序）
+
+1. **引入 `RepoStorageManager`** — `get_repo_db(repo_name)` 按 repo 路由到独立 DB
+2. **路径约定** — `data/repos/{repo_name}/lancedb/` + `data/repos/{repo_name}/index.db`
+3. **抽象存储接口** — `insert/search/delete/stats` 适配层，上层代码不感知底层实现
+4. **先迁移写入+删除路径** — 收益最大（解决删除慢和中断清理）
+5. **再迁移查询路径** — 搜索/问答/浏览
+6. **跨仓库搜索** — 并发扇出 + topK 合并（RRF score 归一化）
+7. **扫描暂存 + 原子切换** — `scan_{id}` 写入临时库，完成后 rename 为 `active`，中断直接删除临时库
+8. **离线迁移脚本** — 按 repo_name 拆分现有数据到独立目录
+9. **Feature flag** — `STORAGE_MODE=shared|isolated` 可回滚
+
+### 预估工作量
+
+6+ 核心文件、500+ 行改动，涉及 `code_db.py`（全局单例→多实例）、`code_routes.py`（搜索/扫描/删除）、`code_config.py`（记录每个 repo 的 DB 路径）、`code_search.py`（跨库搜索）。
+
+### 触发条件
+
+- repo 数量 > 3
+- 单 repo 删除 > 30s
+- 需要 per-repo 备份 SLA
+- 需要多租户隔离
+
+### 参考
+
+- CC (sonnet) 建议 B+（~80 行改动解决 3/4 痛点，适合当前阶段）
+- Codex (o4-mini) 建议 A（从结构上解决，但改动量大）
+- 2026-06-11 MailAndroidG 扫描中断事件验证了隔离的必要性
+
+## MCP / kb_api 兜底
+
+### kb_api.py chat 子命令 30s 超时对 LLM 推理偏短（2026-06-11）
+
+- **现象**：`python3 export/skill/scripts/kb_api.py chat --question "..."` 实测 30s 超时返回 `TimeoutError: timed out`（小米 MiMo 慢），e2e 测试靠"协议层 error"判通过
+- **影响**：CLI 兜底模式下 chat 经常超时失败，AI Agent 会切到 MCP 模式或直接放弃
+- **优化方案**：
+  - chat 单独 120s 超时（其他子命令保持 30s）
+  - 暴露 `--timeout` 参数让用户按需调整
+- **优先级**：中（影响 CLI 兜底可靠性，但 MCP 模式不受影响）
+- **参考**：`export/skill/scripts/kb_api.py:39` `TIMEOUT_SEC = 30`

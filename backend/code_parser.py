@@ -10,6 +10,81 @@ from typing import Optional
 
 from code_skip_rules import get_skip_dirs, get_skip_exts
 
+
+# ── tree-sitter 0.25.x 兼容层 ──
+# 0.25 把所有属性改成了方法: node.type→node.kind(), node.children 移除,
+# node.start_byte→method, node.start_point→node.start_position() (返回 Point(row,col))
+# 以下包装器将新 API 适配回旧 API，避免 50+ 处代码改动。
+class _NodeCompat:
+    """将 tree-sitter 0.25.x Node 适配为旧版属性访问 API"""
+    __slots__ = ('_n',)
+    def __init__(self, node):
+        self._n = node
+    @property
+    def type(self):
+        return self._n.kind()
+    @property
+    def start_byte(self):
+        return self._n.start_byte()
+    @property
+    def end_byte(self):
+        return self._n.end_byte()
+    @property
+    def start_point(self):
+        p = self._n.start_position()
+        return (p.row, p.column)
+    @property
+    def end_point(self):
+        p = self._n.end_position()
+        return (p.row, p.column)
+    @property
+    def child_count(self):
+        return self._n.child_count()
+    @property
+    def named_child_count(self):
+        return self._n.named_child_count()
+    @property
+    def is_named(self):
+        return self._n.is_named()
+    @property
+    def has_error(self):
+        return self._n.has_error()
+    @property
+    def children(self):
+        return [_NodeCompat(self._n.child(i)) for i in range(self._n.child_count())]
+    @property
+    def named_children(self):
+        return [_NodeCompat(self._n.named_child(i)) for i in range(self._n.named_child_count())]
+    def child(self, i):
+        c = self._n.child(i)
+        return _NodeCompat(c) if c is not None else c
+    def named_child(self, i):
+        c = self._n.named_child(i)
+        return _NodeCompat(c) if c is not None else c
+    @property
+    def parent(self):
+        p = self._n.parent()
+        return _NodeCompat(p) if p is not None else p
+    def walk(self):
+        return self._n.walk()
+    def __repr__(self):
+        return f'Node({self.type})'
+
+
+class _TreeCompat:
+    """将 tree-sitter 0.25.x Tree 适配为旧版属性访问 API"""
+    __slots__ = ('_t',)
+    def __init__(self, tree):
+        self._t = tree
+    @property
+    def root_node(self):
+        return _NodeCompat(self._t.root_node())
+
+
+def _compat_parse(parser, source_bytes: bytes) -> _TreeCompat:
+    """tree-sitter 0.25.x 兼容 parse: bytes→str, 返回适配后的 Tree"""
+    return _TreeCompat(parser.parse(source_bytes.decode('utf-8', errors='replace')))
+
 # ── 注释剥离（embedding 前清洗，避免中文注释/字符串干扰跨语言检索）──
 # C 系语言: // 单行 + /* */ 多行
 _C_COMMENT_RE = re.compile(r'//[^\n]*|/\*[\s\S]*?\*/')
@@ -305,7 +380,7 @@ def _extract_calls_in_range(code_bytes: bytes, language: str,
     """
     try:
         parser = _get_cached_parser(language)
-        tree = parser.parse(code_bytes)
+        tree = _compat_parse(parser, code_bytes)
         return _extract_calls_from_tree(tree.root_node, code_bytes, language, start_byte, end_byte)
     except Exception:
         return []
@@ -677,8 +752,7 @@ def _extract_symbols(code_bytes: bytes, language: str) -> list[dict]:
         parser = _get_cached_parser(language)
     except Exception:
         return []
-
-    tree = parser.parse(code_bytes)
+    tree = _compat_parse(parser, code_bytes)
     root = tree.root_node
 
     symbol_types = SYMBOL_NODE_TYPES.get(language, set())
@@ -961,7 +1035,7 @@ def chunk_code(
 
     # 提取 imports + 全文件调用关系（复用同一次 tree-sitter parse）
     try:
-        _tree = _get_cached_parser(language).parse(code_bytes)
+        _tree = _compat_parse(_get_cached_parser(language), code_bytes)
         imports = _extract_imports(_tree.root_node, code_bytes, language)
         # 复用 root_node 提取全文件调用（避免二次 parse）
         all_file_calls = _extract_calls_from_tree(
