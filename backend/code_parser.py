@@ -777,6 +777,20 @@ def _sub_chunk(text: str, size: int = SUB_CHUNK_SIZE) -> list[str]:
     return chunks if chunks else [text[:size]]
 
 
+def _camel_to_words(name: str) -> str:
+    """驼峰命名拆分为独立单词
+
+    GHMineViewController → GH Mine View Controller
+    RCReadVC → RC Read VC
+    GHMasterLoginVC → GH Master Login VC
+    """
+    # 先处理连续大写字母后跟小写的情况: GHM → GH M
+    s = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1 \2', name)
+    # 再处理小写后跟大写的情况: ineV → ine V
+    s = re.sub(r'([a-z])([A-Z])', r'\1 \2', s)
+    return s
+
+
 def _make_display_text_for_embedding(
     rel_path: str,
     chunk_type: str,
@@ -790,6 +804,9 @@ def _make_display_text_for_embedding(
 
     注释会被剥离——中文注释/字符串字面量会误导跨语言 embedding 模型
     （如中文 query 匹配代码里的中文注释而非符号语义）。
+
+    驼峰命名会在注释头中追加拆词版（如 [GH Mine View Controller]），
+    让 bge 的 WordPiece 分词器能建立 token 级关联，提升向量搜索召回率。
     """
     if language in ('python', 'ruby', 'shell', 'yaml', 'json'):
         prefix = '#'
@@ -804,7 +821,12 @@ def _make_display_text_for_embedding(
     if chunk_type == 'file':
         type_info = 'file'
     else:
-        type_info = f"{chunk_type}: {symbol_name}"
+        # 驼峰拆词：GHMineViewController → GH Mine View Controller
+        split_name = _camel_to_words(symbol_name)
+        if split_name != symbol_name:
+            type_info = f"{chunk_type}: {symbol_name} [{split_name}]"
+        else:
+            type_info = f"{chunk_type}: {symbol_name}"
 
     header = f"{prefix} File: {rel_path} | {type_info} | Lines {line_start}-{line_end}"
     return f"{header}\n{clean_content}"
@@ -831,7 +853,14 @@ def _make_display_text(
     if chunk_type == 'file':
         type_info = 'file'
     else:
-        type_info = f"{chunk_type}: {symbol_name}"
+        # 驼峰拆词：GHMineViewController → GH Mine View Controller
+        # FTS5 的 unicode61 tokenizer 不拆分驼峰，搜 "viewcontroller" 无法命中 "GHMineViewController"。
+        # 追加拆词版后，FTS5 能通过 "view" / "controller" 等 token 命中驼峰标识符。
+        split_name = _camel_to_words(symbol_name)
+        if split_name != symbol_name:
+            type_info = f"{chunk_type}: {symbol_name} [{split_name}]"
+        else:
+            type_info = f"{chunk_type}: {symbol_name}"
 
     header = f"{prefix} File: {rel_path} | {type_info} | Lines {line_start}-{line_end}"
     return f"{header}\n{content}"

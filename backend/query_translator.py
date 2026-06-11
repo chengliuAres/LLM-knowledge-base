@@ -131,8 +131,9 @@ def _dict_translate(query: str) -> tuple[list[str], float]:
 
     策略：
     1. 整句匹配（"用户登录" → 精确匹配词典）
-    2. jieba 分词后逐词匹配
-    3. 未匹配的中文词跳过，已匹配的取英文词根
+    2. 贪心最长匹配（"我的页面" → "我的"(mine) + "页面"(page/view/vc)）
+    3. jieba 分词后逐词匹配（降级方案）
+    4. 未匹配的中文词跳过，已匹配的取英文词根
     """
     query = query.strip()
     if not query:
@@ -142,7 +143,14 @@ def _dict_translate(query: str) -> tuple[list[str], float]:
     if query in TERM_MAP:
         return TERM_MAP[query], 0.9
 
-    # 2. jieba 分词
+    # 2. 贪心最长匹配（在 jieba 之前，解决 jieba 拆碎词典词的问题）
+    #    例如 "我的页面" → jieba 会拆成 "我/的/页面"，"我的" 被拆碎
+    #    最长匹配先找到 "我的"(mine) + "页面"(page/view/vc)，避免拆碎
+    longest_results = _substring_match(query)
+    if longest_results:
+        return longest_results, 0.7
+
+    # 3. jieba 分词（最长匹配未命中的降级方案）
     try:
         import jieba
         tokens = list(jieba.cut(query))

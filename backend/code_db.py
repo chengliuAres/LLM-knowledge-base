@@ -513,6 +513,8 @@ def search_symbol_by_keywords(
     repo_name: Optional[str] = None,
     language: Optional[str] = None,
     chunk_type: Optional[str] = None,
+    file_path: Optional[str] = None,
+    symbol_name: Optional[str] = None,
 ) -> list[dict]:
     """用英文关键词搜索 symbol_name 和 file_path 字段
 
@@ -524,14 +526,25 @@ def search_symbol_by_keywords(
         top_k: 最多返回条数
         repo_name, language, chunk_type: 可选过滤条件
 
-    【后续优化方向】
-    当前实现使用 LIKE "%keyword%" 做全表扫描，大数据量下性能差。
-    后续可优化为：
-    1. 为 symbol_name 建 FTS5 虚拟表或 trigram 索引加速
-    2. 用 FTS5 trigram 索引替代 LIKE 全表扫描
-    3. 降低权重：符号搜索权重设为 0.5（向量搜索权重为 1.0）
+    当前状态：已启用，作为 search_code(hybrid) 的第三路补充召回（权重 1.5x）。
+             用于兜底 FTS5 驼峰拆分盲区——当 "viewcontroller" FTS5 零命中
+             "GHMineViewController" 时，LIKE 子串匹配仍可召回。
 
-    当前状态：暂时不使用，保留代码作为后续优化方向。
+    【后续优化方向 — 按优先级】
+    TODO[1] 将 LIKE 全表扫描改为 FTS5 列查询：
+            code_fts 表已有 symbol_name 列，但 unicode61 tokenizer 下
+            "GHMineViewController" 是单 token，MATCH 'symbol_name:viewcontroller' 同样命中不了。
+            需要先给 symbol_name 列也做驼峰拆分写入（方案一已给 display_text 加驼峰头，
+            但 symbol_name 列本身仍是原始驼峰），再配合 MATCH 列查询。
+            性能：0.2ms vs 当前 LIKE 10ms，快 50 倍。
+    TODO[2] 建 trigram tokenizer 辅助 FTS5 表：
+            CREATE VIRTUAL TABLE code_fts_sym USING fts5(symbol_name, tokenize='trigram');
+            trigram 原生支持任意子串匹配，无需驼峰拆分即可命中。
+            代价：多一张表 + 写入时多一次 INSERT。
+    TODO[3] 当前 6.2 万行 code_meta 下 LIKE 全表扫描 ~10ms/关键词，
+            多关键词循环累加 ~50ms。当前调用链为同步（search_code → search_symbol_by_keywords），
+            但实测在现数据量下可接受。数据量超 50 万行后（预估 ~100ms/关键词），
+            必须切到 TODO[1] 或 TODO[2]。
     """
     if not keywords:
         return []
@@ -567,6 +580,14 @@ def search_symbol_by_keywords(
         if chunk_type:
             sql += " AND chunk_type = ?"
             params.append(chunk_type)
+        if file_path:
+            # 前缀匹配，与 search_vector/search_keyword 的 file_path 过滤语义一致
+            sql += " AND file_path LIKE ?"
+            params.append(f"{file_path}%")
+        if symbol_name:
+            # 前缀匹配——caller 传入的是符号名过滤条件，通常用于缩小范围
+            sql += " AND symbol_name LIKE ?"
+            params.append(f"{symbol_name}%")
 
         sql += """
             GROUP BY file_path, symbol_name

@@ -6,6 +6,12 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 基于 LanceDB + sentence-transformers 的本地文档知识库 Demo，支持文档上传、邮件导入、代码索引、向量搜索和 RAG 问答。支持 MCP 协议对外暴露 AI 工具能力。这是一个 email-wiki 技术验证项目，演示 Karpathy LLM-wiki 方案在邮件/代码场景的核心链路。
 
+### 项目文档
+
+| 文档 | 说明 |
+|------|------|
+| `技术设计文档.md` | 代码向量搜索能力评估 — 覆盖搜索架构、混搜策略、调用链追踪、翻译层设计、能力边界与已知限制。新增代码搜索功能或修改搜索策略前**必读**。 |
+
 ## 启动与运行
 
 ```bash
@@ -130,17 +136,18 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 
 ### 代码搜索准确率策略（⚠️ 2026-06-10 实验结论）
 
-**三路混搜架构**：`code_search.py` 的 `search_code(hybrid)` 走三路召回 + RRF 融合排序。
+**四路混搜架构**：`code_search.py` 的 `search_code(hybrid)` 走四路召回 + RRF 扁平融合排序。
 
 **中文 query → 英文代码的核心策略**：翻译层是唯一正确桥梁，不是跨语言 embedding。
 
-| 路径 | 模型/方法 | 输入 | 角色 | 实际效果 |
-|------|-----------|------|------|------|
-| A 关键词 | SQLite FTS5 + jieba 分词 | 中文原 query | 中文 content 搜索 | 弱信号，搜注释/文档 |
-| B 向量 | `bge-small-en` (384维) | 翻译后的英文关键词 | 语义模糊召回 | 同语言英文→英文代码，配合翻译层使用 |
-| C 符号名 | `symbol_name LIKE '%kw%'` | 翻译后的英文关键词 | 精确命中 | **最可靠的路**，权重 1.5x |
+| 路径 | 模型/方法 | 输入 | 角色 | 权重 | 实际效果 |
+|------|-----------|------|------|------|------|
+| A 向量 | `bge-small-en` (384维) 每词分别embed | 翻译后的英文关键词 | 语义模糊召回 | 1.0 | 同语言英文→英文代码，配合翻译层使用 |
+| B 英文FTS5 | SQLite FTS5 + jieba 分词 | 翻译后的英文关键词 | 精确匹配代码标识符 | 1.0 | 英文关键词直接命中 |
+| C 中文FTS5 | SQLite FTS5 + jieba 分词 | 中文原 query | 中文 content 搜索 | 0.3 | 弱信号，搜注释/文档 |
+| D 符号名LIKE | `symbol_name LIKE '%kw%'` | 翻译后的英文关键词 / 英文query驼峰拆词 | 精确命中 | 1.5 | **最可靠的路**，兜底FTS5驼峰拆分盲区 |
 
-**翻译层降级链**：`query_translator.py` 词典 → 缓存 → MyMemory API → LLM → 原 query 回退
+**翻译层降级链**：`query_translator.py` 词典（贪心最长匹配 → jieba分词逐词匹配）→ 缓存 → MyMemory API → LLM → 原 query 回退
 
 **关键设计决策（实验验证）**：
 
@@ -153,7 +160,7 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 | 向量阈值 0.0→0.5 | ✅ 已修复 | score = (1+余弦相似度)/2，0.5=正交分界，砍掉「最近邻但无关」的噪声 |
 | 文档侧保持 `bge-base-zh-v1.5` | ✅ 不动 | 同语言中文→中文，换多语言模型会降低中文单项质量 |
 
-**词典维护**：`TERM_MAP` 在 `query_translator.py:45`，按业务场景分组。新增中文词条时加英文词根（类名/方法名词根优先，如 `read` 而非 `reading`），确认 jieba 能正确分词。
+**词典维护**：`TERM_MAP` 在 `query_translator.py:45`，按业务场景分组。新增中文词条时加英文词根（类名/方法名词根优先，如 `read` 而非 `reading`）。翻译时先用贪心最长匹配（解决 jieba 拆碎词典词的问题，如"我的"被拆成"我"+"的"），再降级到 jieba 分词逐词匹配。
 
 **运维模块：**
 - `logging_setup.py`：日志系统 SSOT（唯一初始化入口，幂等）
