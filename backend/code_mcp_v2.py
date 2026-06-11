@@ -31,6 +31,9 @@ async def code_search(
     import json
     from code_search import search_code
 
+    if not query.strip():
+        return json.dumps({"error": "query 不能为空"}, ensure_ascii=False)
+
     result = search_code(
         query=query.strip(),
         mode=mode,

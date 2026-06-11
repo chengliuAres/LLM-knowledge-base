@@ -17,7 +17,6 @@ import os
 import json
 import uuid
 import asyncio
-import warnings
 from typing import Optional
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -27,12 +26,8 @@ from logging_setup import get_logger
 
 log = get_logger("mcp")
 
-# Deprecation 警告：新 MCP 端点已迁移到 /mcp (code_mcp_v2.py)，旧端点计划在 Phase 2 移除
-warnings.warn(
-    "code_mcp (SSE) is deprecated, use code_mcp_v2 (Streamable HTTP) at /mcp",
-    DeprecationWarning,
-    stacklevel=2,
-)
+# Deprecation 提示：新 MCP 端点已迁移到 /mcp (code_mcp_v2.py)，旧端点计划在 Phase 2 移除
+log.warning("code_mcp (SSE) is deprecated, use code_mcp_v2 (Streamable HTTP) at /mcp")
 
 router = APIRouter(tags=["mcp"])
 
