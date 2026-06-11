@@ -64,6 +64,9 @@ async def code_chat(
     from code_search import search_code
     from llm_client import get_llm_client
 
+    if not question.strip():
+        return json.dumps({"error": "question 不能为空"}, ensure_ascii=False)
+
     client = get_llm_client()
     if not client:
         return json.dumps({"error": "LLM 未配置，无法进行问答"}, ensure_ascii=False)
@@ -154,6 +157,9 @@ async def code_trace(
     """追踪符号的调用链：谁调用了它 / 它调用了谁"""
     import json
     from code_search import trace_code
+
+    if not symbol.strip():
+        return json.dumps({"error": "symbol 不能为空"}, ensure_ascii=False)
 
     result = trace_code(
         symbol_name=symbol,
