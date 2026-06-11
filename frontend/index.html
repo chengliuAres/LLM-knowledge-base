@@ -237,28 +237,6 @@
                            class="input flex-1 text-sm" style="padding: 8px 12px;">
                 </div>
 
-                <!-- 分类 tabs -->
-                <div id="dict-category-tabs" class="flex gap-1 border-b overflow-x-auto shrink-0" style="border-color: var(--color-border);">
-                    <!-- 由 JS 动态渲染 -->
-                </div>
-
-                <!-- 词条表格 -->
-                <div class="overflow-x-auto">
-                    <table class="w-full rounded text-left text-sm" style="border: 1px solid var(--color-border);">
-                        <thead style="background: rgba(255,255,255,0.04); color: var(--color-muted);">
-                            <tr>
-                                <th class="py-2 px-2 font-semibold w-1/6 text-xs">中文</th>
-                                <th class="py-2 px-2 font-semibold w-2/5 text-xs">英文翻译</th>
-                                <th class="py-2 px-2 font-semibold w-1/6 text-xs">分类</th>
-                                <th class="py-2 px-2 font-semibold w-1/6 text-right text-xs">操作</th>
-                            </tr>
-                        </thead>
-                        <tbody id="dict-terms-body">
-                            <tr><td colspan="4" class="text-center py-6" style="color: var(--color-muted);">加载中...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-
                 <!-- 添加区 -->
                 <div class="rounded p-3" style="background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.25);">
                     <h4 class="text-sm font-semibold mb-2" style="color: var(--color-foreground);">➕ 添加新词条</h4>
@@ -280,6 +258,28 @@
                         </select>
                         <button onclick="addDictTerm()" class="btn btn-accent text-xs py-1 px-3 shrink-0">+ 添加</button>
                     </div>
+                </div>
+
+                <!-- 分类 tabs -->
+                <div id="dict-category-tabs" class="flex gap-1 border-b overflow-x-auto shrink-0" style="border-color: var(--color-border);">
+                    <!-- 由 JS 动态渲染 -->
+                </div>
+
+                <!-- 词条表格 -->
+                <div class="overflow-x-auto">
+                    <table class="w-full rounded text-left text-sm" style="border: 1px solid var(--color-border);">
+                        <thead style="background: rgba(255,255,255,0.04); color: var(--color-muted);">
+                            <tr>
+                                <th class="py-2 px-2 font-semibold w-1/6 text-xs">中文</th>
+                                <th class="py-2 px-2 font-semibold w-2/5 text-xs">英文翻译</th>
+                                <th class="py-2 px-2 font-semibold w-1/6 text-xs">分类</th>
+                                <th class="py-2 px-2 font-semibold w-1/6 text-right text-xs">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dict-terms-body">
+                            <tr><td colspan="4" class="text-center py-6" style="color: var(--color-muted);">加载中...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -305,7 +305,7 @@
         // bump 10: 代码搜索默认模式从「语义 vector」改为「混合 hybrid」,让符号路 1.5x 加权生效
         // bump 11: (前一会话)
         // bump 12: 代码统计看板数据存储目录加入翻译词典路径，所有路径支持点击打开 Finder
-        window.__TAB_VERSION = '13';
+        window.__TAB_VERSION = '14';
         // 显式启动路由（router.js 也会在 DOMContentLoaded 时自启，这里双保险）
         if (typeof initRouter === "function") {
             initRouter();
