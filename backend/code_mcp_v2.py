@@ -31,11 +31,12 @@ async def code_search(
     import json
     from code_search import search_code
 
-    if not query.strip():
+    query = query.strip()
+    if not query:
         return json.dumps({"error": "query 不能为空"}, ensure_ascii=False)
 
     result = search_code(
-        query=query.strip(),
+        query=query,
         mode=mode,
         top_k=min(max(top_k, 1), 100),
         repo_name=repo or None,
@@ -64,7 +65,8 @@ async def code_chat(
     from code_search import search_code
     from llm_client import get_llm_client
 
-    if not question.strip():
+    question = question.strip()
+    if not question:
         return json.dumps({"error": "question 不能为空"}, ensure_ascii=False)
 
     client = get_llm_client()
@@ -158,7 +160,8 @@ async def code_trace(
     import json
     from code_search import trace_code
 
-    if not symbol.strip():
+    symbol = symbol.strip()
+    if not symbol:
         return json.dumps({"error": "symbol 不能为空"}, ensure_ascii=False)
 
     result = trace_code(
