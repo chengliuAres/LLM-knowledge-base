@@ -13,6 +13,11 @@ CONFIG_PATH = os.path.join(PROJECT_ROOT, "data", "code_repos.json")
 # 扫描锁 (防止同仓库并发扫描)
 _scan_locks: dict[str, threading.Lock] = {}
 _global_lock = threading.Lock()
+_active_scan_repos: set[str] = set()  # 当前已成功拿到 lock+semaphore 的仓库
+
+# 全局扫描信号量：限制同时扫描的仓库数量，用时间换空间
+# 同一时刻只有 1 个扫描任务占用 embedding 模型 + 内存，避免并发导致峰值翻倍
+_scan_semaphore = threading.Semaphore(1)
 
 
 def _get_lock(repo_name: str) -> threading.Lock:
@@ -173,15 +178,29 @@ def compute_incremental(
 
 
 def try_acquire_scan_lock(repo_name: str) -> bool:
-    """尝试获取扫描锁 (非阻塞)"""
+    """尝试获取扫描锁 (非阻塞，含全局并发上限)"""
     lock = _get_lock(repo_name)
-    return lock.acquire(blocking=False)
+    if not lock.acquire(blocking=False):
+        return False
+    if not _scan_semaphore.acquire(blocking=False):
+        lock.release()
+        return False
+    with _global_lock:
+        _active_scan_repos.add(repo_name)
+    return True
 
 
 def release_scan_lock(repo_name: str):
-    """释放扫描锁"""
-    lock = _get_lock(repo_name)
+    """释放扫描锁（含全局信号量）"""
+    with _global_lock:
+        if repo_name not in _active_scan_repos:
+            return
+        _active_scan_repos.remove(repo_name)
+        lock = _scan_locks.get(repo_name)
+
     try:
-        lock.release()
+        if lock is not None:
+            lock.release()
     except RuntimeError:
         pass
+    _scan_semaphore.release()

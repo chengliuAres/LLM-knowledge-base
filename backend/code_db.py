@@ -181,47 +181,21 @@ def insert_chunks(chunks: list[dict]):
     """批量插入代码 chunks (同时写 LanceDB + SQLite)
 
     chunks: code_parser.chunk_code() 返回的结构, 需要额外带 vector 字段
+
+    内存优化：先写 SQLite（轻量元组），再就地补字段写 LanceDB（避免整份拷贝 content+vector）
     """
     if not chunks:
         return
 
-    # ── LanceDB 写入 ──
-    table = get_table()
-    lancedb_records = []
-    for c in chunks:
-        meta = c.get("metadata", {})
-        if isinstance(meta, dict):
-            meta_str = json.dumps(meta, ensure_ascii=False)
-        else:
-            meta_str = str(meta)
-
-        lancedb_records.append({
-            "id": c["id"],
-            "repo_name": c["repo_name"],
-            "project_type": c.get("project_type", ""),
-            "file_path": c["file_path"],
-            "file_name": c.get("file_name", ""),
-            "language": c["language"],
-            "chunk_type": c["chunk_type"],
-            "symbol_name": c.get("symbol_name", ""),
-            "content": c["content"],
-            "display_text": c.get("display_text", c["content"]),
-            "line_start": c.get("line_start", 0),
-            "line_end": c.get("line_end", 0),
-            "vector": c["vector"],
-            "metadata": meta_str,
-        })
-
-    table.add(lancedb_records)
-
-    # ── SQLite 写入 ──
+    # ── SQLite 写入（轻量，先写确保数据安全） ──
     conn = get_sqlite()
     fts_rows = []
     meta_rows = []
+    rel_rows = []
     for c in chunks:
         fts_rows.append((
             c["id"],
-            segment_for_fts(c.get("display_text", c["content"])),  # 用 display_text 索引，与向量搜索对齐
+            segment_for_fts(c.get("display_text", c["content"])),
             c.get("symbol_name", ""),
             c["file_path"],
             c["language"],
@@ -239,22 +213,7 @@ def insert_chunks(chunks: list[dict]):
             c.get("line_start", 0),
             c.get("line_end", 0),
         ))
-
-    conn.executemany(
-        "INSERT OR REPLACE INTO code_fts (chunk_id, content, symbol_name, file_path, language, repo_name) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        fts_rows
-    )
-    conn.executemany(
-        "INSERT OR REPLACE INTO code_meta (chunk_id, repo_name, project_type, file_path, file_name, "
-        "language, chunk_type, symbol_name, line_start, line_end) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        meta_rows
-    )
-
-    # ── 写入调用关系 ──
-    rel_rows = []
-    for c in chunks:
+        # 调用关系
         calls = c.get("metadata", {}).get("calls", [])
         if isinstance(calls, list):
             for call in calls:
@@ -267,15 +226,61 @@ def insert_chunks(chunks: list[dict]):
                         call.get("line", 0),
                         c["repo_name"],
                     ))
-    if rel_rows:
-        conn.executemany(
-            "INSERT OR IGNORE INTO code_relations "
-            "(caller_chunk_id, caller_symbol_name, caller_file_path, callee_name, callee_line, repo_name) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            rel_rows
-        )
 
-    conn.commit()
+    try:
+        # 先写 SQLite 但延迟 commit：若 LanceDB 失败可 rollback，避免双存储不一致
+        conn.execute("BEGIN")
+        conn.executemany(
+            "INSERT OR REPLACE INTO code_fts (chunk_id, content, symbol_name, file_path, language, repo_name) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            fts_rows
+        )
+        conn.executemany(
+            "INSERT OR REPLACE INTO code_meta (chunk_id, repo_name, project_type, file_path, file_name, "
+            "language, chunk_type, symbol_name, line_start, line_end) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            meta_rows
+        )
+        if rel_rows:
+            conn.executemany(
+                "INSERT OR IGNORE INTO code_relations "
+                "(caller_chunk_id, caller_symbol_name, caller_file_path, callee_name, callee_line, repo_name) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                rel_rows
+            )
+
+        # ── LanceDB 写入（只提取 schema 字段，避免多余字段导致报错） ──
+        # Python dict 赋值是引用拷贝，content/vector 等大对象不会复制内存
+        table = get_table()
+        lancedb_records = []
+        for c in chunks:
+            meta = c.get("metadata", {})
+            meta_str = json.dumps(meta, ensure_ascii=False) if isinstance(meta, dict) else str(meta)
+            lancedb_records.append({
+                "id": c["id"],
+                "repo_name": c["repo_name"],
+                "project_type": c.get("project_type", ""),
+                "file_path": c["file_path"],
+                "file_name": c.get("file_name", ""),
+                "language": c["language"],
+                "chunk_type": c["chunk_type"],
+                "symbol_name": c.get("symbol_name", ""),
+                "content": c["content"],
+                "display_text": c.get("display_text", c["content"]),
+                "line_start": c.get("line_start", 0),
+                "line_end": c.get("line_end", 0),
+                "vector": c["vector"],
+                "metadata": meta_str,
+            })
+
+        table.add(lancedb_records)
+        # 写入后立即释放 lancedb_records，让 GC 尽早回收
+        del lancedb_records
+
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 # ── 双删: 按仓库删除 ────────────────────────────────────────────
@@ -303,18 +308,19 @@ def delete_by_repo(repo_name: str) -> int:
 
 
 def delete_by_file(repo_name: str, file_path: str) -> int:
-    """删除指定文件的所有 chunks"""
-    table = get_table()
-    try:
-        df = table.to_pandas()
-        mask = (df['repo_name'] == repo_name) & (df['file_path'] == file_path)
-        count = len(df[mask])
-        if count > 0:
-            table.delete(f"repo_name = '{_esc(repo_name)}' AND file_path = '{_esc(file_path)}'")
-    except Exception:
-        count = 0
-
+    """删除指定文件的所有 chunks（用 SQLite 计数，避免 to_pandas 全表加载）"""
     conn = get_sqlite()
+    count = conn.execute(
+        "SELECT COUNT(*) FROM code_meta WHERE repo_name = ? AND file_path = ?",
+        (repo_name, file_path)
+    ).fetchone()[0]
+
+    if count > 0:
+        try:
+            get_table().delete(f"repo_name = '{_esc(repo_name)}' AND file_path = '{_esc(file_path)}'")
+        except Exception:
+            pass
+
     conn.execute("DELETE FROM code_meta WHERE repo_name = ? AND file_path = ?", (repo_name, file_path))
     conn.execute("DELETE FROM code_fts WHERE repo_name = ? AND file_path = ?", (repo_name, file_path))
     conn.execute("DELETE FROM code_relations WHERE repo_name = ? AND caller_file_path = ?", (repo_name, file_path))
@@ -742,32 +748,34 @@ def get_storage_stats() -> dict:
 
 
 def get_chunks_by_file(repo_name: str, file_path: str) -> list[dict]:
-    """获取指定文件的所有 chunks (用于 code_file_context MCP tool)"""
-    table = get_table()
-    try:
-        df = table.to_pandas()
-        mask = (df["repo_name"] == repo_name) & (df["file_path"] == file_path)
-        rows = df[mask]
-        if rows.empty:
-            return []
-        result = []
-        for _, r in rows.iterrows():
-            try:
-                meta = json.loads(r.get("metadata", "{}"))
-            except (json.JSONDecodeError, TypeError):
-                meta = {}
-            result.append({
-                "id": r["id"],
-                "content": r["content"],
-                "chunk_type": r["chunk_type"],
-                "symbol_name": r.get("symbol_name", ""),
-                "line_start": r.get("line_start", 0),
-                "line_end": r.get("line_end", 0),
-                "metadata": meta,
-            })
-        return sorted(result, key=lambda x: x["line_start"])
-    except Exception:
+    """获取指定文件的所有 chunks（用 SQLite 查询，避免 to_pandas 全表加载）"""
+    conn = get_sqlite()
+    rows = conn.execute(
+        "SELECT chunk_id, chunk_type, symbol_name, line_start, line_end "
+        "FROM code_meta WHERE repo_name = ? AND file_path = ? "
+        "ORDER BY line_start",
+        (repo_name, file_path)
+    ).fetchall()
+
+    if not rows:
         return []
+
+    result = []
+    for chunk_id, chunk_type, sym, lstart, lend in rows:
+        # content 从 FTS5 索引读
+        fts_row = conn.execute(
+            "SELECT content FROM code_fts WHERE chunk_id = ?", (chunk_id,)
+        ).fetchone()
+        result.append({
+            "id": chunk_id,
+            "content": fts_row[0] if fts_row else "",
+            "chunk_type": chunk_type,
+            "symbol_name": sym or "",
+            "line_start": lstart or 0,
+            "line_end": lend or 0,
+            "metadata": {},
+        })
+    return result
 
 
 # ── FTS5 中文分词迁移 ──────────────────────────────────────────────

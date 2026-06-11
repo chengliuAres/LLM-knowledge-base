@@ -196,7 +196,9 @@ def _run_scan(job: ScanJob):
         parse_warnings = 0
         total_chunks = 0
         BATCH = 64
-        FILE_BATCH = 200  # 每批累积约 200 * 5 = 1000 chunks → embed → 写入
+        # 每批累积的 chunk 数阈值：越小峰值内存越低，但总扫描时间略增（用时间换空间）
+        # 500 chunks ≈ 100 文件，单批峰值 ~60MB；1000 chunks ≈ 200 文件，单批峰值 ~120MB
+        CHUNK_BATCH_SIZE = 500
 
         # 流式处理: 分批解析 → 分批 embedding → 分批写入 (避免全部载入内存)
         batch_chunks = []
@@ -224,6 +226,9 @@ def _run_scan(job: ScanJob):
                 for j, v in enumerate(vectors):
                     batch_chunks[i+j]["vector"] = v
 
+            # embed 完成，batch_texts 不再需要，立即释放
+            batch_texts.clear()
+
             # 写入
             job.update("storing",
                        f"写入 第{batch_seq}批 ({n} chunks)",
@@ -236,7 +241,18 @@ def _run_scan(job: ScanJob):
 
             total_chunks += n
             batch_chunks.clear()
-            batch_texts.clear()
+
+            # 每 2 批清理 GC + MPS 缓存，用时间换空间
+            # 单次 gc.collect() 约 10-50ms，对总扫描时间影响 <2%
+            if batch_seq % 2 == 0:
+                import gc
+                gc.collect()
+                try:
+                    import torch
+                    if hasattr(torch, 'backends') and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                        torch.mps.empty_cache()
+                except Exception:
+                    pass
 
         for file_idx, f in enumerate(files_to_parse):
             if job.is_cancelled():
@@ -269,8 +285,8 @@ def _run_scan(job: ScanJob):
                 batch_texts.append(c.get("display_text", c["content"]))
                 batch_chunks.append(c)
 
-            # 每累积 ~2500 chunks 处理一批 (约 500 文件 * 5 chunks/file)
-            if len(batch_chunks) >= FILE_BATCH * 5:  # ~500 files * ~5 chunks each
+            # 每累积 CHUNK_BATCH_SIZE 个 chunks 处理一批
+            if len(batch_chunks) >= CHUNK_BATCH_SIZE:
                 _process_batch()
 
         # 处理最后一批
@@ -289,6 +305,8 @@ def _run_scan(job: ScanJob):
         job.error = str(e)
         job.update("error", f"扫描失败: {e}")
         log.exception(f"[scan:{job.scan_id}] 扫描异常: {e}")
+        # 注意：异常时不回滚已写入数据（设计选择）
+        # 原因：部分数据仍有价值，用户可手动删除仓库重建
     finally:
         # 如果被取消，清理已写入数据
         if job.is_cancelled():
@@ -316,6 +334,15 @@ def _run_scan(job: ScanJob):
             except asyncio.QueueFull:
                 pass
 
+        # 延迟清理 ScanJob（给 SSE 客户端时间拉取最终状态）
+        def _delayed_cleanup(scan_id: str):
+            import time
+            time.sleep(30)
+            _scan_jobs.pop(scan_id, None)
+            log.debug(f"[scan:{scan_id}] ScanJob 已清理")
+
+        threading.Thread(target=_delayed_cleanup, args=(job.scan_id,), daemon=True).start()
+
 
 def _finalize_scan(job: ScanJob, files: list, effective_type: str = ""):
     """扫描完成后更新配置"""
@@ -329,6 +356,20 @@ def _finalize_scan(job: ScanJob, files: list, effective_type: str = ""):
     job.stats = db_stats
     job.status = "completed"
     job.update("done", f"扫描完成 ✅ — {db_stats.get('total_chunks', 0)} chunks")
+    # 正常完成不需要回滚，立即释放 chunk id 列表
+    job._written_chunk_ids.clear()
+
+    # 扫描结束后 compact LanceDB，合并小 fragment 提升查询性能
+    # batch_size=500 导致 fragment 数翻倍，compact 将其合并
+    try:
+        from code_db import get_table
+        table = get_table()
+        table.compact_files()
+        # compact 后清理旧版本，释放磁盘空间
+        table.cleanup_old_versions()
+        log.info(f"[scan:{job.scan_id}] LanceDB compact 完成")
+    except Exception as e:
+        log.warning(f"[scan:{job.scan_id}] LanceDB compact 失败（不影响数据）: {e}")
 
 
 def _cleanup_scan(job: ScanJob):
