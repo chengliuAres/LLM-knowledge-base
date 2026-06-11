@@ -700,6 +700,17 @@ async def list_repos_endpoint():
     return {"repos": list_repos()}
 
 
+# ── GET /api/code/languages ──────────────────────────────────────────
+
+@router.get("/languages")
+async def supported_languages_endpoint():
+    """解析器支持的语言列表"""
+    from code_parser import EXTENSION_MAP
+    # EXTENSION_MAP: {'.m': 'objc', '.h': 'objc', ...} → 去重得到语言列表
+    langs = sorted(set(EXTENSION_MAP.values()))
+    return {"languages": langs}
+
+
 # ── GET /api/code/stats ──────────────────────────────────────────
 
 @router.get("/stats")

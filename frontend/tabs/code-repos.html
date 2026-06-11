@@ -123,9 +123,17 @@ async function codeLoadRepos() {
         const repoSelect = document.getElementById('codeFilterRepo');
         repoSelect.innerHTML = '<option value="">全部仓库</option>' + reposRes.repos.map(r => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.name)}</option>`).join('');
 
-        const langs = new Set();
-        reposRes.repos.forEach(r => (r.languages || []).forEach(l => langs.add(l)));
-        document.getElementById('codeFilterLang').innerHTML = '<option value="">全部语言</option>' + [...langs].map(l => `<option value="${l}">${l}</option>`).join('');
+        // 语言列表：优先从 /api/code/languages 获取解析器支持的完整列表
+        try {
+            const langRes = await fetch('/api/code/languages');
+            const langData = await langRes.json();
+            const allLangs = langData.languages || [];
+            document.getElementById('codeFilterLang').innerHTML = '<option value="">全部语言</option>' + allLangs.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join('');
+        } catch {
+            const langs = new Set();
+            reposRes.repos.forEach(r => (r.languages || []).forEach(l => langs.add(l)));
+            document.getElementById('codeFilterLang').innerHTML = '<option value="">全部语言</option>' + [...langs].map(l => `<option value="${l}">${l}</option>`).join('');
+        }
 
     } catch (e) {
         console.error('codeLoadRepos error:', e);

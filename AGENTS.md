@@ -228,6 +228,7 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/code/repos` | 已索引的仓库列表 |
+| GET | `/api/code/languages` | 解析器支持的语言列表 |
 | DELETE | `/api/code/repos` | 删除所有仓库索引 |
 | DELETE | `/api/code/repos/{name}` | 删除指定仓库索引 |
 | POST | `/api/code/repos/{name}/refresh` | 全量刷新仓库（幂等） |

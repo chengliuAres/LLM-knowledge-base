@@ -117,11 +117,21 @@ async function codeLoadSearchFilters() {
         repoSelect.innerHTML = '<option value="">全部仓库</option>' +
             repos.map(r => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.name)}</option>`).join('');
 
-        const langs = new Set();
-        repos.forEach(r => (r.languages || []).forEach(l => langs.add(l)));
+        // 语言列表：优先从 /api/code/languages 获取解析器支持的完整列表
         const langSelect = document.getElementById('codeSearchLang');
-        langSelect.innerHTML = '<option value="">全部语言</option>' +
-            [...langs].sort().map(l => `<option value="${l}">${l}</option>`).join('');
+        try {
+            const langRes = await fetch('/api/code/languages');
+            const langData = await langRes.json();
+            const allLangs = langData.languages || [];
+            langSelect.innerHTML = '<option value="">全部语言</option>' +
+                allLangs.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join('');
+        } catch {
+            // 降级：从已索引仓库提取
+            const langs = new Set();
+            repos.forEach(r => (r.languages || []).forEach(l => langs.add(l)));
+            langSelect.innerHTML = '<option value="">全部语言</option>' +
+                [...langs].sort().map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join('');
+        }
     } catch (e) {
         console.error('加载搜索筛选器失败:', e);
     }

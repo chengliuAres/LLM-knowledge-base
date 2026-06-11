@@ -5,16 +5,15 @@
 - keyword: 纯关键词搜索 (精确)
 - hybrid: 混合搜索 + RRF 融合 (默认)
 
-中文查询自动翻译为英文关键词，三路搜索融合：
+中文查询自动翻译为英文关键词，两路搜索融合：
   路径A: FTS5 关键词搜索（中文 content）
   路径B: 向量搜索（翻译后英文，bge-small-en）
-  路径C: 符号名搜索（翻译后英文关键词 LIKE symbol_name）
 """
 
 import re
 from typing import Optional
 from step_tracker import StepTracker
-from code_db import search_vector, search_keyword, search_symbol_by_keywords
+from code_db import search_vector, search_keyword
 
 
 # ── 中文检测 ───────────────────────────────────────────────────────
@@ -78,6 +77,29 @@ def rrf_fusion(
         result.append(item)
 
     return result
+
+
+# ── 文件级去重 ─────────────────────────────────────────────────────
+
+def _dedup_by_file(results: list[dict]) -> list[dict]:
+    """按 repo_name::file_path 去重，每组只保留排序分数最高的一条
+
+    hybrid 模式用 rrf_score，其他模式用 score。
+    """
+    if not results:
+        return results
+    best_by_file: dict[str, dict] = {}
+    for r in results:
+        repo = r.get("repo_name") or ""
+        fname = r.get("file_path") or r.get("file_name") or ""
+        dedup_key = f"{repo}::{fname}"
+        # hybrid 模式优先用 rrf_score，其他模式用 score
+        r_score = r.get("rrf_score") or r.get("score", 0)
+        cur = best_by_file.get(dedup_key)
+        cur_score = (cur.get("rrf_score") or cur.get("score", 0)) if cur else 0
+        if cur is None or r_score > cur_score:
+            best_by_file[dedup_key] = r
+    return list(best_by_file.values())
 
 
 # ── match_reason 生成 ─────────────────────────────────────────────
@@ -188,6 +210,9 @@ def search_code(
         # 过滤低质量向量结果
         results = [r for r in results if r.get("score", 0) >= MIN_VECTOR_SIMILARITY]
 
+        # 文件级去重
+        results = _dedup_by_file(results)
+
         if tracker:
             step.complete({"results_count": len(results)})
 
@@ -206,15 +231,18 @@ def search_code(
             symbol_name=symbol_name,
         )
 
+        # 文件级去重
+        results = _dedup_by_file(results)
+
         if tracker:
             step.complete({"results_count": len(results)})
 
     else:
-        # ── hybrid: 三路搜索 + RRF ──
+        # ── hybrid: 两路搜索 + RRF ──
         from code_embedder import embed_query
 
         if tracker:
-            step_hybrid = tracker.add_step("hybrid_search", "混合搜索 (向量+关键词+符号名)")
+            step_hybrid = tracker.add_step("hybrid_search", "混合搜索 (向量+关键词)")
             step_hybrid.start()
 
         pool_k = max(top_k * 5, 100)
@@ -236,15 +264,6 @@ def search_code(
             chunk_type=chunk_type, file_path=file_path,
         )
 
-        # 路径C: 符号名搜索（翻译后的英文关键词 LIKE symbol_name）
-        symbol_results = []
-        if translated_keywords:
-            symbol_results = search_symbol_by_keywords(
-                keywords=translated_keywords, top_k=pool_k,
-                repo_name=repo_name, language=language,
-                chunk_type=chunk_type,
-            )
-
         # 过滤低质量向量结果
         vector_results = [r for r in vector_results if r.get("score", 0) >= MIN_VECTOR_SIMILARITY]
 
@@ -252,24 +271,21 @@ def search_code(
             step_hybrid.complete({
                 "vector_hits": len(vector_results),
                 "keyword_hits": len(keyword_results),
-                "symbol_hits": len(symbol_results),
                 "translated_keywords": translated_keywords,
             })
-            step_rrf = tracker.add_step("rrf_fusion", "RRF 融合排序 (3路)")
+            step_rrf = tracker.add_step("rrf_fusion", "RRF 融合排序 (2路)")
             step_rrf.start()
 
-        # RRF 融合：向量 1.0x，关键词 1.0x，符号名 1.5x（中文查询时符号名更精准）
-        symbol_weight = 1.5 if translated_keywords else 1.0
+        # RRF 融合：向量 1.0x，关键词 0.3x（向量是主信号，关键词是辅助补充）
         results = rrf_fusion(
-            vector_results, keyword_results, symbol_results,
+            vector_results, keyword_results,
             top_k=top_k,
-            weights=[1.0, 1.0, symbol_weight],
+            weights=[1.0, 0.3],
         )
 
         # 标注来源
         vec_ids = {r["id"] for r in vector_results}
         kw_ids = {r["id"] for r in keyword_results}
-        sym_ids = {r["id"] for r in symbol_results}
 
         filtered = []
         for r in results:
@@ -279,8 +295,6 @@ def search_code(
                 sources.append("vector")
             if cid in kw_ids:
                 sources.append("keyword")
-            if cid in sym_ids:
-                sources.append("symbol")
             r["source"] = "+".join(sources) if len(sources) > 1 else (sources[0] if sources else "unknown")
 
             # 过滤仅向量命中且低相似度的结果
@@ -293,21 +307,11 @@ def search_code(
             step_rrf.complete({
                 "vector_hits": len(vector_results),
                 "keyword_hits": len(keyword_results),
-                "symbol_hits": len(symbol_results),
                 "merged": len(results),
             })
 
-        # ── 按 file_name 去重：每组只保留 score 最高的一条 ──
-        if results:
-            best_by_file: dict[str, dict] = {}
-            for r in results:
-                repo = r.get("repo_name") or ""
-                fname = r.get("file_path") or r.get("file_name") or ""
-                dedup_key = f"{repo}::{fname}"
-                cur = best_by_file.get(dedup_key)
-                if cur is None or r.get("score", 0) > cur.get("score", 0):
-                    best_by_file[dedup_key] = r
-            results = list(best_by_file.values())
+        # ── 文件级去重 ──
+        results = _dedup_by_file(results)
 
     # match_reason
     for r in results:
