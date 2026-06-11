@@ -134,7 +134,7 @@ function renderGitignoreDirs() {
     }
     body.innerHTML = _gitignoreDraft.map((it, idx) => `
         <label class="inline-flex items-center gap-1.5 mr-3 mb-1.5 cursor-pointer">
-            <input type="checkbox" ${it.selected ? 'checked' : ''} onchange="_gitignoreDraft[${idx}].selected = this.checked" class="accent-green-600">
+            <input type="checkbox" ${it.selected ? 'checked' : ''} onchange="_gitignoreDraft[${idx}].selected = this.checked; _autoSaveSkipRules();" class="accent-green-600">
             <span style="font-family: var(--font-mono); font-size: 12px; color: var(--color-foreground);">${escapeHtml(it.name)}</span>
         </label>
     `).join('');
@@ -146,6 +146,7 @@ function renderGitignoreDirs() {
 function toggleGitignoreAll(checked) {
     _gitignoreDraft.forEach(it => it.selected = checked);
     renderGitignoreDirs();
+    _autoSaveSkipRules();
 }
 
 function renderSkipTable(containerId, items, type) {
@@ -193,12 +194,33 @@ function addSkipRule(type) {
     arr.push({name, category});
     document.getElementById(inputId).value = '';
     renderSkipTable(type === 'dirs' ? 'skip-dirs-body' : 'skip-exts-body', arr, type);
+    _autoSaveSkipRules();
 }
 
 function removeSkipRule(type, index) {
     const arr = type === 'dirs' ? _skipRulesDraft.dirs : _skipRulesDraft.exts;
     arr.splice(index, 1);
     renderSkipTable(type === 'dirs' ? 'skip-dirs-body' : 'skip-exts-body', arr, type);
+    _autoSaveSkipRules();
+}
+
+// ── 自动同步到后端（静默）────────────────────────────────────
+
+async function _autoSaveSkipRules() {
+    try {
+        const res = await fetch('/api/code/skip-rules', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                skip_dirs: _skipRulesDraft.dirs,
+                skip_exts: _skipRulesDraft.exts,
+                gitignore_selections: _gitignoreDraft.map(it => ({name: it.name, selected: it.selected})),
+            }),
+        });
+        if (res.ok) loadPreview();
+    } catch (e) {
+        console.warn('[skip-rules] 自动保存失败:', e.message);
+    }
 }
 
 async function saveSkipRules() {

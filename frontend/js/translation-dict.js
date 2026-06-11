@@ -63,6 +63,23 @@ async function loadTranslationDict() {
     }
 }
 
+// ── 自动同步到后端（静默，不打断用户操作）─────────────────────
+
+async function _autoSaveToBackend() {
+    try {
+        const res = await fetch('/api/code/translation-dict', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({terms: _dictDraft}),
+        });
+        if (res.ok) {
+            _dictTerms = JSON.parse(JSON.stringify(_dictDraft));
+        }
+    } catch (e) {
+        console.warn('[translation-dict] 自动保存失败:', e.message);
+    }
+}
+
 // ── 保存词典 ────────────────────────────────────────────────
 
 async function saveTranslationDict() {
@@ -149,6 +166,7 @@ function addDictTerm() {
     _renderDictTable();
     _updateDictStats();
     showToast(`已添加: ${cn}`, 'success');
+    _autoSaveToBackend();
 }
 
 // ── 编辑词条 ────────────────────────────────────────────────
@@ -182,6 +200,8 @@ function saveEditDictTerm(cn) {
     _renderDictTable();
     _updateDictStats();
     showToast(`已更新: ${cn}`, 'success');
+    // 同步到后端，确保翻译器立即生效
+    _autoSaveToBackend();
 }
 
 // ── 删除词条 ────────────────────────────────────────────────
@@ -193,6 +213,7 @@ function removeDictTerm(cn) {
     _renderDictTable();
     _updateDictStats();
     showToast(`已删除: ${cn}`, 'success');
+    _autoSaveToBackend();
 }
 
 // ── 搜索过滤 ────────────────────────────────────────────────
