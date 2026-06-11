@@ -777,7 +777,7 @@ def _sub_chunk(text: str, size: int = SUB_CHUNK_SIZE) -> list[str]:
     return chunks if chunks else [text[:size]]
 
 
-def _make_display_text(
+def _make_display_text_for_embedding(
     rel_path: str,
     chunk_type: str,
     symbol_name: str,
@@ -808,6 +808,33 @@ def _make_display_text(
 
     header = f"{prefix} File: {rel_path} | {type_info} | Lines {line_start}-{line_end}"
     return f"{header}\n{clean_content}"
+
+
+def _make_display_text(
+    rel_path: str,
+    chunk_type: str,
+    symbol_name: str,
+    line_start: int,
+    line_end: int,
+    content: str,
+    language: str,
+) -> str:
+    """构造带上下文头部的 display_text，用于前端展示
+
+    保留注释——注释包含语义信息，增加可读性。
+    """
+    if language in ('python', 'ruby', 'shell', 'yaml', 'json'):
+        prefix = '#'
+    else:
+        prefix = '//'
+
+    if chunk_type == 'file':
+        type_info = 'file'
+    else:
+        type_info = f"{chunk_type}: {symbol_name}"
+
+    header = f"{prefix} File: {rel_path} | {type_info} | Lines {line_start}-{line_end}"
+    return f"{header}\n{content}"
 
 
 def chunk_code(

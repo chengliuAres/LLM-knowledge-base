@@ -516,9 +516,6 @@ def search_symbol_by_keywords(
 ) -> list[dict]:
     """用英文关键词搜索 symbol_name 和 file_path 字段
 
-    TODO: LIKE '%keyword%' 无法走 B-tree 索引，大数据量下全表扫描。
-    后续可为 symbol_name 建 FTS5 虚拟表或 trigram 索引加速。
-
     对每个关键词: symbol_name LIKE '%keyword%' OR file_path LIKE '%keyword%'
     多关键词命中越多的排越前（按命中数降序）。
 
@@ -526,6 +523,15 @@ def search_symbol_by_keywords(
         keywords: 翻译后的英文关键词列表 ["login", "signin", "auth"]
         top_k: 最多返回条数
         repo_name, language, chunk_type: 可选过滤条件
+
+    【后续优化方向】
+    当前实现使用 LIKE "%keyword%" 做全表扫描，大数据量下性能差。
+    后续可优化为：
+    1. 为 symbol_name 建 FTS5 虚拟表或 trigram 索引加速
+    2. 用 FTS5 trigram 索引替代 LIKE 全表扫描
+    3. 降低权重：符号搜索权重设为 0.5（向量搜索权重为 1.0）
+
+    当前状态：暂时不使用，保留代码作为后续优化方向。
     """
     if not keywords:
         return []
