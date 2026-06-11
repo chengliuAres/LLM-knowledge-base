@@ -1,18 +1,23 @@
-"""MCP Server — 代码知识库 AI 工具 (SSE 传输)
+"""MCP Server — 代码知识库 AI 工具 (SSE 传输, 已弃用)
 
 手动实现 MCP JSON-RPC 2.0 over SSE 协议, 不依赖 mcp SDK (兼容 Python 3.9+)。
 
-暴露 4 个 tools:
+⚠️ 已迁移到 code_mcp_v2.py (官方 mcp SDK + Streamable HTTP)，新端点 /mcp。
+旧端点 /mcp/sse + /mcp/message 保留兼容，计划在 Phase 2 移除。
+
+暴露 5 个 tools:
 - code_search: 搜索代码库
 - code_chat: RAG 代码问答
 - code_list_repos: 列出已索引仓库
 - code_file_context: 获取文件上下文
+- code_trace: 调用链追踪
 """
 
 import os
 import json
 import uuid
 import asyncio
+import warnings
 from typing import Optional
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -21,6 +26,13 @@ from sse_starlette.sse import EventSourceResponse
 from logging_setup import get_logger
 
 log = get_logger("mcp")
+
+# Deprecation 警告：新 MCP 端点已迁移到 /mcp (code_mcp_v2.py)，旧端点计划在 Phase 2 移除
+warnings.warn(
+    "code_mcp (SSE) is deprecated, use code_mcp_v2 (Streamable HTTP) at /mcp",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 router = APIRouter(tags=["mcp"])
 
