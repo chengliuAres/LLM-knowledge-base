@@ -43,7 +43,7 @@ log = get_logger("main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """FastAPI 生命周期：启动时配置日志 + 初始化邮件 DB + 启动 git watchdog；关闭时停止 watchdog。"""
+    """FastAPI 生命周期：启动时配置日志 + 初始化邮件 DB + 启动 git watchdog + MCP session manager；关闭时停止。"""
     configure_logging()
     log.info("服务启动")
     init_db()
@@ -53,8 +53,11 @@ async def lifespan(app: FastAPI):
     from git_watchdog import start_watchdog, stop_watchdog
     start_watchdog()
 
-    log.info("服务启动完成")
-    yield
+    # 启动 MCP v2 session manager
+    from code_mcp_v2 import mcp as mcp_v2
+    async with mcp_v2.session_manager.run():
+        log.info("服务启动完成")
+        yield
 
     # 关闭时停止 watchdog（让线程在 daemon 退前能干净退出）
     stop_watchdog()
@@ -62,8 +65,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="文档知识库", version="2.0.0", lifespan=lifespan)
 app.include_router(code_router)
-app.include_router(mcp_router)
+app.include_router(mcp_router)  # 旧 MCP (SSE), 保留兼容
 app.include_router(log_router)
+
+# 挂载新 MCP v2 (Streamable HTTP) — 客户端连 http://host/mcp
+from code_mcp_v2 import mcp as mcp_v2
+app.mount("/mcp", app=mcp_v2.streamable_http_app())
 
 
 @app.middleware("http")

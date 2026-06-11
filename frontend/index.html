@@ -47,6 +47,7 @@
                 <a class="sidebar-item" data-route="code/chat"      href="#code/chat">💬 <span>代码问答</span></a>
                 <a class="sidebar-item" data-route="code/dashboard" href="#code/dashboard">📊 <span>代码统计</span></a>
                 <a class="sidebar-item" data-route="code/lancedb"   href="#code/lancedb">🗄️ <span>代码 LanceDB</span></a>
+                <a class="sidebar-item" data-route="code/mcp"     href="#code/mcp">🔌 <span>MCP 接入</span></a>
             </nav>
 
             <!-- 侧边栏底部：日志抽屉切换 + 导出 -->
@@ -297,6 +298,8 @@
     <!-- 术语词典 + tooltip（依赖 shared.js 的 window 全局） -->
     <script src="js/glossary.js?v=1"></script>
     <script src="js/glossary-tooltip.js?v=1"></script>
+    <!-- MCP 接入 Tab 交互逻辑（一键复制/子标签切换） -->
+    <script src="js/code-mcp.js?v=1"></script>
     <script>
         // Tab 文件缓存版本号（router.js 用 ?v= 参数强制刷新）
         // bump 7: codeRefreshRepo 改走 SSE 拿真实 chunks（修 toast undefined 根因）
@@ -305,7 +308,8 @@
         // bump 10: 代码搜索默认模式从「语义 vector」改为「混合 hybrid」,让符号路 1.5x 加权生效
         // bump 11: (前一会话)
         // bump 12: 代码统计看板数据存储目录加入翻译词典路径，所有路径支持点击打开 Finder
-        window.__TAB_VERSION = '15';
+        // bump 13: 新增 MCP 接入 Tab（code-mcp.html），需重新 fetch tab HTML
+        window.__TAB_VERSION = '16';
         // 显式启动路由（router.js 也会在 DOMContentLoaded 时自启，这里双保险）
         if (typeof initRouter === "function") {
             initRouter();
