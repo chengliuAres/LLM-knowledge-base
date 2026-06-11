@@ -7,10 +7,12 @@
 1. 缓存层：LLM/MyMemory 翻译结果持久化缓存（30天）
 2. 自动扩充词典：翻译成功后自动添加到 TERM_MAP
 3. 翻译流程展示：每步都有 Step 记录（方法、关键词、耗时）
+4. 词典外部化：TERM_MAP 从 data/translation_dict.json 加载，支持热重载
 """
 
 import re
 import os
+import json
 import asyncio
 import requests
 from typing import Optional
@@ -41,212 +43,87 @@ def has_chinese(text: str) -> bool:
 
 # ── 本地词典 ──────────────────────────────────────────────────────
 
-# 高频中文 → 英文代码词根映射（邮箱大师场景优化）
-TERM_MAP: dict[str, list[str]] = {
-    # ── 认证/账号 ──
-    "登录": ["login", "signin", "sign_in", "auth", "authenticate"],
-    "注册": ["register", "signup", "sign_up"],
-    "登出": ["logout", "signout", "sign_out"],
-    "密码": ["password", "passwd", "pwd"],
-    "账号": ["account"],
-    "验证": ["verify", "validation", "auth"],
-    "授权": ["authorize", "auth", "oauth"],
-    "令牌": ["token"],
-    # ── 邮件核心 ──
-    "邮件": ["mail", "email", "message"],
-    "收件": ["inbox", "receive"],
-    "发件": ["send", "outbox", "sent"],
-    "草稿": ["draft"],
-    "附件": ["attachment", "attach"],
-    "转发": ["forward"],
-    "回复": ["reply"],
-    "抄送": ["cc", "carbon_copy"],
-    "密送": ["bcc"],
-    "主题": ["subject"],
-    "正文": ["body", "content"],
-    "收件箱": ["inbox"],
-    "已发送": ["sent", "outbox"],
-    "草稿箱": ["drafts"],
-    "未读": ["unread"],
-    "已读": ["read"],
-    "读信": ["read", "mail", "message"],
-    "读邮件": ["read", "mail", "message"],
-    "阅读": ["read"],
-    "来信": ["incoming", "received"],
-    "收信": ["receive", "fetch"],
-    "发信": ["send", "compose"],
-    "新邮件": ["new_mail", "new_message"],
-    "退订": ["unsubscribe"],
-    "订阅": ["subscribe", "subscription"],
-    "通讯录": ["contacts", "address_book"],
-    "待办": ["todo", "task"],
-    # ── 操作 ──
-    "下载": ["download"],
-    "上传": ["upload"],
-    "删除": ["delete", "remove"],
-    "保存": ["save", "store"],
-    "编辑": ["edit", "modify"],
-    "搜索": ["search", "query"],
-    "筛选": ["filter"],
-    "排序": ["sort", "order"],
-    "刷新": ["refresh", "reload"],
-    "同步": ["sync", "synchronize"],
-    "加载": ["load"],
-    "推送": ["push", "notification"],
-    "通知": ["notification", "notify"],
-    "标记": ["flag", "mark", "tag"],
-    "收藏": ["favorite", "bookmark", "star"],
-    "归档": ["archive"],
-    "移动": ["move"],
-    "复制": ["copy"],
-    "跳转": ["jump", "navigate", "redirect"],
-    "切换": ["switch", "toggle"],
-    "清除": ["clear", "reset"],
-    "移除": ["remove", "delete"],
-    "展开": ["expand", "unfold"],
-    "折叠": ["collapse", "fold", "shrink"],
-    "收起": ["collapse", "fold", "hide"],
-    "置顶": ["pin", "sticky", "top"],
-    "全选": ["select_all"],
-    # ── UI 组件 ──
-    "页面": ["page", "view", "screen"],
-    "列表": ["list"],
-    "详情": ["detail"],
-    "设置": ["settings", "config", "preference"],
-    "按钮": ["button", "btn"],
-    "弹窗": ["dialog", "popup", "alert"],
-    "菜单": ["menu"],
-    "导航": ["nav", "navigation"],
-    "标签": ["tab", "tag", "label"],
-    "工具栏": ["toolbar"],
-    "侧边栏": ["sidebar"],
-    "状态栏": ["statusbar", "status_bar", "StatusBar", "statusBar"],
-    "标题": ["title", "header"],
-    "输入框": ["input", "textfield", "text_field", "TextInput"],
-    "图标": ["icon", "Icon"],
-    "图片": ["image", "img", "Image"],
-    "头像": ["avatar", "Avatar"],
-    "容器": ["container", "Container"],
-    "面板": ["panel", "Panel"],
-    "选择器": ["picker", "selector", "Picker", "Selector"],
-    "卡片": ["card", "Card"],
-    "角标": ["badge", "Badge"],
-    "徽章": ["badge", "Badge"],
-    "开关": ["switch", "toggle", "Switch", "Toggle"],
-    "复选框": ["checkbox", "Checkbox"],
-    "单选": ["radio", "Radio"],
-    "分割线": ["divider", "separator", "Divider"],
-    "提示条": ["toast", "snackbar", "Toast"],
-    "进度条": ["progress", "Progress"],
-    "滚动条": ["scrollbar", "Scrollbar"],
-    "搜索栏": ["searchbar", "search_bar", "SearchBar"],
-    "导航栏": ["navbar", "navigation_bar", "NavigationBar"],
-    "底部栏": ["bottombar", "bottom_bar", "BottomBar"],
-    "标签栏": ["tabbar", "tab_bar", "TabBar"],
-    "浮动按钮": ["fab", "floating_action_button", "FloatingActionButton"],
-    "网格": ["grid", "Grid"],
-    "轮播": ["carousel", "swiper", "Carousel"],
-    "抽屉": ["drawer", "Drawer"],
-    "骨架屏": ["skeleton", "Skeleton"],
-    "空状态": ["empty_state", "EmptyState"],
-    "加载指示器": ["indicator", "spinner", "ActivityIndicator"],
-    "下拉菜单": ["dropdown", "Dropdown"],
-    "气泡": ["bubble", "tooltip", "Tooltip"],
-    "遮罩": ["mask", "overlay", "Overlay"],
-    # ── UI 属性/布局 ──
-    "布局": ["layout", "Layout"],
-    "圆角": ["border_radius", "cornerRadius", "BorderRadius"],
-    "边距": ["margin", "Margin"],
-    "间距": ["spacing", "gap", "Spacing"],
-    "内边距": ["padding", "Padding"],
-    "边框": ["border", "Border"],
-    "阴影": ["shadow", "Shadow"],
-    "透明": ["transparent", "opacity"],
-    "透明度": ["opacity", "Opacity"],
-    "背景色": ["background_color", "backgroundColor", "BackgroundColor"],
-    "文字大小": ["font_size", "fontSize", "FontSize"],
-    "字体": ["font", "font_family", "Font"],
-    "高度": ["height", "Height"],
-    "宽度": ["width", "Width"],
-    "居中": ["center", "Center"],
-    "对齐": ["align", "alignment", "Alignment"],
-    "填充": ["fill", "padding", "Fill"],
-    # ── UI 状态/交互 ──
-    "焦点": ["focus", "Focus"],
-    "选中": ["selected", "Selected"],
-    "高亮": ["highlight", "Highlight"],
-    "禁用": ["disabled", "Disabled"],
-    "可见": ["visible", "Visible"],
-    "隐藏": ["hidden", "Hidden"],
-    "激活": ["active", "Active"],
-    "动画": ["animation", "Animation"],
-    "过渡": ["transition", "Transition"],
-    "渐变": ["gradient", "Gradient"],
-    "点击": ["click", "tap", "onTap"],
-    "长按": ["long_press", "longPress", "onLongPress"],
-    "滑动": ["swipe", "slide", "Swipe"],
-    "拖拽": ["drag", "Drag"],
-    "缩放": ["scale", "zoom", "Scale"],
-    "键盘": ["keyboard", "Keyboard"],
-    "返回": ["back", "return", "Back"],
-    # ── 移动端 ──
-    "沉浸式": ["immersive", "edge_to_edge"],
-    "全屏": ["fullscreen", "FullScreen"],
-    "横屏": ["landscape"],
-    "竖屏": ["portrait"],
-    "安全区": ["safe_area", "safeArea", "SafeArea"],
-    "手势": ["gesture", "Gesture"],
-    "系统栏": ["system_bars", "SystemChrome"],
-    # ── 数据/状态 ──
-    "数据": ["data", "Data"],
-    "颜色": ["color", "Color"],
-    "样式": ["style", "Style"],
-    "皮肤": ["skin", "theme", "Theme"],
-    "主题色": ["theme_color", "primary_color"],
-    "模式": ["mode", "Mode"],
-    "配置": ["config", "configuration", "Config"],
-    "分页": ["pagination", "paging", "Pagination"],
-    "占位": ["placeholder", "Placeholder"],
-    "提示": ["hint", "tip", "Hint"],
-    "提醒": ["alert", "reminder", "Alert"],
-    "声音": ["sound", "Sound"],
-    "振动": ["vibration", "haptic", "Haptic"],
-    # ── 网络/存储 ──
-    "网络": ["network", "http", "api"],
-    "请求": ["request"],
-    "响应": ["response"],
-    "缓存": ["cache"],
-    "数据库": ["database", "db"],
-    "存储": ["storage", "store"],
-    # ── 状态 ──
-    "加载中": ["loading"],
-    "错误": ["error", "err"],
-    "成功": ["success"],
-    "失败": ["fail", "failure"],
-    "取消": ["cancel"],
-    "确认": ["confirm", "ok"],
-    "重试": ["retry"],
-    "警告": ["warning", "warn"],
-    # ── 其他 ──
-    "用户": ["user"],
-    "联系人": ["contact"],
-    "文件夹": ["folder", "directory"],
-    "签名": ["signature"],
-    "模板": ["template"],
-    "日志": ["log"],
-    "版本": ["version"],
-    "更新": ["update"],
-    "帮助": ["help"],
-    "管理": ["manage", "management", "Manage"],
-    "权限": ["permission", "Permission"],
-    "隐私": ["privacy", "Privacy"],
-    "安全": ["security", "Security"],
-    "会员": ["member", "vip", "Member"],
-    "个性化": ["personalize", "customization"],
-    "自定义": ["custom", "Custom"],
-    "智能": ["smart", "intelligent"],
-    "聚合": ["aggregate", "Aggregate"],
-}
+# 词典文件路径
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_DICT_FILE = os.path.join(_PROJECT_ROOT, "data", "translation_dict.json")
+
+# 高频中文 → 英文代码词根映射（从 data/translation_dict.json 加载）
+TERM_MAP: dict[str, list[str]] = {}
+
+
+def _load_term_map_from_json() -> dict[str, list[str]]:
+    """从JSON文件加载词典，返回 {中文: [英文列表]} 格式"""
+    try:
+        if os.path.exists(_DICT_FILE):
+            with open(_DICT_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            terms = data.get("terms", {})
+            # 转换格式：{cn: {"translations": [...], "category": ...}} → {cn: [...]}
+            return {cn: info["translations"] for cn, info in terms.items() if "translations" in info}
+    except Exception as e:
+        print(f"[query_translator] 加载词典JSON失败: {e}")
+    return {}
+
+
+def reload_term_map() -> int:
+    """从JSON重新加载 TERM_MAP，返回词条数"""
+    global TERM_MAP
+    TERM_MAP = _load_term_map_from_json()
+    print(f"[query_translator] 已从 {_DICT_FILE} 加载 {len(TERM_MAP)} 条词典")
+    return len(TERM_MAP)
+
+
+def save_term_map(terms: dict[str, list[str]], category_map: Optional[dict[str, str]] = None) -> None:
+    """保存词典到JSON文件
+
+    Args:
+        terms: {中文: [英文列表]}
+        category_map: {中文: 分类名}，可选，用于保留分类信息
+    """
+    # 读取现有数据以保留分类信息
+    existing = {}
+    try:
+        if os.path.exists(_DICT_FILE):
+            with open(_DICT_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            existing = data.get("terms", {})
+    except Exception:
+        pass
+
+    # 构建新数据
+    new_terms = {}
+    for cn, en_list in terms.items():
+        if cn in existing:
+            # 保留已有分类
+            new_terms[cn] = {
+                "translations": en_list,
+                "category": existing[cn].get("category", "自定义")
+            }
+        elif category_map and cn in category_map:
+            new_terms[cn] = {
+                "translations": en_list,
+                "category": category_map[cn]
+            }
+        else:
+            new_terms[cn] = {
+                "translations": en_list,
+                "category": "自定义"
+            }
+
+    # 写入文件
+    os.makedirs(os.path.dirname(_DICT_FILE), exist_ok=True)
+    output = {"version": 1, "terms": new_terms}
+    tmp_file = _DICT_FILE + ".tmp"
+    with open(tmp_file, "w", encoding="utf-8") as f:
+        json.dump(output, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_file, _DICT_FILE)
+
+    # 重新加载到内存
+    reload_term_map()
+
+
+# 启动时加载词典
+reload_term_map()
 
 
 def _dict_translate(query: str) -> tuple[list[str], float]:

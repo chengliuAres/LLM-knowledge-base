@@ -209,6 +209,82 @@
         </div>
     </div>
 
+    <!-- ─────────── 翻译词典模态框（body 直属层级，fixed 相对 viewport） ───────────
+         与 skip-rules-modal 同列：避免嵌在 .tab-page 内被 fadeIn transform 干扰。 -->
+    <div id="translation-dict-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.5);">
+        <div class="rounded-lg shadow-xl w-full max-w-4xl max-h-[85vh] flex flex-col" style="background: var(--color-primary); border: 1px solid var(--color-border);">
+            <!-- 头部 -->
+            <div class="flex items-center justify-between px-5 py-3 shrink-0" style="border-bottom: 1px solid var(--color-border);">
+                <div class="flex items-center gap-3">
+                    <h3 class="font-semibold text-base" style="color: var(--color-foreground);">📖 翻译词典</h3>
+                    <span id="dict-stats" class="text-xs" style="color: var(--color-muted);">-</span>
+                </div>
+                <div class="flex items-center gap-2 flex-wrap justify-end">
+                    <button onclick="refreshTranslationDict()" id="dict-refresh-btn" class="btn btn-secondary text-xs py-1 px-2.5">🔄 刷新</button>
+                    <button onclick="openTranslationDictInFinder()" class="btn btn-secondary text-xs py-1 px-2.5">📂 Finder</button>
+                    <button onclick="resetTranslationDict()" class="btn btn-secondary text-xs py-1 px-2.5">恢复默认</button>
+                    <button onclick="saveTranslationDict()" class="btn btn-accent text-xs py-1 px-2.5">保存</button>
+                    <button onclick="closeTranslationDictModal()" class="btn btn-secondary text-xs py-1 px-2.5">关闭</button>
+                </div>
+            </div>
+
+            <!-- 主体 -->
+            <div class="flex-1 overflow-y-auto p-5 space-y-4" style="min-height: 0;">
+                <!-- 搜索框 -->
+                <div class="flex gap-2">
+                    <input id="dict-search-input" type="text" placeholder="搜索中文或英文..."
+                           oninput="filterDictTerms(this.value)"
+                           class="input flex-1 text-sm" style="padding: 8px 12px;">
+                </div>
+
+                <!-- 分类 tabs -->
+                <div id="dict-category-tabs" class="flex gap-1 border-b overflow-x-auto shrink-0" style="border-color: var(--color-border);">
+                    <!-- 由 JS 动态渲染 -->
+                </div>
+
+                <!-- 词条表格 -->
+                <div class="overflow-x-auto">
+                    <table class="w-full rounded text-left text-sm" style="border: 1px solid var(--color-border);">
+                        <thead style="background: rgba(255,255,255,0.04); color: var(--color-muted);">
+                            <tr>
+                                <th class="py-2 px-2 font-semibold w-1/6 text-xs">中文</th>
+                                <th class="py-2 px-2 font-semibold w-2/5 text-xs">英文翻译</th>
+                                <th class="py-2 px-2 font-semibold w-1/6 text-xs">分类</th>
+                                <th class="py-2 px-2 font-semibold w-1/6 text-right text-xs">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dict-terms-body">
+                            <tr><td colspan="4" class="text-center py-6" style="color: var(--color-muted);">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 添加区 -->
+                <div class="rounded p-3" style="background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.25);">
+                    <h4 class="text-sm font-semibold mb-2" style="color: var(--color-foreground);">➕ 添加新词条</h4>
+                    <div class="flex gap-2 flex-wrap">
+                        <input id="dict-add-cn" type="text" placeholder="中文词" class="input text-xs" style="padding: 6px 10px; width: 120px;">
+                        <input id="dict-add-en" type="text" placeholder="英文翻译（逗号分隔）" class="input text-xs flex-1" style="padding: 6px 10px; min-width: 200px;">
+                        <select id="dict-add-category" class="input text-xs shrink-0" style="width: auto; padding: 6px 10px;">
+                            <option value="自定义">自定义</option>
+                            <option value="认证/账号">认证/账号</option>
+                            <option value="邮件核心">邮件核心</option>
+                            <option value="操作">操作</option>
+                            <option value="UI组件">UI组件</option>
+                            <option value="UI属性/布局">UI属性/布局</option>
+                            <option value="UI状态/交互">UI状态/交互</option>
+                            <option value="移动端">移动端</option>
+                            <option value="数据/状态">数据/状态</option>
+                            <option value="网络/存储">网络/存储</option>
+                            <option value="状态">状态</option>
+                        </select>
+                        <button onclick="addDictTerm()" class="btn btn-accent text-xs py-1 px-3 shrink-0">+ 添加</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ─────────── 脚本 ─────────── -->
     <script src="js/shared.js?v=5"></script>
     <script src="js/router.js?v=7"></script>
@@ -217,6 +293,7 @@
          initSkipRuleSelects() IIFE 才能同步访问 #skip-dir-category 等 select 节点。
          如改用 defer 或挪到 <head>，需先确保 DOMContentLoaded 后再初始化。 -->
     <script src="js/skip-rules.js?v=1"></script>
+    <script src="js/translation-dict.js?v=1"></script>
     <!-- 术语词典 + tooltip（依赖 shared.js 的 window 全局） -->
     <script src="js/glossary.js?v=1"></script>
     <script src="js/glossary-tooltip.js?v=1"></script>
@@ -226,7 +303,9 @@
         // bump 8: (前一会话)
         // bump 9: 修复排除规则三个 bug — switchSkipTab 未定义 / 旧 modal 重复 ID / JS 在 code-repos 内联加载太晚
         // bump 10: 代码搜索默认模式从「语义 vector」改为「混合 hybrid」,让符号路 1.5x 加权生效
-        window.__TAB_VERSION = '11';
+        // bump 11: (前一会话)
+        // bump 12: 代码统计看板数据存储目录加入翻译词典路径，所有路径支持点击打开 Finder
+        window.__TAB_VERSION = '13';
         // 显式启动路由（router.js 也会在 DOMContentLoaded 时自启，这里双保险）
         if (typeof initRouter === "function") {
             initRouter();

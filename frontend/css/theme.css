@@ -314,3 +314,19 @@ main,
   color: var(--color-accent);
   border-bottom-color: var(--color-accent);
 }
+
+/* 翻译词典面板 tab 样式 */
+.dict-tab-btn {
+  color: var(--color-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.dict-tab-btn:hover {
+  color: var(--color-foreground);
+}
+.dict-tab-btn-active {
+  color: #C4B5FD;
+  border-bottom-color: #C4B5FD;
+}

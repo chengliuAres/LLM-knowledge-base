@@ -739,6 +739,12 @@ def get_storage_stats() -> dict:
             "size_bytes": get_file_size(os.path.join(data_dir, "translation_cache.json")),
             "size_formatted": format_size(get_file_size(os.path.join(data_dir, "translation_cache.json"))),
             "description": "翻译缓存 (JSON)"
+        },
+        "translation_dict_json": {
+            "path": os.path.join(data_dir, "translation_dict.json"),
+            "size_bytes": get_file_size(os.path.join(data_dir, "translation_dict.json")),
+            "size_formatted": format_size(get_file_size(os.path.join(data_dir, "translation_dict.json"))),
+            "description": "翻译词典 (JSON)"
         }
     }
     

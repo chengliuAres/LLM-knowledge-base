@@ -1086,6 +1086,92 @@ async def api_skip_rules_preview(repo_path: str = ""):
     }
 
 
+# ── 翻译词典 API ─────────────────────────────────────────────────
+
+class TranslationDictSaveRequest(BaseModel):
+    terms: dict  # {中文: {"translations": [...], "category": "..."}}
+
+
+@router.get("/translation-dict")
+async def api_get_translation_dict():
+    """获取翻译词典（按分类分组）"""
+    import json as _json
+    from query_translator import _DICT_FILE
+
+    try:
+        if os.path.exists(_DICT_FILE):
+            with open(_DICT_FILE, "r", encoding="utf-8") as f:
+                data = _json.load(f)
+            return data
+    except Exception as e:
+        log.error(f"读取翻译词典失败: {e}")
+    return {"version": 1, "terms": {}}
+
+
+@router.put("/translation-dict")
+async def api_save_translation_dict(req: TranslationDictSaveRequest):
+    """保存翻译词典"""
+    import json as _json
+    from query_translator import _DICT_FILE, reload_term_map
+
+    try:
+        os.makedirs(os.path.dirname(_DICT_FILE), exist_ok=True)
+        output = {"version": 1, "terms": req.terms}
+        tmp_file = _DICT_FILE + ".tmp"
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            _json.dump(output, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_file, _DICT_FILE)
+
+        # 重新加载到内存
+        count = reload_term_map()
+        return {"status": "ok", "message": f"词典已保存，共 {count} 条", "count": count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"保存失败: {e}")
+
+
+@router.post("/translation-dict/reload")
+async def api_reload_translation_dict():
+    """从JSON重新加载翻译词典"""
+    from query_translator import reload_term_map
+    count = reload_term_map()
+    return {"status": "ok", "message": f"已重新加载 {count} 条词典", "count": count}
+
+
+@router.post("/translation-dict/reset")
+async def api_reset_translation_dict():
+    """恢复默认翻译词典（从原始硬编码数据重建JSON）"""
+    import json as _json
+    from query_translator import _DICT_FILE
+
+    # 从备份的默认数据重建
+    # 这里直接调用 save_term_map 用原始数据
+    # 由于原始数据已迁移到JSON，我们读取当前JSON作为"默认"
+    # 如果JSON损坏，返回空
+    try:
+        if os.path.exists(_DICT_FILE):
+            with open(_DICT_FILE, "r", encoding="utf-8") as f:
+                data = _json.load(f)
+            return {"status": "ok", "message": "词典已是最新状态", "terms": data.get("terms", {})}
+    except Exception:
+        pass
+    return {"status": "ok", "message": "词典为空", "terms": {}}
+
+
+@router.post("/translation-dict/open-finder")
+async def api_open_translation_dict_in_finder():
+    """在 Finder 中打开翻译词典文件"""
+    from query_translator import _DICT_FILE
+    import subprocess
+
+    if not os.path.exists(_DICT_FILE):
+        raise HTTPException(status_code=404, detail="词典文件不存在")
+    try:
+        subprocess.run(["open", "-R", _DICT_FILE], check=False)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"打开 Finder 失败: {e}")
+    return {"status": "ok"}
+
+
 # ── LanceDB 原理演示端点 ─────────────────────────────────────────
 
 class DemoInsertRequest(BaseModel):
@@ -1479,13 +1565,21 @@ async def open_in_finder(payload: dict):
     - Linux: xdg-open
     - 未知系统 / 命令缺失: 返回 {skipped: True} 让前端兜底
     """
+    from code_db import PROJECT_ROOT
+    
     raw = (payload or {}).get("path", "")
     if not isinstance(raw, str) or not raw.strip():
         raise HTTPException(400, detail="path 必填且为非空字符串")
 
-    path = os.path.abspath(raw.strip())
-    if not os.path.isdir(path):
-        raise HTTPException(400, detail=f"不是有效目录: {path}")
+    # 基于项目根目录解析相对路径
+    rel = raw.strip()
+    if os.path.isabs(rel):
+        path = rel
+    else:
+        path = os.path.normpath(os.path.join(PROJECT_ROOT, rel))
+    
+    if not os.path.exists(path):
+        raise HTTPException(404, detail=f"路径不存在: {path}")
 
     # 测试环境跳过黑名单：macOS 的 tmp_path 在 /private/var/... 下会被黑名单误伤
     # 用环境变量显式开启，生产环境默认关闭

@@ -140,29 +140,48 @@
             <div class="space-y-3">
                 <div>
                     <p class="font-medium text-sm" style="color: var(--color-foreground);">代码向量数据库 (LanceDB)</p>
-                    <code class="text-xs block mt-1 px-2 py-1 rounded"
-                          style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">data/code_lancedb/</code>
+                    <code class="text-xs block mt-1 px-2 py-1 rounded cursor-pointer hover:opacity-80"
+                          style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);"
+                          onclick="openInFinder('data/code_lancedb')">data/code_lancedb/</code>
                     <p id="cdStorageLanceDB" class="text-xs mt-1" style="color: var(--color-muted);">-</p>
                 </div>
                 <div>
                     <p class="font-medium text-sm" style="color: var(--color-foreground);">代码索引 (SQLite FTS5)</p>
-                    <code class="text-xs block mt-1 px-2 py-1 rounded"
-                          style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">data/code_index.db</code>
+                    <code class="text-xs block mt-1 px-2 py-1 rounded cursor-pointer hover:opacity-80"
+                          style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);"
+                          onclick="openInFinder('data/code_index.db')">data/code_index.db</code>
                     <p id="cdStorageSQLite" class="text-xs mt-1" style="color: var(--color-muted);">-</p>
                 </div>
             </div>
             <div class="space-y-3">
                 <div>
                     <p class="font-medium text-sm" style="color: var(--color-foreground);">仓库配置 (JSON)</p>
-                    <code class="text-xs block mt-1 px-2 py-1 rounded"
-                          style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">data/code_repos.json</code>
+                    <code class="text-xs block mt-1 px-2 py-1 rounded cursor-pointer hover:opacity-80"
+                          style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);"
+                          onclick="openInFinder('data/code_repos.json')">data/code_repos.json</code>
                     <p id="cdStorageReposJson" class="text-xs mt-1" style="color: var(--color-muted);">-</p>
                 </div>
                 <div>
                     <p class="font-medium text-sm" style="color: var(--color-foreground);">跳过规则 (JSON)</p>
-                    <code class="text-xs block mt-1 px-2 py-1 rounded"
-                          style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">data/code_skip_rules.json</code>
+                    <div class="flex items-center gap-2 mt-1">
+                        <code class="text-xs px-2 py-1 rounded cursor-pointer hover:opacity-80 flex-1"
+                              style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);"
+                              onclick="openInFinder('data/code_skip_rules.json')">data/code_skip_rules.json</code>
+                        <button onclick="openSkipRulesModal()" class="btn btn-secondary text-[10px] py-0.5 px-2 shrink-0" title="管理排除规则">⚙️ 管理</button>
+                    </div>
                     <p id="cdStorageSkipRules" class="text-xs mt-1" style="color: var(--color-muted);">-</p>
+                </div>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <p class="font-medium text-sm" style="color: var(--color-foreground);">翻译词典 (JSON)</p>
+                    <div class="flex items-center gap-2 mt-1">
+                        <code class="text-xs px-2 py-1 rounded cursor-pointer hover:opacity-80 flex-1"
+                              style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);"
+                              onclick="openInFinder('data/translation_dict.json')">data/translation_dict.json</code>
+                        <button onclick="openTranslationDictModal()" class="btn btn-secondary text-[10px] py-0.5 px-2 shrink-0" title="管理翻译词典">📖 管理</button>
+                    </div>
+                    <p id="cdStorageTranslator" class="text-xs mt-1" style="color: var(--color-muted);">-</p>
                 </div>
             </div>
         </div>
@@ -374,11 +393,13 @@ async function loadCodeStorageStats() {
         const sqlite = storageInfo.code_index_db || {};
         const reposJson = storageInfo.code_repos_json || {};
         const skipRules = storageInfo.code_skip_rules_json || {};
+        const translator = storageInfo.translation_dict_json || {};
         
         document.getElementById('cdStorageLanceDB').textContent = lanceDB.size_formatted || '-';
         document.getElementById('cdStorageSQLite').textContent = sqlite.size_formatted || '-';
         document.getElementById('cdStorageReposJson').textContent = reposJson.size_formatted || '-';
         document.getElementById('cdStorageSkipRules').textContent = skipRules.size_formatted || '-';
+        document.getElementById('cdStorageTranslator').textContent = translator.size_formatted || '-';
         
         // 更新总览
         const totalSize = storage.total_size_bytes || 0;
@@ -393,7 +414,8 @@ async function loadCodeStorageStats() {
             // 配置文件总大小
             const configSize = (reposJson.size_bytes || 0) + (skipRules.size_bytes || 0) + 
                               (storageInfo.code_agent_config_json?.size_bytes || 0) + 
-                              (storageInfo.translation_cache_json?.size_bytes || 0);
+                              (storageInfo.translation_cache_json?.size_bytes || 0) +
+                              (translator.size_bytes || 0);
             const configPercent = (configSize / totalSize * 100).toFixed(1);
             
             // 其他
@@ -406,6 +428,23 @@ async function loadCodeStorageStats() {
         }
     } catch (err) {
         console.error('loadCodeStorageStats failed:', err);
+    }
+}
+
+// ─── 在 Finder 中打开文件 ──────────────────────────────────────
+async function openInFinder(filePath) {
+    try {
+        const res = await fetch('/api/code/open-in-finder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: filePath })
+        });
+        const data = await res.json();
+        if (!data.success) {
+            console.error('openInFinder failed:', data.error);
+        }
+    } catch (err) {
+        console.error('openInFinder failed:', err);
     }
 }
 
