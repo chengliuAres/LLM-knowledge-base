@@ -287,7 +287,7 @@
     </div>
 
     <!-- ─────────── 脚本 ─────────── -->
-    <script src="js/shared.js?v=5"></script>
+    <script src="js/shared.js?v=6"></script>
     <script src="js/router.js?v=7"></script>
     <!-- 排除规则业务 JS（依赖 shared.js 的 escapeHtml/showToast）
          ⚠️ 必须保持在 router.js 之后、body 末尾：上方 #skip-rules-modal 静态 DOM 已就绪，
@@ -309,7 +309,7 @@
         // bump 11: (前一会话)
         // bump 12: 代码统计看板数据存储目录加入翻译词典路径，所有路径支持点击打开 Finder
         // bump 13: 新增 MCP 接入 Tab（code-mcp.html），需重新 fetch tab HTML
-        window.__TAB_VERSION = '16';
+        window.__TAB_VERSION = '19';
         // 显式启动路由（router.js 也会在 DOMContentLoaded 时自启，这里双保险）
         if (typeof initRouter === "function") {
             initRouter();

@@ -24,6 +24,22 @@ function formatBytes(bytes) {
     return val.toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
 }
 
+// ─── 路径中间截断（保头保尾，中间用 ...） ───────────────────
+function truncatePath(path, maxLen = 60) {
+    if (!path || path.length <= maxLen) return path;
+    const parts = path.split('/');
+    const file = parts.pop() || '';
+    const prefix = parts.join('/');
+    const budget = maxLen - file.length - 3; // 3 for "..."
+    if (budget <= 0) return '.../' + file;
+    // 尽量多保留目录前缀
+    let head = prefix;
+    if (head.length > budget) {
+        head = head.slice(0, budget);
+    }
+    return head + '.../' + file;
+}
+
 // ─── 毫秒格式化 ─────────────────────────────────────────
 function formatDuration(ms) {
     if (ms == null) return '--';

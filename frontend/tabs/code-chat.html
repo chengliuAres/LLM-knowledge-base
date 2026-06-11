@@ -75,7 +75,7 @@ function renderCodeSources(sources) {
         <div class="rounded p-3" style="background-color: rgba(255, 255, 255, 0.04); border-left: 2px solid var(--color-accent);">
             <div class="flex items-start gap-2 flex-wrap">
                 <span class="text-xs font-medium" style="color: var(--color-accent);">[${i + 1}]</span>
-                <code class="text-xs" style="color: var(--color-foreground); font-family: var(--font-mono);">${escapeHtml(s.file_path || '')}</code>
+                <code class="text-xs" style="color: var(--color-foreground); font-family: var(--font-mono);" title="${escapeHtml(s.file_path || '')}">${escapeHtml(truncatePath(s.file_path || ''))}</code>
                 <span class="text-xs px-1.5 py-0.5 rounded" style="background: var(--color-border); color: var(--color-muted);">L${s.line_start}-${s.line_end || s.line_start}</span>
                 ${s.symbol_name ? `<span class="text-xs font-medium" style="color: var(--color-accent);">${escapeHtml(s.symbol_name)}</span>` : ''}
                 ${s.score ? `<span class="text-xs ml-auto" style="color: var(--color-muted);">${(s.score * 100).toFixed(1)}%</span>` : ''}

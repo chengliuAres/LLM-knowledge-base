@@ -432,12 +432,10 @@
     },
     "页面": {
       "translations": [
-        "viewcontroller",
-        "vc",
         "page",
         "view"
       ],
-      "category": "UI组件"
+      "category": "UI"
     },
     "列表": {
       "translations": [
@@ -1379,7 +1377,8 @@
     },
     "代办": {
       "translations": [
-        "todo"
+        "todo",
+        "task"
       ],
       "category": "邮件核心"
     },
@@ -1410,6 +1409,13 @@
     "文件中心": {
       "translations": [
         "fileCenter"
+      ],
+      "category": "邮件核心"
+    },
+    "店铺": {
+      "translations": [
+        "shop",
+        "store"
       ],
       "category": "邮件核心"
     }
