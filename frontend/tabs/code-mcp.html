@@ -1,0 +1,200 @@
+<!-- MCP 接入 Tab — 接入指南 / 客户端配置 / 使用示例 -->
+<div class="p-5 space-y-5">
+  <!-- 页头 -->
+  <h2 class="text-lg font-semibold text-white">🔌 MCP 接入</h2>
+  <p class="text-sm" style="color: var(--color-muted);">MCP (Model Context Protocol) 是 AI 助手与外部工具之间的开放标准协议。连接后，Claude Code、Cursor 等 AI 工具可以直接搜索代码、追踪调用链、进行 RAG 问答。</p>
+
+  <!-- 子标签切换（接入指南 / 客户端配置 / 使用示例） -->
+  <div class="flex gap-2 border-b pb-3" style="border-color: var(--color-border);">
+    <button class="mcp-subtab-btn active px-3 py-1.5 rounded text-sm font-medium transition-colors" data-mcp-tab="guide"
+      style="background: var(--color-accent); color: var(--color-on-primary);" onclick="switchMcpTab('guide')">📖 接入指南</button>
+    <button class="mcp-subtab-btn px-3 py-1.5 rounded text-sm font-medium transition-colors" data-mcp-tab="config"
+      style="color: var(--color-muted);" onclick="switchMcpTab('config')">⚙️ 客户端配置</button>
+    <button class="mcp-subtab-btn px-3 py-1.5 rounded text-sm font-medium transition-colors" data-mcp-tab="examples"
+      style="color: var(--color-muted);" onclick="switchMcpTab('examples')">💡 使用示例</button>
+  </div>
+
+  <!-- 内容区：接入指南 -->
+  <div id="mcp-tab-guide" class="mcp-tab-content space-y-4">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <!-- 左：服务连接信息 -->
+      <div>
+        <h3 class="text-sm font-semibold text-white mb-3">📡 服务连接信息</h3>
+        <div class="rounded-lg p-4 space-y-3 text-sm font-mono" style="background: var(--color-surface);">
+          <div class="flex justify-between items-center">
+            <span style="color: var(--color-muted);">服务地址</span>
+            <span class="font-semibold" style="color: var(--color-accent);" id="mcp-server-url">—</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span style="color: var(--color-muted);">MCP 端点</span>
+            <span class="font-semibold" style="color: var(--color-accent);">/mcp</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span style="color: var(--color-muted);">传输协议</span>
+            <span class="font-semibold" style="color: var(--color-accent);">Streamable HTTP</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span style="color: var(--color-muted);">SDK 版本</span>
+            <span class="font-semibold" style="color: var(--color-accent);">mcp SDK v1.x</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span style="color: var(--color-muted);">旧端点 (兼容)</span>
+            <span class="font-semibold" style="color: var(--color-muted);">/mcp/sse</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右：可用工具列表 -->
+      <div>
+        <h3 class="text-sm font-semibold text-white mb-3">🛠️ 可用工具（5个）</h3>
+        <div class="space-y-2 text-sm">
+          <div class="rounded p-3" style="background: var(--color-surface); border-left: 3px solid #22C55E;" title="混合搜索（向量+关键词+符号），支持中文查询自动翻译">
+            <span class="font-semibold" style="color: #22C55E;">code_search</span>
+            <span style="color: var(--color-muted);"> — 混合搜索代码，支持中文查询</span>
+          </div>
+          <div class="rounded p-3" style="background: var(--color-surface); border-left: 3px solid #3B82F6;" title="基于搜索到的代码片段 + LLM 生成回答">
+            <span class="font-semibold" style="color: #3B82F6;">code_chat</span>
+            <span style="color: var(--color-muted);"> — RAG 代码问答</span>
+          </div>
+          <div class="rounded p-3" style="background: var(--color-surface); border-left: 3px solid #F59E0B;" title="BFS 多跳追踪，方向可选 callers/callees/both，深度 1-3">
+            <span class="font-semibold" style="color: #F59E0B;">code_trace</span>
+            <span style="color: var(--color-muted);"> — 调用链追踪 (callers/callees)</span>
+          </div>
+          <div class="rounded p-3" style="background: var(--color-surface); border-left: 3px solid #8B5CF6;" title="获取文件完整内容，可选行号范围">
+            <span class="font-semibold" style="color: #8B5CF6;">code_file_context</span>
+            <span style="color: var(--color-muted);"> — 获取文件内容</span>
+          </div>
+          <div class="rounded p-3" style="background: var(--color-surface); border-left: 3px solid #EC4899;" title="列出所有已索引的代码仓库及其统计信息">
+            <span class="font-semibold" style="color: #EC4899;">code_list_repos</span>
+            <span style="color: var(--color-muted);"> — 列出已索引仓库</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 内容区：客户端配置 -->
+  <div id="mcp-tab-config" class="mcp-tab-content hidden space-y-4">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <!-- Claude Code CLI -->
+      <div>
+        <h3 class="text-sm font-semibold text-white mb-2">Claude Code (CLI)</h3>
+        <div class="rounded-lg p-3 font-mono text-sm relative" style="background: var(--color-surface);">
+          <button class="absolute top-2 right-2 text-xs px-2 py-1 rounded transition-colors"
+            style="background: var(--color-secondary); color: var(--color-foreground); border: 1px solid var(--color-border);"
+            onclick="copyMcpCode(this, 'claude mcp add code-kb REPLACE_URL/mcp')">📋 复制</button>
+          <code style="color: var(--color-accent); display: block; padding-top: 8px;">claude mcp add code-kb <span class="mcp-url-placeholder">加载中…</span>/mcp</code>
+        </div>
+      </div>
+
+      <!-- Cursor -->
+      <div>
+        <h3 class="text-sm font-semibold text-white mb-2">Cursor IDE</h3>
+        <div class="rounded-lg p-3 font-mono text-sm relative" style="background: var(--color-surface);">
+          <button class="absolute top-2 right-2 text-xs px-2 py-1 rounded transition-colors"
+            style="background: var(--color-secondary); color: var(--color-foreground); border: 1px solid var(--color-border);"
+            onclick="copyMcpCode(this, '{\n  &quot;mcpServers&quot;: {\n    &quot;code-kb&quot;: {\n      &quot;url&quot;: &quot;REPLACE_URL/mcp&quot;\n    }\n  }\n}')">📋 复制</button>
+          <code style="color: var(--color-foreground); display: block; padding-top: 8px; white-space: pre;">{
+  "mcpServers": {
+    "code-kb": {
+      "url": "<span class="mcp-url-placeholder">加载中…</span>/mcp"
+    }
+  }
+}</code>
+        </div>
+      </div>
+
+      <!-- Claude Desktop -->
+      <div>
+        <h3 class="text-sm font-semibold text-white mb-2">Claude Desktop</h3>
+        <div class="rounded-lg p-3 font-mono text-sm relative" style="background: var(--color-surface);">
+          <button class="absolute top-2 right-2 text-xs px-2 py-1 rounded transition-colors"
+            style="background: var(--color-secondary); color: var(--color-foreground); border: 1px solid var(--color-border);"
+            onclick="copyMcpCode(this, '{\n  &quot;mcpServers&quot;: {\n    &quot;code-kb&quot;: {\n      &quot;command&quot;: &quot;npx&quot;,\n      &quot;args&quot;: [\n        &quot;-y&quot;, &quot;@anthropic-ai/mcp-client&quot;,\n        &quot;REPLACE_URL/mcp&quot;\n      ]\n    }\n  }\n}')">📋 复制</button>
+          <code style="color: var(--color-foreground); display: block; padding-top: 8px; white-space: pre;">{
+  "mcpServers": {
+    "code-kb": {
+      "command": "npx",
+      "args": [
+        "-y", "@anthropic-ai/mcp-client",
+        "<span class="mcp-url-placeholder">加载中…</span>/mcp"
+      ]
+    }
+  }
+}</code>
+        </div>
+      </div>
+
+      <!-- VS Code / Cline -->
+      <div>
+        <h3 class="text-sm font-semibold text-white mb-2">VS Code / Cline</h3>
+        <div class="rounded-lg p-3 font-mono text-sm relative" style="background: var(--color-surface);">
+          <button class="absolute top-2 right-2 text-xs px-2 py-1 rounded transition-colors"
+            style="background: var(--color-secondary); color: var(--color-foreground); border: 1px solid var(--color-border);"
+            onclick="copyMcpCode(this, '{\n  &quot;mcpServers&quot;: {\n    &quot;code-kb&quot;: {\n      &quot;url&quot;: &quot;REPLACE_URL/mcp&quot;,\n      &quot;transport&quot;: &quot;streamable-http&quot;\n    }\n  }\n}')">📋 复制</button>
+          <code style="color: var(--color-foreground); display: block; padding-top: 8px; white-space: pre;">{
+  "mcpServers": {
+    "code-kb": {
+      "url": "<span class="mcp-url-placeholder">加载中…</span>/mcp",
+      "transport": "streamable-http"
+    }
+  }
+}</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 内容区：使用示例 -->
+  <div id="mcp-tab-examples" class="mcp-tab-content hidden space-y-4">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <div class="rounded-lg p-4 text-sm" style="background: var(--color-surface); border-left: 3px solid #22C55E;">
+        <div class="font-semibold mb-1" style="color: #22C55E;">🔍 搜索代码</div>
+        <div class="mb-2" style="color: var(--color-muted);">"搜索邮件发送相关的代码"</div>
+        <div class="rounded p-2 text-xs font-mono" style="background: var(--color-background); color: var(--color-muted);">
+          → code_search(query="邮件发送", repo="mailflutter")<br>
+          → 返回 SendMailPage, MailService 等结果
+        </div>
+      </div>
+      <div class="rounded-lg p-4 text-sm" style="background: var(--color-surface); border-left: 3px solid #3B82F6;">
+        <div class="font-semibold mb-1" style="color: #3B82F6;">💬 代码问答</div>
+        <div class="mb-2" style="color: var(--color-muted);">"这段邮件发送逻辑是怎么工作的？"</div>
+        <div class="rounded p-2 text-xs font-mono" style="background: var(--color-background); color: var(--color-muted);">
+          → code_chat(question="...", repo="mailflutter")<br>
+          → RAG 检索 → LLM 解释，返回来源引用
+        </div>
+      </div>
+      <div class="rounded-lg p-4 text-sm" style="background: var(--color-surface); border-left: 3px solid #F59E0B;">
+        <div class="font-semibold mb-1" style="color: #F59E0B;">🔗 调用链追踪</div>
+        <div class="mb-2" style="color: var(--color-muted);">"谁调用了 sendMail？它又调用了谁？"</div>
+        <div class="rounded p-2 text-xs font-mono" style="background: var(--color-background); color: var(--color-muted);">
+          → code_trace(symbol="sendMail", direction="both")<br>
+          → BFS 多跳，返回调用图 + 被调用图
+        </div>
+      </div>
+      <div class="rounded-lg p-4 text-sm" style="background: var(--color-surface); border-left: 3px solid #8B5CF6;">
+        <div class="font-semibold mb-1" style="color: #8B5CF6;">📄 浏览文件</div>
+        <div class="mb-2" style="color: var(--color-muted);">"帮我看下 MailService.dart 的代码"</div>
+        <div class="rounded p-2 text-xs font-mono" style="background: var(--color-background); color: var(--color-muted);">
+          → code_file_context(repo="mailflutter", file_path="...")<br>
+          → 返回文件完整内容
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="mcp-toast" class="fixed bottom-6 right-6 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 opacity-0 pointer-events-none"
+    style="background: var(--color-accent); color: var(--color-on-primary); z-index: 9999;"></div>
+</div>
+
+<script>
+(function () {
+  const serverUrl = location.protocol + '//' + location.host;
+  document.querySelectorAll('.mcp-url-placeholder').forEach(function(el) {
+    el.textContent = serverUrl;
+  });
+  var urlEl = document.getElementById('mcp-server-url');
+  if (urlEl) urlEl.textContent = serverUrl;
+})();
+</script>
