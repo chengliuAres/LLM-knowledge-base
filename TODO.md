@@ -111,3 +111,11 @@
   - 暴露 `--timeout` 参数让用户按需调整
 - **优先级**：中（影响 CLI 兜底可靠性，但 MCP 模式不受影响）
 - **参考**：`export/skill/scripts/kb_api.py:39` `TIMEOUT_SEC = 30`
+
+### code_trace callers/callees 对类名返回 0 关系（sendMail 等大写类名搜索）
+
+- **现象**：`code_trace --symbol sendMail --direction callers` 返回 matched=5 但 direct_callers/callees/chain 全空
+- **根因**：`code_search` 找类（`SendMailParam`），但 `code_relations` 里 callee_name 是方法名（`sendMailBegin:`）。类名 ≠ 方法名，导致 BFS 找不到任何关系
+- **影响**：用户搜类名查调用链，得到"找不到调用"（实际有）
+- **修复方向**（P3+）：trace_code 在 BFS 失败时 fallback 搜"包含此符号的类/接口的所有方法"
+- **优先级**：中（影响体验，但 hierarchy 不受影响）
