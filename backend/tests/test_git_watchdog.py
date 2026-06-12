@@ -276,11 +276,11 @@ def test_watchdog_loop_reschedules_after_lock_conflict(fresh_module, tmp_path, m
     # 第一次 schedule 后，模拟 _do_scan 锁冲突（直接 add _lock_failed）
     call_count = {"schedule": 0}
 
-    def fake_schedule(name, debounce, pending):
+    def fake_schedule(name, debounce, pending, force_full=False):
         call_count["schedule"] += 1
         if call_count["schedule"] == 1:
             # 第一次 schedule 后，模拟 _do_scan 锁失败
-            fresh_module._lock_failed.add(name)
+            fresh_module._lock_failed[name] = False
         # 第二次 schedule 是主循环重试
 
     monkeypatch.setattr(fresh_module, "_schedule_scan", fake_schedule)

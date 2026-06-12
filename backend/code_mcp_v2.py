@@ -33,7 +33,7 @@ async def code_search(
     from code_config import is_repo_scanning
 
     if repo and is_repo_scanning(repo):
-        return f"⚠️ {repo} 代码索引正在更新中，请稍后再试。"
+        return json.dumps({"error": "index_scanning", "message": f"{repo} 代码索引正在更新中，请稍后再试"}, ensure_ascii=False)
 
     query = query.strip()
     if not query:
@@ -71,7 +71,7 @@ async def code_chat(
     from code_config import is_repo_scanning
 
     if repo and is_repo_scanning(repo):
-        return f"⚠️ {repo} 代码索引正在更新中，请稍后再试。"
+        return json.dumps({"error": "index_scanning", "message": f"{repo} 代码索引正在更新中，请稍后再试"}, ensure_ascii=False)
 
     question = question.strip()
     if not question:
@@ -139,7 +139,7 @@ async def code_file_context(
     from code_config import is_repo_scanning
 
     if repo and is_repo_scanning(repo):
-        return f"⚠️ {repo} 代码索引正在更新中，请稍后再试。"
+        return json.dumps({"error": "index_scanning", "message": f"{repo} 代码索引正在更新中，请稍后再试"}, ensure_ascii=False)
 
     matches = resolve_file_by_name(repo, file_name)
     if not matches:
@@ -198,7 +198,7 @@ async def code_trace(
     from code_config import is_repo_scanning
 
     if repo and is_repo_scanning(repo):
-        return f"⚠️ {repo} 代码索引正在更新中，请稍后再试。"
+        return json.dumps({"error": "index_scanning", "message": f"{repo} 代码索引正在更新中，请稍后再试"}, ensure_ascii=False)
 
     symbol = symbol.strip()
     if not symbol:

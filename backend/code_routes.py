@@ -349,22 +349,18 @@ def _finalize_scan(job: ScanJob, files: list, effective_type: str = ""):
     """扫描完成后更新配置"""
     req = job.req
     from code_db import get_stats as get_code_stats
+    from git_watchdog import run_git_branch
     # 只统计当前仓库的 chunks，而不是全局总量
     repo_stats = get_code_stats(repo_name=req.repo_name)
-    register_repo(req.repo_name, os.path.abspath(req.repo_path),
-                  effective_type or req.project_type, req.languages, repo_stats)
-    # 记录索引建立时的 git 分支（增量 diff 时用 run_git_branch 二次校验）
+    # 记录索引建立时的 git 分支（与 register_repo 同一次 save_config 写入，避免二次写覆盖风险）
+    branch = ""
     try:
-        from git_watchdog import run_git_branch
-        branch = run_git_branch(os.path.abspath(req.repo_path))
-        if branch:
-            from code_config import load_config, save_config
-            cfg = load_config()
-            if req.repo_name in cfg.get("repos", {}):
-                cfg["repos"][req.repo_name]["indexed_branch"] = branch
-                save_config(cfg)
-    except Exception as e:
-        log.debug(f"[scan:{job.scan_id}] 写 indexed_branch 失败（不影响索引）: {e}")
+        branch = run_git_branch(os.path.abspath(req.repo_path)) or ""
+    except Exception:
+        pass
+    register_repo(req.repo_name, os.path.abspath(req.repo_path),
+                  effective_type or req.project_type, req.languages, repo_stats,
+                  indexed_branch=branch)
     new_mtimes = {f["rel_path"]: f["mtime"] for f in files}
     update_file_mtimes(req.repo_name, new_mtimes)
     job.stats = repo_stats

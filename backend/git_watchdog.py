@@ -116,7 +116,7 @@ def load_repo_configs() -> dict:
 # watchdog_loop 主循环末尾取出这些 name 重新 schedule。
 # 用模块级 set 是因为 _do_scan 在 timer 线程、watchdog_loop 在主线程，
 # 跨线程通讯用模块级 set（set.add 是原子的）。
-_lock_failed: set[str] = set()
+_lock_failed: dict[str, bool] = {}  # name → force_full（锁冲突时保留原始 force_full 标记）
 
 
 def _schedule_scan(name: str, debounce: int, pending: dict, force_full: bool = False) -> None:
@@ -152,7 +152,7 @@ def _do_scan(name: str, pending: dict, force_full: bool = False) -> None:
     try:
         if not try_acquire_scan_lock(name):
             log.info(f"[watchdog] {name} 锁冲突，下一轮重试")
-            _lock_failed.add(name)  # 通知 watchdog_loop 主循环重 schedule
+            _lock_failed[name] = force_full  # 通知 watchdog_loop 主循环重 schedule（保留 force_full）
             return  # 走外层 finally 兜底 pop pending
 
         try:
@@ -250,10 +250,10 @@ def watchdog_loop(
         # 流程：_do_scan 拿不到锁 → add 到 _lock_failed → 主循环末尾
         # 取消旧 timer + 重新 schedule + 清空集合（下一轮重新累积）
         if _lock_failed:
-            for name in list(_lock_failed):
+            for name, ff in list(_lock_failed.items()):
                 if name in pending:
                     pending[name].cancel()
-                _schedule_scan(name, debounce, pending)
+                _schedule_scan(name, debounce, pending, force_full=ff)
             _lock_failed.clear()
 
         shutdown_event.wait(timeout=interval)

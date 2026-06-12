@@ -86,6 +86,7 @@ def register_repo(
     project_type: str,
     languages: list[str],
     stats: dict,
+    indexed_branch: str = "",
 ):
     """注册/更新仓库配置 (扫描完成后调用)"""
     from datetime import datetime
@@ -101,6 +102,7 @@ def register_repo(
         "by_language": stats.get("by_language", {}),
         "by_chunk_type": stats.get("by_chunk_type", {}),
         "last_scanned": datetime.now().isoformat(),
+        **({"indexed_branch": indexed_branch} if indexed_branch else {}),
     }
     save_config(config)
 
@@ -213,4 +215,5 @@ def release_scan_lock(repo_name: str):
 
 def is_repo_scanning(repo_name: str) -> bool:
     """检查指定仓库是否正在扫描中（端点拦截用）"""
-    return repo_name in _active_scan_repos
+    with _global_lock:
+        return repo_name in _active_scan_repos
