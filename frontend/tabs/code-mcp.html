@@ -446,7 +446,7 @@ python3 export/skill/scripts/kb_api.py repos
   if (endpointEl) endpointEl.textContent = serverUrl + '/mcp/';
 })();
 
-function switchAgentTab(name) {
+window.switchAgentTab = function(name) {
   var sides = { mcp: 'agent-mcp-side', skill: 'agent-skill-side' };
   var btns = { mcp: 'agent-tab-mcp', skill: 'agent-tab-skill' };
   Object.keys(sides).forEach(function(k) {
