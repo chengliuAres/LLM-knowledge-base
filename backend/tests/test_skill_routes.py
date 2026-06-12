@@ -50,3 +50,21 @@ def test_skill_download_zip_structure():
         f"zip 根目录应为 code-search/，实际: {names[:3]}"
     assert "code-search/SKILL.md" in names
     assert "code-search/scripts/kb_api.py" in names
+
+
+def test_skill_commands_parses_kb_api():
+    """GET /api/skill/commands 应解析 kb_api.py 的 argparse subcommands"""
+    resp = client.get("/api/skill/commands")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "commands" in data
+    assert isinstance(data["commands"], list)
+    assert len(data["commands"]) >= 3, "kb_api.py 至少有 5 个 subcommand (search/chat/trace/file/repos)"
+    names = [c["name"] for c in data["commands"]]
+    # 必含 search / trace
+    assert "search" in names, f"应含 search 子命令，实际 names: {names}"
+    assert "trace" in names, f"应含 trace 子命令，实际 names: {names}"
+    # 每条 command 应有 name 字段（可无 help）
+    for c in data["commands"]:
+        assert "name" in c
+        assert isinstance(c["name"], str)

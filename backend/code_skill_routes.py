@@ -1,4 +1,5 @@
 """Skill 接入子页 — 后端 API (FastAPI router)"""
+import ast
 import io
 import os
 import zipfile
@@ -66,3 +67,39 @@ def download_skill():
         media_type="application/zip",
         headers={"Content-Disposition": 'attachment; filename="code-search.zip"'},
     )
+
+
+def _parse_kb_api_commands() -> list:
+    """用 ast 解析 kb_api.py 的 argparse subparsers/add_parser 节点
+
+    匹配模式: subparsers.add_parser("xxx", help="yyy")
+    返回: [{"name": "xxx", "help": "yyy"}, ...]
+    """
+    py_path = os.path.join(EXPORT_DIR, "scripts", "kb_api.py")
+    if not os.path.exists(py_path):
+        return []
+    try:
+        source = open(py_path, encoding="utf-8").read()
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    commands = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            # 匹配: <obj>.add_parser(<Constant "xxx">, ...)
+            if (isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "add_parser"
+                    and node.args and isinstance(node.args[0], ast.Constant)):
+                name = node.args[0].value
+                help_text = ""
+                for kw in node.keywords:
+                    if kw.arg == "help" and isinstance(kw.value, ast.Constant):
+                        help_text = kw.value.value
+                commands.append({"name": name, "help": help_text})
+    return commands
+
+
+@router.get("/api/skill/commands")
+def get_skill_commands():
+    """解析 kb_api.py 的 argparse subcommands，返回 [{name, help}]"""
+    return {"commands": _parse_kb_api_commands()}
