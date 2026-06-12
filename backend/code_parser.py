@@ -911,6 +911,10 @@ def _extract_symbols(code_bytes: bytes, language: str) -> list[dict]:
             for child in node.children:
                 if child.type in all_types and child.type not in func_types:
                     _walk(child, parent_name=name)
+                # OC @implementation 内部包了一层 implementation_definition，
+                #  method_definition 是它的孙子节点；这里补一刀让 walk 能进
+                elif language == 'objc' and child.type == 'implementation_definition':
+                    _walk(child, parent_name=name)
         elif node.type in func_types and not parent_name:
             # 顶层函数 (不在任何类内部)
             name = _get_node_name(node, code_bytes, language) or f'_anon_{node.start_point[0]}'
@@ -925,6 +929,26 @@ def _extract_symbols(code_bytes: bytes, language: str) -> list[dict]:
                 'parent_class': '',
                 'children': [],
             })
+        elif language == 'objc' and node.type == 'implementation_definition':
+            # OC: @implementation 内部 wrapper 层，把 method_definition 子节点
+            #  收集到 parent_name 对应的 implementation symbol 的 children 里
+            for child in node.children:
+                if child.type in func_types:
+                    child_name = _get_node_name(child, code_bytes, language) or f'_anon_{child.start_point[0]}'
+                    # 找到对应的 implementation symbol 追加
+                    for sym in symbols:
+                        if (sym.get('node_type') == 'class_implementation'
+                                and sym.get('name') == parent_name
+                                and sym.get('start_byte', -1) <= node.start_byte <= sym.get('end_byte', -1)):
+                            sym['children'].append({
+                                'name': child_name,
+                                'chunk_type': 'function',
+                                'line_start': child.start_point[0] + 1,
+                                'line_end': child.end_point[0] + 1,
+                                'start_byte': child.start_byte,
+                                'end_byte': child.end_byte,
+                            })
+                            break
 
     for child in root.children:
         _walk(child)
@@ -1189,7 +1213,35 @@ def chunk_code(
         if sym_calls:
             sym_meta['calls'] = sym_calls[:20]  # 每个符号最多保留 20 条调用
 
-        # 超长符号二次切分
+        # OC implementation 块按 method_definition 拆 method 级 chunk
+        # （_extract_symbols 已识别 children，但原主循环只用 500 字符硬切，
+        #  导致 875 行的 @implementation 被切成 83 刀全挂同名 'GHReadViewController'，
+        #  method 名 'refreshTodoUI' 检索不到）。其他语言保持原行为不动。
+        if (language == 'objc' and sym.get('chunk_type') == 'implementation'
+                and sym.get('children')):
+            for m_idx, method in enumerate(sym['children']):
+                m_content = code_bytes[method['start_byte']:method['end_byte']].decode('utf-8', errors='replace')
+                m_id = f"{chunk_id}_{method['name']}_{m_idx}"
+                m_meta = {**sym_meta, 'parent_class': sym['name']}
+                result.append({
+                    'id': m_id,
+                    'repo_name': repo_name,
+                    'project_type': project_type,
+                    'file_path': rel_path,
+                    'file_name': file_name,
+                    'language': language,
+                    'chunk_type': 'function',
+                    'symbol_name': method['name'],
+                    'content': m_content,
+                    'display_text': _make_display_text(rel_path, 'function', method['name'], method['line_start'], method['line_end'], m_content, language),
+                    'embedding_text': _make_display_text_for_embedding(rel_path, 'function', method['name'], method['line_start'], method['line_end'], m_content, language),
+                    'line_start': method['line_start'],
+                    'line_end': method['line_end'],
+                    'metadata': m_meta,
+                })
+            continue  # impl 块已被 children 替代，不再走 500 字符切分
+
+        # 超长符号二次切分（其他语言 / 无 children 的 impl）
         if len(chunk_content) > MAX_CHUNK_SIZE:
             sub_chunks = _sub_chunk(chunk_content)
             for sub_idx, sub_text in enumerate(sub_chunks):
