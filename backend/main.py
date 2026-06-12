@@ -37,6 +37,7 @@ import lancedb_inspect
 from match_reasons import annotate_results
 from code_routes import router as code_router
 from code_mcp import router as mcp_router
+from code_skill_routes import router as skill_router
 
 log = get_logger("main")
 
@@ -67,6 +68,7 @@ app = FastAPI(title="文档知识库", version="2.0.0", lifespan=lifespan)
 app.include_router(code_router)
 app.include_router(mcp_router)  # 旧 MCP (SSE), 保留兼容
 app.include_router(log_router)
+app.include_router(skill_router)
 
 # 挂载新 MCP v2 (Streamable HTTP) — 客户端连 http://host/mcp/（带尾 /）
 # mcp 包要求 Python >= 3.10，低版本自动跳过
