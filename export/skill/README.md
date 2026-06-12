@@ -67,7 +67,7 @@ cp SKILL.md ~/.config/opencode/skill/code-kb/SKILL.md
 python3 scripts/kb_api.py search --query "邮件发送" --top_k 5
 python3 scripts/kb_api.py chat --question "sendMail 如何工作"
 python3 scripts/kb_api.py trace --symbol sendMail --direction both --depth 2
-python3 scripts/kb_api.py file --repo ghmail --path "src/main.py"
+python3 scripts/kb_api.py file --repo ghmail --name "login_page.dart"
 python3 scripts/kb_api.py repos
 ```
 

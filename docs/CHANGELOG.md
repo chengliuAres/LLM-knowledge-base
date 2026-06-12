@@ -2,6 +2,31 @@
 
 ## 2026-06-12
 
+### feat(code-kb): file_name 改造（v2.1）
+
+`code_file_context` 入参从 `file_path` 改为 `file_name`（AI 记不住长路径）。
+
+**后端**:
+- `code_db.py` 加 `idx_meta_file_name` 索引 + 新函数 `resolve_file_by_name()`
+- `code_mcp_v2.py:code_file_context` 改签名 + 多匹配返回 `candidates` 列表
+- 多匹配场景：返回 `error + hint + candidates[20]`，让 AI 挑（不静默取第一个）
+
+**CLI / 文档 / 测试**:
+- `export/skill/scripts/kb_api.py` 参数 `--path` → `--name`（含 docstring 用法示例）
+- `export/skill/README.md` 用法示例同步
+- `export/skill/SKILL.md` 工具速查表 + Section 6 反模式 + Section 9 示例 3 + 版本日志
+- `export/mcp/README.md` 工具参数表同步（export/mcp/code_mcp_v2.py 暂未同步，启用独立部署时再补）
+- `docs/code-knowledge-base-design.md` 工具入参表同步
+- `REGRESSION_TEST.md` 11.5 改用 `file_name`，新增 11.5.1 多匹配测试，11.10 改 8/8
+- `test/test_e2e_kb_api.py` file 测试改用 `--name`（8/8 PASS）
+- `frontend/tabs/code-mcp.html` + `frontend/js/code-mcp.js` 示例文案+参数双修
+- `frontend/index.html` `__TAB_VERSION` 23 → 24
+
+**设计决策**:
+- 彻底废弃 `file_path` 入参（不留双入口）
+- 多匹配统一返回 candidates（`Pod/*.hpp` 几百个同名也照规则走）
+- `code_meta.file_name` 字段 v1.0 就已存，v2.1 终于暴露为 API 入口
+
 ### feat(code-kb): 升级对标 mm-code-search（P0 + P1 + P2）
 
 完整 3 阶段升级，详见 `docs/code-kb-upgrade-plan.md` §11 实施记录 + §12 review 留痕。

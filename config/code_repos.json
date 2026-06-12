@@ -29,7 +29,7 @@
         "protocol": 182,
         "struct": 10
       },
-      "last_scanned": "2026-06-12T09:47:24.062024"
+      "last_scanned": "2026-06-12T11:27:12.280763"
     },
     "MailAndroidG": {
       "repo_name": "MailAndroidG",
@@ -55,7 +55,7 @@
         "object": 3830,
         "struct": 1
       },
-      "last_scanned": "2026-06-12T09:47:52.841289"
+      "last_scanned": "2026-06-12T11:27:40.947225"
     }
   },
   "watchdog": {

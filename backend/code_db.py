@@ -137,6 +137,8 @@ def get_sqlite() -> sqlite3.Connection:
     """)
     _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_repo ON code_meta(repo_name)")
     _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_lang ON code_meta(language)")
+    # file_name 索引：code_file_context 按 file_name 查（v2.1 起替代 file_path 入口）
+    _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_file_name ON code_meta(file_name)")
 
     # 调用关系表 (call graph) + 继承关系 (inherit hierarchy)
     # relation_type: 'call' (函数调用) / 'inherit' (类继承/实现)
@@ -846,6 +848,27 @@ def get_chunks_by_file(repo_name: str, file_path: str) -> list[dict]:
             "metadata": {},
         })
     return result
+
+
+def resolve_file_by_name(repo_name: str, file_name: str) -> list[dict]:
+    """按 file_name 找文件（v2.1 起替代 get_chunks_by_file 的 file_path 入口）
+
+    Returns:
+        列表（多匹配也全部返回），每项含 file_path / file_name / chunk_count。
+        调用方按业务需求决定：唯一命中直接取内容，多匹配返回给 AI 让它挑。
+    """
+    conn = get_sqlite()
+    rows = conn.execute(
+        "SELECT file_path, file_name, COUNT(*) AS cnt "
+        "FROM code_meta WHERE repo_name = ? AND file_name = ? "
+        "GROUP BY file_path, file_name "
+        "ORDER BY cnt DESC",
+        (repo_name, file_name)
+    ).fetchall()
+    return [
+        {"file_path": r[0], "file_name": r[1], "chunk_count": r[2]}
+        for r in rows
+    ]
 
 
 # ── FTS5 中文分词迁移 ──────────────────────────────────────────────

@@ -18,7 +18,7 @@
 | `code_search` | 混合搜索（向量+关键词+符号） | `query` (必传) / `repo_name` / `top_k` |
 | `code_chat` | RAG 代码问答 | `question` (必传) / `repo_name` |
 | `code_list_repos` | 列出已索引仓库 | 无 |
-| `code_file_context` | 获取文件上下文 | `repo_name` / `file_path` / `line_start` / `line_end` |
+| `code_file_context` | 获取文件上下文 | `repo_name` / `file_name` / `line_start` / `line_end`（v2.1 改造：原 `file_path` 入口已废弃）|
 | `code_trace` | 调用链追踪 | `symbol` (必传) / `direction` / `depth` / `repo_name` |
 
 ## 启动方式

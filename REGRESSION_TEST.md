@@ -132,10 +132,11 @@
 | 11.2 | `code_search` 中文 | `tools/call name=code_search args={query:"邮件发送",top_k:3}` | 返回 3 hits，top1 邮件相关文件 |
 | 11.3 | `code_trace` direction=callers | `tools/call name=code_trace args={symbol:"sendMail",direction:"callers",depth:2}` | matched≥1（callers BFS 可能为 0，类名 vs 方法名差异，已记 TODO） |
 | 11.4 | `code_trace` direction=hierarchy | `tools/call name=code_trace args={symbol:"AccountMocker",direction:"hierarchy",depth:2}` | parents + children 非空，chain 节点 ≥ 2 |
-| 11.5 | `code_file_context` | `tools/call name=code_file_context args={repo,file_path}` | 返回 content (≤5000 字符) + truncated 标记 |
+| 11.5 | `code_file_context` 按文件名（v2.1）| `tools/call name=code_file_context args={repo:"ghmail",file_name:"login_page.dart"}` | 返回 content (≤5000 字符) + truncated 标记；多匹配返回 candidates 列表 |
+| 11.5.1 | `code_file_context` 多匹配（v2.1）| `tools/call name=code_file_context args={repo:"ghmail",file_name:"update.py"}` | 返回 error + candidates（2 个: scripts/RN/update.py + scripts/webui/update.py）|
 | 11.6 | `code_chat` RAG 问答 | `tools/call name=code_chat args={question:"..."}` | answer 字段 + 5 个 sources |
 | 11.7 | `kb_api.py` 6 子命令 | `python3 export/skill/scripts/kb_api.py {search,repos,trace,file,chat}` | 全部输出 JSON，无 Traceback |
 | 11.8 | `kb_api.py` hierarchy | `python3 kb_api.py trace --symbol AccountMocker --direction hierarchy` | direction=hierarchy，parents/children 非空 |
 | 11.9 | `kb_api.py` chat 120s | `python3 kb_api.py chat --question "..."` | 不在 30s 超时（chat 单独 120s）|
-| 11.10 | e2e 测试 6/6 | `SKIP_CHAT=1 python3 test/test_e2e_kb_api.py` | 6/6 PASS（repos/search/trace/file/hierarchy + chat skip）|
+| 11.10 | e2e 测试 8/8 | `SKIP_CHAT=1 python3 test/test_e2e_kb_api.py` | 8/8 PASS（repos/search/trace/file/hierarchy + chat skip + mcp_initialize + mcp_tools_list）|
 | 11.11 | 端点 `/mcp/` 而非 `/mcp/sse` | `curl -I http://localhost:8000/mcp/` | 200 OK |

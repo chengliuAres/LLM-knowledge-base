@@ -437,7 +437,7 @@ MCP server 内嵌到 FastAPI 服务, 使用 HTTP+SSE 传输。
 | code_search | 搜索代码库 | query, repo?, language?, symbol?, mode?, top_k? | 搜索结果列表 |
 | code_chat | RAG 代码问答 | question, repo?, language? | LLM 回答 + 引用 |
 | code_list_repos | 列出已索引仓库 | 无 | 仓库列表 |
-| code_file_context | 获取文件上下文 | repo, file_path, line_start?, line_end? | 文件内容 (无行号参数时返回完整文件, 最大 5000 字符; 有行号参数时返回指定范围 + 前后各 10 行上下文) |
+| code_file_context | 获取文件上下文 | repo, file_name, line_start?, line_end?（v2.1 改造：原 file_path 已废弃，按裸文件名查；多匹配返回 candidates 列表）| 文件内容 (无行号参数时返回完整文件, 最大 5000 字符; 有行号参数时返回指定范围 + 前后各 10 行上下文) |
 
 ### 7.3 认证
 

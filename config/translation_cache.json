@@ -99,7 +99,7 @@
     ],
     "method": "dict",
     "confidence": 0.9,
-    "timestamp": 1781169803.167232,
+    "timestamp": 1781181001.8490229,
     "auto_added": false
   },
   "读信引导": {
@@ -190,7 +190,7 @@
     ],
     "method": "dict",
     "confidence": 0.7,
-    "timestamp": 1781169841.516553,
+    "timestamp": 1781179414.906038,
     "auto_added": false
   },
   "代办": {
@@ -199,20 +199,21 @@
     ],
     "method": "dict",
     "confidence": 0.9,
-    "timestamp": 1781164563.5631301,
+    "timestamp": 1781179472.2713,
     "auto_added": false
   },
   "代办页面": {
     "keywords": [
       "todo",
+      "task",
       "viewcontroller",
       "vc",
       "page",
       "view"
     ],
     "method": "dict",
-    "confidence": 1.0,
-    "timestamp": 1781164596.007544,
+    "confidence": 0.7,
+    "timestamp": 1781179910.834396,
     "auto_added": false
   },
   "文件执行": {
@@ -228,22 +229,26 @@
     "keywords": [
       "mail",
       "email",
-      "message"
+      "message",
+      "发送"
     ],
     "method": "dict",
-    "confidence": 0.7,
-    "timestamp": 1781173761.152582,
+    "confidence": 0.5,
+    "timestamp": 1781180266.928819,
     "auto_added": false
   },
   "邮件发送怎么工作": {
     "keywords": [
       "mail",
       "email",
-      "message"
+      "message",
+      "发送",
+      "怎么",
+      "工作"
     ],
     "method": "dict",
-    "confidence": 0.7,
-    "timestamp": 1781173768.562046,
+    "confidence": 0.25,
+    "timestamp": 1781180284.959069,
     "auto_added": false
   },
   "MailBox 邮件列表": {
@@ -278,6 +283,64 @@
     "method": "dict",
     "confidence": 0.3333333333333333,
     "timestamp": 1781173090.0193658,
+    "auto_added": false
+  },
+  "店铺页面": {
+    "keywords": [
+      "shop",
+      "store",
+      "page",
+      "view"
+    ],
+    "method": "dict",
+    "confidence": 0.7,
+    "timestamp": 1781180984.0366552,
+    "auto_added": false
+  },
+  "文件中心": {
+    "keywords": [
+      "fileCenter"
+    ],
+    "method": "dict",
+    "confidence": 0.9,
+    "timestamp": 1781180323.552799,
+    "auto_added": false
+  },
+  "店铺": {
+    "keywords": [
+      "shop",
+      "store"
+    ],
+    "method": "dict",
+    "confidence": 0.9,
+    "timestamp": 1781180958.979997,
+    "auto_added": false
+  },
+  "读信页面": {
+    "keywords": [
+      "read",
+      "page",
+      "view"
+    ],
+    "method": "dict",
+    "confidence": 0.7,
+    "timestamp": 1781181015.0616052,
+    "auto_added": false
+  },
+  "大师号登录页面": {
+    "keywords": [
+      "master",
+      "login",
+      "signin",
+      "sign_in",
+      "auth",
+      "authenticate",
+      "page",
+      "view"
+    ],
+    "method": "dict",
+    "confidence": 0.7,
+    "timestamp": 1781233375.894919,
     "auto_added": false
   }
 }

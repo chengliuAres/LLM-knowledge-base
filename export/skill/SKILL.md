@@ -144,10 +144,10 @@ code_search(query="邮件发送", repo="other-repo")  # 浪费时间
 
 | 工具 | 用途 | 何时用 | 返回关键字段 |
 |------|------|--------|------------|
-| `code_search` | 混合搜索（向量+关键词+符号） | 定位代码、查分布、中文描述搜索 | `results[]` 含 `file_path / symbol_name / content` |
+| `code_search` | 混合搜索（向量+关键词+符号） | 定位代码、查分布、中文描述搜索 | `results[]` 含 `file_path / file_name / symbol_name / content` |
 | `code_chat` | RAG 代码问答 | 理解代码逻辑、解释实现 | `answer` + `sources[]` |
 | `code_trace` | 调用链/继承链追踪 | 查调用关系、影响范围、类继承层次 | `matched_symbols[]` + `traces[].chain`；`direction=hierarchy` 返回 `parents[] / children[]` |
-| `code_file_context` | 文件内容读取 | 确认细节、阅读完整实现 | `content` (≤5000 字符) + `truncated` |
+| `code_file_context` | 文件内容读取 | 确认细节、阅读完整实现 | 按 `file_name` 查（v2.1 改造：原 `file_path` 入口已废弃）；`content` (≤5000 字符) + `truncated` |
 | `code_list_repos` | 仓库列表 | 了解有哪些代码库可搜索 | `repos[]` 含 `name / total_chunks` |
 
 ## Section 4：场景识别表（5 抽象模式 + 15 具体场景）
@@ -190,7 +190,7 @@ code_search(query="邮件发送", repo="other-repo")  # 浪费时间
 （query 中某关键词部分匹配不相关代码）。
 判断标准：看每条结果的 match_reason 字段：
   - "符号匹配: X (文件名+符号名匹配提权)" → 高置信度，可信
-  - "混合匹配 (文件名+符号名匹配提权)" → 中等置信度，需看 file_path 确认
+  - "混合匹配 (文件名+符号名匹配提权)" → 中等置信度，需看 file_path/file_name 确认
   - "语义相似" → 低置信度（向量召回），容易假阳性
   - "关键词匹配" → FTS5 字面匹配，看 score 判断
 
@@ -246,9 +246,10 @@ code_search 返回空时，依次尝试：
    正确：run_in_background(true) × 3 并发 → 合并去重
    错误：search(A) → search(B) → search(C) 三次串行
 
-❌ 不要猜测文件路径：先用 code_search 确认
+❌ 不要猜测文件路径：先用 code_search 确认（v2.1 起 file_context 改用 file_name，不直接传路径）
    错误："肯定在 src/main.py"→ 直接 file 命令 → 报"文件不存在"
-   正确：search("入口主函数") → 拿到真实路径 → file 命令
+   正确：search("入口主函数") → 拿到 file_path/file_name → file_name 命令
+   例外：用户明确说"看 login_page.dart" → 直接传 file_name="login_page.dart"，不再二次搜索
 
 ❌ 不要用中文做精确类名搜索：中文描述→code_search 语义发现（翻译层负责中→英）
    错误：search(query="邮件")
@@ -310,7 +311,7 @@ claude mcp add code-kb http://<your-host>:8000/mcp/
 python3 scripts/kb_api.py search --query "XX" --top_k 5
 python3 scripts/kb_api.py chat --question "XX"
 python3 scripts/kb_api.py trace --symbol XX --direction callers --depth 2
-python3 scripts/kb_api.py file --repo <repo-name> --path "src/main.py"
+python3 scripts/kb_api.py file --repo <repo-name> --name "login_page.dart"
 python3 scripts/kb_api.py repos
 ```
 
@@ -492,31 +493,34 @@ code_trace(symbol="sendMail", direction="both", depth=1)
 >
 > 建议看 AbstractSendMail 基类（最高层抽象），要拉完整实现吗？
 
-### 示例 3：失败回退（文件路径错误）
+### 示例 3：失败回退（文件名错误）
 
-**用户**：「看下 ghmail 仓库 vendor/openspec 目录的代码」
+**用户**：「看下 ghmail 仓库 urs_web_login_page 的实现」
 
-**AI**（错误路径）：
+**AI**（错误文件名）：
 
 ```python
-code_file_context(repo="ghmail", file_path="vendor/openspec")
+code_file_context(repo="ghmail", file_name="urs_web_login_page.dar")  # 拼错后缀
 ```
 
 **真实返回**：
 
 ```json
-{"error": "文件不存在: ghmail/vendor/openspec"}
+{
+  "error": "仓库 ghmail 中找不到文件: urs_web_login_page.dar",
+  "hint": "用 code_search 先定位文件路径，再传 file_name"
+}
 ```
 
 **AI 正确处理**（不要直接报"找不到"，要走回退链）：
 
-> 没直接命中 `vendor/openspec` 这个路径。换两个角度试试：
+> 没找到 `urs_web_login_page.dar`（拼错了，应该是 `.dart`）。换两个角度试试：
 >
-> 1. 用搜索定位真实路径：
+> 1. 用搜索定位真实文件名：
 > ```python
-> code_search(query="openspec 规范 spec")
+> code_search(query="urs_web_login 登录网页")
 > ```
-> 2. 或者用 `code_list_repos` 看看 ghmail 仓库实际结构
+> 2. 如果搜出来有多个同名文件（如 login_page.dart 在仓里有 4 个），从 results 里挑一个再传 file_name。
 
 ### 示例 4：多关键词角度搜（单仓内，多"概念维度"覆盖）
 
@@ -655,6 +659,12 @@ python3 scripts/kb_api.py search --query "邮件发送" --top_k 3
 
 ## 版本日志
 
+- **v2.1** (2026-06-12)：file_name 改造
+  - `code_file_context` 入参从 `file_path` 改为 `file_name`（AI 记不住长路径）
+  - 多匹配返回 `candidates` 列表让 AI 挑（替代直接报错）
+  - CLI `kb_api.py file` 参数从 `--path` 改为 `--name`
+  - `code_meta` 加 `file_name` 索引
+  - SKILL.md 工具速查表、Section 6 反模式、Section 9 示例 3 同步
 - **v2.0** (2026-06-11)：重写
   - Section 6 反模式：每条加"误判反例"和"正例"对照
   - Section 8 语言关键词：补全 ObjC/Swift 完整矩阵，加"反例（会失败）"列

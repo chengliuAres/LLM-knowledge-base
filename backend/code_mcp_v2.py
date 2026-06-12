@@ -116,17 +116,40 @@ async def code_list_repos() -> str:
 @mcp.tool()
 async def code_file_context(
     repo: str,
-    file_path: str,
+    file_name: str,
     line_start: int = 0,
     line_end: int = 0,
 ) -> str:
-    """获取某个文件的上下文内容"""
-    import json
-    from code_db import get_chunks_by_file
+    """按文件名获取文件内容（v2.1 改造：原 file_path 入口已废弃）
 
+    - 唯一命中：直接返回 content
+    - 多匹配（如 Pods/ 下几百个同名 .hpp）：返回 candidates 列表让 AI 挑
+    - 无匹配：返回 error
+    """
+    import json
+    from code_db import resolve_file_by_name, get_chunks_by_file
+
+    matches = resolve_file_by_name(repo, file_name)
+    if not matches:
+        return json.dumps(
+            {"error": f"仓库 {repo} 中找不到文件: {file_name}",
+             "hint": "用 code_search 先定位文件路径，再传 file_name"},
+            ensure_ascii=False, indent=2,
+        )
+
+    if len(matches) > 1:
+        return json.dumps({
+            "error": f"文件 {file_name} 在 {repo} 中有 {len(matches)} 个匹配",
+            "hint": "请用 code_search 精确定位，或从 candidates 中挑一个再调用",
+            "candidates": matches[:20],  # 限 20 防爆
+        }, ensure_ascii=False, indent=2)
+
+    # 唯一命中：取 file_path 走原有逻辑
+    file_path = matches[0]["file_path"]
     chunks = get_chunks_by_file(repo, file_path)
     if not chunks:
-        return json.dumps({"error": f"文件不存在: {repo}/{file_path}"}, ensure_ascii=False)
+        return json.dumps({"error": f"文件元数据找到但 chunk 为空: {file_path}"},
+                          ensure_ascii=False, indent=2)
 
     content = "\n".join(c["content"] for c in chunks)
 
@@ -142,6 +165,7 @@ async def code_file_context(
 
     return json.dumps({
         "repo": repo,
+        "file_name": file_name,
         "file_path": file_path,
         "content": content,
         "total_chunks": len(chunks),

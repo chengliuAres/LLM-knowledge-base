@@ -96,18 +96,26 @@ except Exception as e:
     results.append(("trace", False, str(e)))
 
 
-# === 4. file (不存在的路径，验证错误处理) ===
-print("\n[4/5] file --path 不存在（验证错误处理）")
-rc, out, err = run("file", "--repo", "ghmail", "--path", "vendor/openspec")
+# === 4. file (按 file_name 唯一命中) ===
+# v2.1 改造：原 --path 已废弃，改用 --name 传裸文件名
+# 选 mailflutter 仓的 login_page.dart（真实存在且唯一命中）
+print("\n[4/5] file --name login_page.dart（v2.1: 唯一命中）")
+rc, out, err = run("file", "--repo", "ghmail", "--name", "login_page.dart")
 try:
     data = json.loads(out)
     result = data.get("result", data)
-    if "error" in result or "error" in data:
-        print(f"  ✅ 正确返回 error: {result.get('error', data.get('error'))}")
-        results.append(("file", True, "error handled"))
+    if "content" in result and "file_path" in result:
+        # 唯一命中分支
+        print(f"  ✅ 唯一命中: {result['file_path']}, {result['total_chunks']} chunks, truncated={result['truncated']}")
+        results.append(("file", True, f"unique: {result['file_path']}"))
+    elif "candidates" in result:
+        # 多匹配分支
+        cands = result["candidates"]
+        print(f"  ✅ 多匹配返回 candidates: {len(cands)} 个（{cands[0]['file_path']} 等）")
+        results.append(("file", True, f"multi-match: {len(cands)} candidates"))
     else:
-        print(f"  ❌ 应该返回 error 但没: {data}")
-        results.append(("file", False, "missing error"))
+        print(f"  ❌ 既无 content 也无 candidates: {data}")
+        results.append(("file", False, "no content/candidates"))
 except Exception as e:
     print(f"  ❌ 解析失败: {e}\n{out[:200]}")
     results.append(("file", False, str(e)))
@@ -173,6 +181,77 @@ else:
     except Exception as e:
         print(f"  ❌ 解析失败: {e}\nout={out[:200]}\nerr={err[:200]}")
         results.append(("chat", False, str(e)))
+
+
+# === 6. MCP 端点健康检查（直接 JSON-RPC 2.0 打 /mcp/）===
+# 不走 kb_api.py 包装，直接验证 Streamable HTTP 端点本身活着
+# - initialize 握手 → 拿 serverInfo
+# - tools/list → 拿工具列表，断言 5 个核心 tool 都在
+print("\n[6/6] MCP 端点健康检查（直接 JSON-RPC POST /mcp/）")
+import urllib.request
+import urllib.error
+
+
+def mcp_post_rpc(method, params=None):
+    """直接 POST JSON-RPC 2.0 到 /mcp/，返回 (status, parsed_dict_or_None, err_str)。"""
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": method,
+        "params": params or {}
+    }
+    req = urllib.request.Request(
+        MCP_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": "2024-11-05",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            body = resp.read().decode("utf-8")
+            return resp.status, json.loads(body), ""
+    except urllib.error.HTTPError as e:
+        return e.code, None, f"HTTP {e.code}: {e.reason}"
+    except urllib.error.URLError as e:
+        return 0, None, f"连接失败: {e.reason}"
+    except Exception as e:
+        return 0, None, f"{type(e).__name__}: {e}"
+
+
+# 1) initialize
+rc, data, err = mcp_post_rpc("initialize", {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {},
+    "clientInfo": {"name": "test_e2e_kb_api", "version": "1.0.0"},
+})
+if rc != 200 or data is None or "error" in data:
+    print(f"  ❌ initialize 失败: rc={rc}, err={err}, data={data}")
+    results.append(("mcp_initialize", False, f"rc={rc}, {err or (data or {}).get('error')}"))
+else:
+    server_name = (data.get("result", {}).get("serverInfo", {}) or {}).get("name", "?")
+    print(f"  ✅ initialize OK: server={server_name}")
+    results.append(("mcp_initialize", True, f"server={server_name}"))
+
+    # 2) tools/list
+    rc2, data2, err2 = mcp_post_rpc("tools/list", {})
+    if rc2 != 200 or data2 is None or "error" in data2:
+        print(f"  ❌ tools/list 失败: rc={rc2}, err={err2}, data={data2}")
+        results.append(("mcp_tools_list", False, f"rc={rc2}, {err2 or (data2 or {}).get('error')}"))
+    else:
+        tools = (data2.get("result", {}) or {}).get("tools", [])
+        tool_names = [t.get("name") for t in tools]
+        print(f"  ✅ tools/list OK: {len(tools)} 工具: {tool_names}")
+        expected = {"code_search", "code_chat", "code_trace", "code_file_context", "code_list_repos"}
+        missing = expected - set(tool_names)
+        if missing:
+            print(f"  ❌ 缺核心工具: {missing}")
+            results.append(("mcp_tools_list", False, f"missing: {missing}"))
+        else:
+            results.append(("mcp_tools_list", True, f"{len(tools)} tools"))
 
 
 # === 汇总 ===

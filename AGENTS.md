@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## 项目概述
 
-基于 LanceDB + sentence-transformers 的本地文档知识库 Demo，支持文档上传、邮件导入、代码索引、向量搜索和 RAG 问答。支持 MCP 协议对外暴露 AI 工具能力。这是一个 email-wiki 技术验证项目，演示 Karpathy LLM-wiki 方案在邮件/代码场景的核心链路。
+基于 LanceDB + sentence-transformers 的本地文档&代码知识库，支持文档上传、邮件导入、代码索引、向量搜索和 RAG 问答。支持 MCP 协议对外暴露 AI 工具能力。基于 Karpathy LLM-wiki 方案，覆盖邮件/代码场景的完整知识管理链路。
 
 ### 项目文档
 

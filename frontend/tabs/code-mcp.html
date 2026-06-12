@@ -4,7 +4,7 @@
   <h2 class="text-lg font-semibold text-white">🔌 MCP 接入</h2>
   <p class="text-sm" style="color: var(--color-muted);">MCP (Model Context Protocol) 是 AI 助手与外部工具之间的开放标准协议。连接后，Claude Code、Cursor 等 AI 工具可以直接搜索代码、追踪调用链、进行 RAG 问答。</p>
 
-  <!-- 子标签切换（接入指南 / 客户端配置 / 使用示例） -->
+  <!-- 子标签切换（接入指南 / 客户端配置 / 使用示例 / AI 视角 / 测试） -->
   <div class="flex flex-wrap gap-2 border-b pb-3" style="border-color: var(--color-border);">
     <button class="mcp-subtab-btn active px-3 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap" data-mcp-tab="guide"
       style="background: var(--color-accent); color: var(--color-on-primary);" onclick="switchMcpTab('guide')">📖 接入指南</button>
@@ -178,10 +178,10 @@
       </div>
       <div class="rounded-lg p-4 text-sm" style="background: var(--color-surface); border-left: 3px solid #8B5CF6;">
         <div class="font-semibold mb-1" style="color: #8B5CF6;">📄 浏览文件</div>
-        <div class="mb-2" style="color: var(--color-muted);">"帮我看下 MailService.dart 的代码"</div>
+        <div class="mb-2" style="color: var(--color-muted);">"帮我看下 login_page.dart 的代码"</div>
         <div class="rounded p-2 text-xs font-mono" style="background: var(--color-background); color: var(--color-muted);">
-          → code_file_context(repo="mailflutter", file_path="...")<br>
-          → 返回文件完整内容
+          → code_file_context(repo="ghmail", file_name="login_page.dart")<br>
+          → 返回 LoginView 类完整内容
         </div>
       </div>
     </div>
@@ -280,11 +280,11 @@ python3 export/skill/scripts/kb_api.py repos
 
   <!-- 内容区：MCP 测试 — 浏览器直连验证 Streamable HTTP 端点 -->
   <div id="mcp-tab-test" class="mcp-tab-content hidden space-y-4">
-    <!-- 连接信息 + 测试按钮 -->
     <div class="rounded-lg p-4 space-y-3" style="background: var(--color-surface);">
       <div class="flex flex-wrap items-center gap-3">
         <span class="text-sm" style="color: var(--color-muted);">MCP 端点：</span>
-        <code id="mcp-test-endpoint" class="text-sm font-mono px-2 py-1 rounded" style="background: var(--color-background); color: var(--color-accent);">—</code>
+        <code id="mcp-test-endpoint" class="text-sm font-mono px-2 py-1 rounded"
+          style="background: var(--color-background); color: var(--color-accent);">—</code>
         <button id="mcp-test-connect-btn" class="ml-auto px-3 py-1.5 rounded text-sm font-medium transition-colors"
           style="background: var(--color-accent); color: var(--color-on-primary);" onclick="mcpTestConnect()">
           🔌 测试连接
@@ -293,7 +293,6 @@ python3 export/skill/scripts/kb_api.py repos
       </div>
     </div>
 
-    <!-- 工具调用区 -->
     <div class="rounded-lg p-4 space-y-3" style="background: var(--color-surface);">
       <div class="flex flex-wrap items-center gap-3">
         <label class="text-sm" style="color: var(--color-muted);">工具：</label>
@@ -301,6 +300,27 @@ python3 export/skill/scripts/kb_api.py repos
           style="background: var(--color-background); color: var(--color-foreground); border: 1px solid var(--color-border);" disabled>
           <option value="">— 请先连接 —</option>
         </select>
+        <!-- 4 个示例按钮：颜色对应 tool 列表（绿/蓝/橙/紫），左侧 3px 色条 + 文字色 + 浅色背景，hover 加深 -->
+        <button class="text-sm font-medium px-3 py-1.5 rounded transition-colors"
+          style="background: rgba(34, 197, 94, 0.12); color: #22C55E; border-left: 3px solid #22C55E; border-top: 1px solid var(--color-border); border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border);"
+          onmouseover="this.style.background='rgba(34, 197, 94, 0.25)'"
+          onmouseout="this.style.background='rgba(34, 197, 94, 0.12)'"
+          onclick="mcpTestFillSample('search')">🔍 搜代码</button>
+        <button class="text-sm font-medium px-3 py-1.5 rounded transition-colors"
+          style="background: rgba(59, 130, 246, 0.12); color: #3B82F6; border-left: 3px solid #3B82F6; border-top: 1px solid var(--color-border); border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border);"
+          onmouseover="this.style.background='rgba(59, 130, 246, 0.25)'"
+          onmouseout="this.style.background='rgba(59, 130, 246, 0.12)'"
+          onclick="mcpTestFillSample('chat')">💬 问答</button>
+        <button class="text-sm font-medium px-3 py-1.5 rounded transition-colors"
+          style="background: rgba(245, 158, 11, 0.12); color: #F59E0B; border-left: 3px solid #F59E0B; border-top: 1px solid var(--color-border); border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border);"
+          onmouseover="this.style.background='rgba(245, 158, 11, 0.25)'"
+          onmouseout="this.style.background='rgba(245, 158, 11, 0.12)'"
+          onclick="mcpTestFillSample('trace')">🔗 追踪</button>
+        <button class="text-sm font-medium px-3 py-1.5 rounded transition-colors"
+          style="background: rgba(139, 92, 246, 0.12); color: #8B5CF6; border-left: 3px solid #8B5CF6; border-top: 1px solid var(--color-border); border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border);"
+          onmouseover="this.style.background='rgba(139, 92, 246, 0.25)'"
+          onmouseout="this.style.background='rgba(139, 92, 246, 0.12)'"
+          onclick="mcpTestFillSample('file')">📄 文件</button>
         <span id="mcp-test-serverinfo" class="text-xs ml-auto" style="color: var(--color-muted);"></span>
       </div>
 
@@ -308,7 +328,7 @@ python3 export/skill/scripts/kb_api.py repos
         <label class="text-sm block mb-1" style="color: var(--color-muted);">参数（JSON，对应工具的入参）：</label>
         <textarea id="mcp-test-args" rows="6" class="w-full font-mono text-xs px-3 py-2 rounded"
           style="background: var(--color-background); color: var(--color-foreground); border: 1px solid var(--color-border); resize: vertical;"
-          placeholder='例：{"query": "邮件发送", "repo": "", "top_k": 5}' disabled></textarea>
+          placeholder='例：{"query": "邮件发送", "top_k": 5}' disabled></textarea>
       </div>
 
       <div class="flex items-center gap-3">
@@ -316,15 +336,11 @@ python3 export/skill/scripts/kb_api.py repos
           style="background: var(--color-accent); color: var(--color-on-primary);" onclick="mcpTestSend()" disabled>
           📤 发送
         </button>
-        <button class="px-3 py-1.5 rounded text-sm transition-colors"
-          style="background: var(--color-secondary); color: var(--color-foreground); border: 1px solid var(--color-border);"
-          onclick="mcpTestFillSample()">填入示例</button>
         <span id="mcp-test-spinner" class="text-sm hidden" style="color: var(--color-muted);">⏳ 请求中…</span>
         <span id="mcp-test-elapsed" class="text-xs ml-auto" style="color: var(--color-muted);"></span>
       </div>
     </div>
 
-    <!-- 返回区 -->
     <div>
       <div class="flex items-center justify-between mb-1">
         <label class="text-sm" style="color: var(--color-muted);">返回：</label>
@@ -350,5 +366,7 @@ python3 export/skill/scripts/kb_api.py repos
   });
   var urlEl = document.getElementById('mcp-server-url');
   if (urlEl) urlEl.textContent = serverUrl;
+  var endpointEl = document.getElementById('mcp-test-endpoint');
+  if (endpointEl) endpointEl.textContent = serverUrl + '/mcp/';
 })();
 </script>

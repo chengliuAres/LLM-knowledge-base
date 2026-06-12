@@ -21,11 +21,6 @@ function switchMcpTab(tabId) {
   document.querySelectorAll('.mcp-tab-content').forEach(function(content) {
     content.classList.toggle('hidden', content.id !== 'mcp-tab-' + tabId);
   });
-
-  // 切到测试 tab 时刷新端点显示
-  if (tabId === 'test') {
-    refreshMcpTestEndpoint();
-  }
 }
 
 function copyMcpCode(btn, codeText) {
@@ -62,15 +57,9 @@ function showMcpToast(msg) {
   }, 3000);
 }
 
-function refreshMcpTestEndpoint() {
-  var endpoint = location.protocol + '//' + location.host + '/mcp/';
-  var el = document.getElementById('mcp-test-endpoint');
-  if (el) el.textContent = endpoint;
-}
-
 // ===== MCP 测试功能 =====
 
-// 用 fetch + ReadableStream 解析 SSE 格式响应（服务端可能返回 text/event-stream）
+// 用 fetch 直接 POST JSON-RPC 2.0，content-type 双支持（服务端可能返回 SSE）
 async function mcpTestPostRpc(method, params) {
   var endpoint = location.protocol + '//' + location.host + '/mcp/';
   var body = JSON.stringify({
@@ -98,7 +87,6 @@ async function mcpTestPostRpc(method, params) {
   var contentType = resp.headers.get('content-type') || '';
   var raw = await resp.text();
 
-  // application/json：直接 parse
   if (contentType.indexOf('application/json') !== -1) {
     return JSON.parse(raw);
   }
@@ -161,7 +149,7 @@ async function mcpTestConnect() {
     var tools = (toolsResp.result && toolsResp.result.tools) || [];
     var elapsed = Date.now() - start;
 
-    // 填充工具下拉
+    // 填充工具下拉（option 上挂 inputSchema 供参数模板用）
     var sel = document.getElementById('mcp-test-tool');
     sel.innerHTML = '';
     tools.forEach(function(t) {
@@ -173,7 +161,7 @@ async function mcpTestConnect() {
     });
     sel.disabled = false;
 
-    // 联动：选中工具时自动填入参数 schema 模板
+    // 联动：选中工具时根据 inputSchema 自动填入参数模板
     sel.onchange = function() {
       var opt = sel.options[sel.selectedIndex];
       if (!opt || !opt.dataset.schema) return;
@@ -181,18 +169,21 @@ async function mcpTestConnect() {
       try { schema = JSON.parse(opt.dataset.schema); } catch (e) { return; }
       var props = (schema.properties || {});
       var required = schema.required || [];
+      // 无参（code_list_repos 这种）：直接填 {}
+      if (Object.keys(props).length === 0) {
+        document.getElementById('mcp-test-args').value = '{}';
+        return;
+      }
+      // 有参：按类型生成示例值，required 加 // 注释提示
       var sample = {};
       Object.keys(props).forEach(function(k) {
-        // 简单示例值：string→空串(让用户填) / number→0 / bool→false
         if (props[k].type === 'string') sample[k] = '';
         else if (props[k].type === 'number' || props[k].type === 'integer') sample[k] = 0;
         else if (props[k].type === 'boolean') sample[k] = false;
         else sample[k] = null;
       });
-      // required 提示行加在 schema 注释里（仅做提示，不影响 JSON 合法性）
       var hint = required.length ? '// 必填参数: ' + required.join(', ') + '\n' : '';
-      var ta = document.getElementById('mcp-test-args');
-      ta.value = hint + JSON.stringify(sample, null, 2);
+      document.getElementById('mcp-test-args').value = hint + JSON.stringify(sample, null, 2);
     };
 
     // 启用输入与发送
@@ -209,8 +200,12 @@ async function mcpTestConnect() {
       tools: tools.map(function(t) { return { name: t.name, description: t.description }; })
     });
 
-    // 自动选第一个工具并填 schema
-    if (tools.length) sel.onchange();
+    // 默认选 code_list_repos（零参数，连接后点"发送"即可拿到真实数据做闭环验证）
+    var preferred = tools.find(function(t) { return t.name === 'code_list_repos'; }) || tools[0];
+    if (preferred) {
+      sel.value = preferred.name;
+      sel.onchange();
+    }
   } catch (err) {
     mcpTestSetStatus('✗ 连接失败', '#EF4444');
     mcpTestRender({ _error: err.message, _hint: '确认后端已启动 (./start.sh)，端口 8000 可访问' });
@@ -228,7 +223,7 @@ async function mcpTestSend() {
     return;
   }
 
-  // 去掉 schema 注释行（以 // 开头）
+  // 过滤掉 // 开头的注释行（参数模板里的 "必填参数" 提示）
   var cleanedLines = argsRaw.split('\n').filter(function(line) {
     return line.trim().indexOf('//') !== 0;
   });
@@ -280,21 +275,80 @@ async function mcpTestSend() {
   }
 }
 
-function mcpTestFillSample() {
-  var sel = document.getElementById('mcp-test-tool');
-  if (!sel.value) {
-    showMcpToast('请先选择工具');
-    return;
-  }
-  var opt = sel.options[sel.selectedIndex];
-  if (opt && opt.dataset.schema) {
-    sel.onchange();
-  }
-}
-
 function mcpTestClear() {
   mcpTestRender('');
   document.getElementById('mcp-test-elapsed').textContent = '';
+}
+
+// 一键填入真实可跑参数（全部锁定 ghmail 仓，保证点"发送"立刻有数据返回）
+// 4 个示例对应 4 个 tool（code_list_repos 零参单独保留"🔌 测试连接"后默认体验）
+function mcpTestFillSample(kind) {
+  var sel = document.getElementById('mcp-test-tool');
+  var ta = document.getElementById('mcp-test-args');
+
+  // 参数设计原则：
+  // - repo 全部锁 ghmail（iOS 仓，柳哥的工作项目）
+  // - query/symbol/file_path 全部用真实存在的标识符（避免"搜不到"）
+  // - language 留空 = 不限定（多语言混合的 ghmail 仓不限制更稳）
+  var samples = {
+    search: {
+      tool: 'code_search',
+      // 必填 query；其他字段全留空 = 默认 hybrid + top_k=10
+      args: {
+        query: '大师号登录页面',
+        repo: 'ghmail',
+        language: '',
+        symbol: '',
+        mode: 'hybrid',
+        top_k: 5
+      }
+    },
+    chat: {
+      tool: 'code_chat',
+      // 必填 question；repo 锁 ghmail 拿到 RAG 上下文
+      args: {
+        question: 'ghmail 的登录流程是怎么实现的？',
+        repo: 'ghmail',
+        language: ''
+      }
+    },
+    trace: {
+      tool: 'code_trace',
+      // viewDidLoad 是 iOS 仓最常见符号，必有数据
+      args: {
+        symbol: 'viewDidLoad',
+        repo: 'ghmail',
+        direction: 'both',
+        depth: 2
+      }
+    },
+    file: {
+      tool: 'code_file_context',
+      // v2.1 改造：file_name 替代 file_path（AI 记不住长路径，裸文件名更稳）
+      // - mailflutter/lib/ui/pages/login/login_page.dart 是登录核心文件，61 chunks
+      // - 多匹配时（如 update.py 仓内有 2 个），MCP 返回 candidates 列表让 AI 挑
+      args: {
+        repo: 'ghmail',
+        file_name: 'login_page.dart',
+        line_start: 0,
+        line_end: 0
+      }
+    }
+  };
+
+  var s = samples[kind];
+  if (!s) return;
+
+  // 必须先连上（sel 有 options）才能切换 tool
+  if (!sel.options.length || !Array.from(sel.options).some(function(o) { return o.value === s.tool; })) {
+    showMcpToast('请先点"测试连接"加载工具列表');
+    return;
+  }
+
+  // 直接覆盖：切 tool + 写参数（绕过 sel.onchange 防止被覆盖回默认）
+  sel.value = s.tool;
+  ta.value = JSON.stringify(s.args, null, 2);
+  showMcpToast('已填入 ' + s.tool + ' 示例（ghmail），点"📤 发送"试试');
 }
 
 window.initCodeMcp = function() {
@@ -306,6 +360,7 @@ window.initCodeMcp = function() {
   var urlEl = document.getElementById('mcp-server-url');
   if (urlEl) urlEl.textContent = serverUrl;
 
-  // 初始化测试 tab 端点显示
-  refreshMcpTestEndpoint();
+  // 测试 tab 端点显示
+  var endpointEl = document.getElementById('mcp-test-endpoint');
+  if (endpointEl) endpointEl.textContent = serverUrl + '/mcp/';
 };

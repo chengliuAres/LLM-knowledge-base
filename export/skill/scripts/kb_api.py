@@ -21,7 +21,7 @@ MCP 协议要点（实测得到）：
   python3 kb_api.py search --query "邮件发送" --top_k 5
   python3 kb_api.py chat --question "sendMail 如何工作"
   python3 kb_api.py trace --symbol sendMail --direction both --depth 2
-  python3 kb_api.py file --repo ghmail --path "src/main.py"
+  python3 kb_api.py file --repo ghmail --name "login_page.dart"
   python3 kb_api.py repos
 
 环境变量：
@@ -171,10 +171,10 @@ def cmd_trace(args, url):
 
 
 def cmd_file(args, url):
-    """code_file_context: repo / file_path / line_start / line_end"""
+    """code_file_context: repo / file_name / line_start / line_end (v2.1 改造)"""
     arguments = {
         "repo": args.repo,
-        "file_path": args.path,
+        "file_name": args.name,
     }
     if args.line_start:
         arguments["line_start"] = args.line_start
@@ -229,9 +229,9 @@ def main():
     p_trace.set_defaults(func=cmd_trace)
 
     # file
-    p_file = sub.add_parser("file", help="读取文件内容")
+    p_file = sub.add_parser("file", help="读取文件内容（按 file_name）")
     p_file.add_argument("--repo", required=True, help="仓库名")
-    p_file.add_argument("--path", required=True, help="文件相对路径")
+    p_file.add_argument("--name", required=True, help="文件名（如 login_page.dart）")
     p_file.add_argument("--line_start", type=int, default=0, help="起始行（上下文裁剪）")
     p_file.add_argument("--line_end", type=int, default=0, help="结束行（上下文裁剪）")
     p_file.set_defaults(func=cmd_file)
