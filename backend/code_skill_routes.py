@@ -3,7 +3,7 @@ import io
 import os
 import zipfile
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 router = APIRouter()
@@ -30,7 +30,7 @@ def get_skill_raw():
     """返回 SKILL.md 文本 + 元信息"""
     path = os.path.join(EXPORT_DIR, "SKILL.md")
     if not os.path.exists(path):
-        return {"error": "SKILL.md missing", "path": path}
+        raise HTTPException(status_code=500, detail={"error": "SKILL.md missing", "path": path})
     content = open(path, encoding="utf-8").read()
     return {
         "content": content,
@@ -51,7 +51,7 @@ def get_skill_info():
 def download_skill():
     """打包 export/skill/ 为 zip，根目录重命名 code-search/"""
     if not os.path.isdir(EXPORT_DIR):
-        return {"error": f"{EXPORT_DIR} not found"}
+        raise HTTPException(status_code=500, detail={"error": f"{EXPORT_DIR} not found"})
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
