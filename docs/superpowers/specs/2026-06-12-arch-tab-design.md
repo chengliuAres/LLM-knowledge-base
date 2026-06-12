@@ -80,7 +80,7 @@ CLAUDE.md 写了完整的技术描述，但**是文字版**。读者进项目的
     else { document.addEventListener('DOMContentLoaded', initMermaid); }
   </script>
   ```
-- **vendor 加载**：Mermaid 10.x minified ≈ 200KB（MIT 协议），下载到 `frontend/vendor/js/mermaid.min.js`
+- **vendor 加载**：Mermaid 10.x minified ≈ **3.3MB**（MIT 协议；含全图表类型），下载到 `frontend/vendor/js/mermaid.min.js`。**`frontend/vendor/` 在 `.gitignore` 全局 ignore**（跟 `tailwindcss.js` / `chart.umd.min.js` 同款不入库）；全新 clone 后该文件会丢，需要手动下载（项目级约定）
 - `__TAB_VERSION` 从 `'24'` → `'25'`（按 `rules/development/frontend-development.md` 必做）
 
 ### 3.4 tab 文件结构
@@ -381,7 +381,7 @@ sequenceDiagram
 - `__TAB_VERSION=25` 生效后，用户**硬刷新**浏览器（Cmd+Shift+R）能拿到新 tab
 
 ### 6.3 验证清单（提交前自检）
-- [ ] `frontend/vendor/js/mermaid.min.js` 存在（~200KB，MIT 协议）
+- [ ] `frontend/vendor/js/mermaid.min.js` 存在（~3.3MB，MIT 协议）
 - [ ] `frontend/tabs/code-arch.html` 创建
 - [ ] `frontend/js/router.js:24` 之后追加 1 行路由
 - [ ] `frontend/index.html:50` 之后追加 1 个侧边栏项
@@ -406,7 +406,7 @@ sequenceDiagram
 
 | 风险 | 缓解 |
 |------|------|
-| Mermaid vendor 文件 200KB 增大首屏 | 只在路由命中 `#code/arch` 时才执行 mermaid.run；不在 index.html 启动时自动渲染 |
+| Mermaid vendor 文件 3.3MB 增大首屏 | 只在路由命中 `#code/arch` 时才执行 mermaid.run；不在 index.html 启动时自动渲染；vendor 不入库，clone 后需手动下载 |
 | 演示 3 后端需要调用 3 路底层方法，可能漏字段 | 严格按 4.2 schema 写，每路返回字段名固定（`file_path`/`content`/`score`/`rrf_score`/`from`）|
 | 详版 tab 体量大（5 区 + **5 张 Mermaid** + 3 演示卡）| 用 `lg:grid-cols` 多列 + `<details>` 折叠；首屏只展开 A/B 区，C/D/E 默认折叠，进来时滚动友好 |
 | 改动 A/B 区文字描述后没同步 CLAUDE.md | commit message 加 `同步 CLAUDE.md`（如有改动）；CI 阶段加 grep 校验（不强制）|

@@ -13,7 +13,7 @@
 **Tech Stack:**
 - 前端：纯 HTML + JS + Mermaid 10.x（无构建步骤）
 - 后端：FastAPI + 现有 `code_search.py` / `code_db.py` 模块级函数复用
-- vendor 化：Mermaid 10.x minified（MIT，~200KB）
+- vendor 化：Mermaid 10.x minified（MIT，~3.3MB；含全图表类型；vendor 不入库，clone 后需手动下载）
 
 **Reference:**
 - Spec：`.claude/worktrees/arch-tab/docs/superpowers/specs/2026-06-12-arch-tab-design.md`
@@ -31,7 +31,7 @@
 
 | 路径 | 操作 | 职责 |
 |------|------|------|
-| `frontend/vendor/js/mermaid.min.js` | 下载 | Mermaid vendor 运行时（~200KB）|
+| `frontend/vendor/js/mermaid.min.js` | 下载 | Mermaid vendor 运行时（~3.3MB；含全图表类型）|
 | `frontend/tabs/code-arch.html` | 新建 | 主 tab 文件（5 分区 + Mermaid + 演示 + 内嵌 script）|
 | `frontend/js/router.js:24` | 修改 | 加 `code/arch` 路由 1 行 |
 | `frontend/index.html:50` | 修改 | 加侧边栏项 1 行 |
@@ -63,7 +63,7 @@ ls -la frontend/vendor/js/mermaid.min.js
 head -c 200 frontend/vendor/js/mermaid.min.js
 ```
 
-Expected: 文件约 200-300KB，首行包含 `mermaid` / `MIT` 字样
+Expected: 文件约 **3.3MB**（Mermaid 10.x minified 完整版，含 flowchart/sequence/gantt/class/state/er/pie 等全图表类型；**不是早期估算的 200-300KB**，那个数字严重低估）。首行包含 `mermaid` / UMD wrapper 关键字
 
 - [ ] **Step 3: 验证 MIT 协议声明**
 
@@ -100,7 +100,9 @@ cd /Users/admin/Desktop/AI产出/email-wiki-demo/.claude/worktrees/arch-tab
 git add frontend/vendor/js/mermaid.min.js
 git commit -m "chore(vendor): Mermaid 10.x minified for code-arch tab
 
-MIT 协议；~200KB；与 tailwindcss.js 同款本地运行时"
+MIT 协议；~3.3MB；与 tailwindcss.js 同款不入库本地运行时
+
+⚠️ 全新 clone 后 mermaid.min.js 跟 tailwindcss.js 都会丢，需手动下载（项目级约定）"
 ```
 
 否则跳过 commit，文件不进 git。
