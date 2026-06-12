@@ -1,8 +1,8 @@
 # 代码知识库「技术架构」tab — 设计文档
 
 > 日期：2026-06-12
-> 作者：柳哥（脑暴） + Claude（落地）
-> 状态：Draft，待 codex review
+> 作者：柳哥（脑暴） + Claude（落地） + Codex（review）
+> 状态：Draft，待柳哥最终 review
 
 ## 1. 目标与背景
 
@@ -17,8 +17,8 @@ CLAUDE.md 写了完整的技术描述，但**是文字版**。读者进项目的
 ### 1.2 目标
 - 在侧边栏加一个「技术架构」tab
 - 用**流程图 + 关键模块详解 + 原理演示**三件套，把代码知识库的"扫描仓库怎么做"和"搜索怎么匹配"讲透
-- 把现有 `code-lancedb.html` 的 C 区"原理演示"搬过来并扩展（基础 2 个 + 四路混搜可视化）
-- 让读者**看一遍就知道**：从代码扫描到四路混搜的每一步、为什么这么设计、能调什么参数
+- 把现有 `code-lancedb.html` 的 C 区"原理演示"搬过来并扩展（基础 2 个 + 顶层 3 路混搜可视化）
+- 让读者**看一遍就知道**：从代码扫描到顶层 3 路混搜的每一步、为什么这么设计、能调什么参数
 
 ### 1.3 范围边界
 - **本 tab 范围** = 代码知识库（扫描 / 搜索 / MCP / 设计决策 / 演示）
@@ -33,11 +33,14 @@ CLAUDE.md 写了完整的技术描述，但**是文字版**。读者进项目的
 | D1 | tab 范围 | 仅代码知识库 | 柳哥指定（避开与文档/邮件 tab 重复）|
 | D2 | 内部结构 | 1 个 tab + 5 分区折叠 | 跟现有 11 tab 惯例 + `code-lancedb.html` A/B/C 区模式保持一致 |
 | D3 | 内容深度 | 详版 | 柳哥原话"每个步骤越详细越好"；tab 价值在"图 > 字" |
-| D4 | 演示区内容 | 基础 2 + 四路混搜可视化（共 3 卡）| 配合"可读性+关联性"原则；trace BFS 文字图说清楚，不重复演示 |
+| D4 | 演示区内容 | 基础 2 + 顶层 3 路可视化（共 3 卡）| 配合"可读性+关联性"原则；trace BFS 文字图说清楚，不重复演示 |
 | D5 | 侧边栏位置 | 代码知识库组最后（"MCP 接入"之后）| 实操完看架构路径最短；不新建分组（YAGNI）|
 | D6 | 流程图画法 | Mermaid.js 走 vendor | 改图改源码即可；跟 `vendor/js/tailwindcss.js` 同款本地运行时哲学 |
 | D7 | 分区默认状态 | 默认全部展开 | 读者第一眼看到全貌；折叠按钮用于"看累了折叠省屏幕" |
 | D8 | 跟 CLAUDE.md 关系 | tab 是 CLAUDE.md 的"图文版"，不是替代品 | tab 加跳转/链接指向 CLAUDE.md 章节作为 SSOT；改动任何一处都要同步另一处 |
+| D9 | 演示 3 端点实现 | 绕开 `search_code` 顶层调底层 3 方法 | 不污染 search_code 接口；端点独立维护，未来 search_code 重构不影响 |
+| D10 | 混搜架构图描述 | 画代码真实现状（顶层 3 路 + keyword 内 EN/CN 子双路）| 旧 4 路 A/B/C/D=1.0/1.0/0.3/1.5 是 CLAUDE.md 旧描述；代码现状是顶层 `vector/keyword_dual/symbol_like=1.0/0.5/1.5` |
+| D11 | `_PARSER_CACHE` 现状 | tab A 区如实写"仍为模块级 dict" | 不藏雷（`coding-design-principles.md` 案例 4 教训）|
 
 ## 3. 架构
 
@@ -105,7 +108,7 @@ flowchart TD
     D -->|否| E[读文件内容]
     E --> F[threading.local<br/>code_parser.parse]
     F --> G[tree-sitter AST<br/>提取 symbols + 调用关系]
-    G --> H[混合分块<br/>函数/类/方法粒度<br/>≤ 512 字符/块]
+    G --> H[混合分块<br/>函数/类/方法粒度<br/>MAX_CHUNK_SIZE=900]
     H --> I[code_embedder.embed_batch<br/>bge-small-en 384维]
     I --> J[双写: code_lancedb + code_index.db]
     J --> K[code_relations 表<br/>插入调用边]
@@ -146,7 +149,7 @@ flowchart TD
 
 ### 4.2 B 区 — 🔍 搜索匹配架构
 
-**目的**：让读者看懂"四路混搜怎么召回 + 翻译层怎么把中文翻成英文 + trace 怎么跨文件追踪"。
+**目的**：让读者看懂"顶层 3 路怎么召回 + 翻译层怎么把中文翻成英文 + trace 怎么跨文件追踪"。
 
 #### B.1 混搜架构图（Mermaid，画代码真实现状：顶层 3 路 + keyword 内 EN/CN 子双路）
 ```mermaid
@@ -223,17 +226,18 @@ flowchart TD
 # 落地时引用 code_search.py 中真实行号，本 spec 给出的是简化后的关键逻辑
 # 真实入口是 search_code(mode='hybrid')，见 code_search.py:320
 def search_code(query, mode="hybrid", top_k=20, repo_name=None, language=None):
+    # 翻译
     keywords = query_translator.translate(query)  # 走 B.3 降级链
-    vec_results = code_db.vector_search(keywords, top_k)  # 路径 A
-    fts_en_results = code_db.fts5_search(keywords, lang="en")  # 路径 B
-    fts_zh_results = code_db.fts5_search(query, lang="zh")  # 路径 C
-    like_results = code_db.symbol_like(keywords)  # 路径 D
-    fused = rrf_fusion([
-        (vec_results, 1.0),
-        (fts_en_results, 1.0),
-        (fts_zh_results, 0.3),
-        (like_results, 1.5),
-    ], k=60)
+    # 顶层 3 路召回
+    vec_results = code_db.vector_search(keywords, top_k)  # 顶层 1
+    kw_results  = _keyword_search_dual(keywords, query)   # 顶层 2，EN+CN 子双路
+    like_results = code_db.symbol_like(keywords)            # 顶层 3
+    # 顶层 RRF 融合（顶层权重 [1.0, 0.5, 1.5]）
+    fused = rrf_fusion(
+        [vec_results, kw_results, like_results],
+        weights=[1.0, 0.5, 1.5],
+        k=60,
+    )
     return fused[:top_k]
 ```
 
@@ -244,7 +248,7 @@ def search_code(query, mode="hybrid", top_k=20, repo_name=None, language=None):
 #### C.1 MCP 5 tools 总览
 | Tool | 入参 | 内部调用 | 返回 |
 |------|------|---------|------|
-| `code_search` | `query, repo, top_k, hybrid` | `code_search.hybrid_search` | top-K chunks + match_reasons |
+| `code_search` | `query, repo, top_k, hybrid` | `code_search.search_code` | top-K chunks + match_reasons |
 | `code_chat` | `question, repo, language`（MCP 入参名是 `question`）| `code_search.search_code` + `llm_client` | **非流式**返回完整 JSON 字符串（REST `/api/code/chat` 才支持流式 SSE）|
 | `code_list_repos` | — | `code_db.list_repos` | 已索引仓库列表 |
 | `code_file_context` | `repo, file_name` | `code_db.resolve_file_by_name` | 单文件所有 chunks（**v2.1 改造**：file_path → file_name）|
@@ -325,7 +329,7 @@ sequenceDiagram
 - **位置**：`backend/code_routes.py`
 - **入参**：`{"query": str, "repo": str, "top_k": int=5}`
 - **repo 缺省策略**：若 `repo` 为空/null，从 `config/code_repos.json` 取**第一个有索引数据的 repo** 作 fallback
-- **实现思路**（**C2 方案：绕开 `search_code` 顶层封装，直接调底层 3 个方法**）：
+- **实现思路**（**D9 决策：绕开 `search_code` 顶层封装，直接调底层 3 个方法**）：
   - 不调用 `search_code(mode='hybrid')`，避免污染其接口
   - 端点内部按**顶层 3 路**分别调底层方法（`code_search.py` 模块级函数）：
     - 路径 1：向量 → `embed_text(query)` + `code_db.vector_search()`，取 top-3
@@ -403,10 +407,11 @@ sequenceDiagram
 | 风险 | 缓解 |
 |------|------|
 | Mermaid vendor 文件 200KB 增大首屏 | 只在路由命中 `#code/arch` 时才执行 mermaid.run；不在 index.html 启动时自动渲染 |
-| 演示 3 后端需要调用 4 路底层方法，可能漏字段 | 严格按 4.2 schema 写，每路返回字段名固定（`file_path`/`content`/`score`/`rank`）|
+| 演示 3 后端需要调用 3 路底层方法，可能漏字段 | 严格按 4.2 schema 写，每路返回字段名固定（`file_path`/`content`/`score`/`rrf_score`/`from`）|
 | 详版 tab 体量大（5 区 + **5 张 Mermaid** + 3 演示卡）| 用 `lg:grid-cols` 多列 + `<details>` 折叠；首屏只展开 A/B 区，C/D/E 默认折叠，进来时滚动友好 |
 | 改动 A/B 区文字描述后没同步 CLAUDE.md | commit message 加 `同步 CLAUDE.md`（如有改动）；CI 阶段加 grep 校验（不强制）|
 | 详版会让 tab 滚动条很长 | D7 已对齐默认全展开；读者用各分区的折叠按钮自管（折叠交互见 3.4）|
+| **`_PARSER_CACHE` 已知风险**：CLAUDE.md 描述的 `threading.local()` 改造**尚未落地** | tab A.2 标"已知风险"；后续 push 前如发现 panic 再修（参考 `coding-design-principles.md` 案例 4 教训）|
 
 ## 9. 不在本次范围（YAGNI）
 
