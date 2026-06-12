@@ -436,5 +436,6 @@
       "name": ".super-openspec",
       "selected": true
     }
-  ]
+  ],
+  "max_file_size_kb": 250
 }

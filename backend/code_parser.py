@@ -11,6 +11,38 @@ from typing import Optional
 from code_skip_rules import get_skip_dirs, get_skip_exts
 
 
+# 文件大小阈值（KB）：从 config/code_skip_rules.json 读 max_file_size_kb 字段，
+# 缺失或配置文件损坏时回退到 250。该字段由用户在 code_skip_rules.json 维护，
+# code_parser.py 只读不写，避免引入新耦合面。
+_DEFAULT_MAX_FILE_SIZE_KB = 250
+_MAX_FILE_SIZE_CACHE: Optional[int] = None
+
+
+def _get_max_file_size_kb() -> int:
+    """从 config/code_skip_rules.json 读 max_file_size_kb，缺失回退 250。
+
+    缓存：一次进程内只读一次，扫描期间配置文件不变。
+    """
+    global _MAX_FILE_SIZE_CACHE
+    if _MAX_FILE_SIZE_CACHE is not None:
+        return _MAX_FILE_SIZE_CACHE
+    try:
+        _config_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config"
+        )
+        _config_path = os.path.join(_config_dir, "code_skip_rules.json")
+        with open(_config_path, "r", encoding="utf-8") as f:
+            import json as _json
+            _val = _json.load(f).get("max_file_size_kb")
+            kb = int(_val) if _val is not None else _DEFAULT_MAX_FILE_SIZE_KB
+    except (OSError, ValueError, TypeError):
+        kb = _DEFAULT_MAX_FILE_SIZE_KB
+    if kb < 1:
+        kb = _DEFAULT_MAX_FILE_SIZE_KB
+    _MAX_FILE_SIZE_CACHE = kb
+    return kb
+
+
 # ── tree-sitter 0.25.x 兼容层 ──
 # 0.25 把所有属性改成了方法: node.type→node.kind(), node.children 移除,
 # node.start_byte→method, node.start_point→node.start_position() (返回 Point(row,col))
@@ -685,13 +717,14 @@ def scan_directory(
             abs_path = os.path.join(root, fname)
             rel_path = os.path.relpath(abs_path, repo_path)
 
-            # 跳过过大文件 (>100KB)
+            # 跳过过大文件（阈值从 config/code_skip_rules.json 读 max_file_size_kb，默认 250KB）
             try:
                 size = os.path.getsize(abs_path)
-                if size > 100 * 1024:
+                max_kb = _get_max_file_size_kb()
+                if size > max_kb * 1024:
                     stats["skipped_files"].append({
                         "rel_path": rel_path,
-                        "reason": f"过大 ({size // 1024}KB > 100KB)",
+                        "reason": f"过大 ({size // 1024}KB > {max_kb}KB)",
                         "size": size,
                     })
                     continue
