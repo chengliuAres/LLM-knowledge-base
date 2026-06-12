@@ -98,7 +98,7 @@ frontend/tabs/code-arch.html      # 主文件，5 分区折叠骨架 + Mermaid �
 ```mermaid
 flowchart TD
     A[用户配置: 仓库路径 + skip_rules] --> B[scan_directory 目录遍历]
-    B --> C{文件大小<br/>< max_file_size_kb?}
+    B --> C{文件大小 &lt; max_file_size_kb?}
     C -->|否| X1[skip<br/>记录到 metrics]
     C -->|是| D[扩展名 in skip_exts?]
     D -->|是| X2[skip]
@@ -116,60 +116,69 @@ flowchart TD
 ```
 
 #### A.2 关键模块详解
-| 模块 | 文件 | 做什么 | 关键参数/坑 |
-|------|------|--------|------------|
-| 目录遍历 | `code_routes.py:scan_directory` | 递归 walk + 应用 skip_rules | 跨线程共享 parser 用 `threading.local()`（**修过**：原 `_PARSER_CACHE` 模块级 dict → pyo3 panic）|
-| tree-sitter AST | `code_parser.py:parse` | 解析多语言（Py/JS/TS/Java/Go/Rust/C++/Swift/OC）| tree-sitter 0.25.x 兼容层（**修过**：API 变更）|
-| 混合分块 | `code_parser.py:hybrid_chunk` | AST 节点优先；超大节点字符串切 | ≤512 字符/块；OC 头文件单独走字符串路径 |
+| 模块 | 文件:行 | 做什么 | 关键参数/坑 |
+|------|---------|--------|------------|
+| 目录遍历 | `code_parser.py:673` `scan_directory` | 递归 walk + 应用 skip_rules | **已知风险**：跨线程共享 parser 仍用模块级 `_PARSER_CACHE: dict`（`code_parser.py:132`）—— CLAUDE.md 描述的 `threading.local()` 改造**尚未落地**；后续 push 前如发现 panic 再修 |
+| tree-sitter AST | `code_parser.py:1249` `parse_repo` | 解析多语言（Py/JS/TS/Java/Go/Rust/C++/Swift/OC）| tree-sitter 0.25.x 兼容层（**修过**：API 变更）|
+| 混合分块 | `code_parser.py:_sub_chunk` (`:941`)、分块逻辑 `:1069-1193` | AST 节点优先；超大节点二次切分 | `MAX_CHUNK_SIZE=900`（避免 embedding 截断）、`SUB_CHUNK_SIZE=500`；`<500` 短文件直存，`>900` 二次切分 |
 | Embedding | `code_embedder.py:embed_batch` | bge-small-en 384维 | 单例预加载；启动时下载到 `models/` |
 | 双写 | `code_db.py:insert_chunks` | LanceDB（向量）+ SQLite FTS5（content/symbol_name）| FTS5 索引分词器 unicode61 + 触发器维护 |
-| 跳过规则 | `code_skip_rules.py` | skip_dirs / skip_exts / max_file_size_kb | 配置在 `data/code_skip_rules.json`；**修过**：原 100KB 硬编码 → 默认 250KB 配置化 |
-| Watchdog | `code_routes.py:watchdog_loop` | 周期扫描 `code_repos.json` 标记的仓 | 配置在 `code_repos.json` 的 `watchdog` 段（interval=30s）|
+| 跳过规则 | `code_skip_rules.py` | skip_dirs / skip_exts / max_file_size_kb | 配置文件 `config/code_skip_rules.json`（**注意**：CLAUDE.md 写 `data/`，实际是 `config/`，本 tab 用真实路径）；**修过**：原 100KB 硬编码 → 默认 250KB 配置化 |
+| Watchdog | `code_routes.py:watchdog_loop` | 周期扫描 `code_repos.json` 标记的仓 | 配置在 `config/code_repos.json` 的 `watchdog` 段（interval=30s）|
 | 调用关系 | `code_db.py:insert_relations` | 边表：caller → callee | 来源是 AST 的 `(call_node, function_def_node)` 配对 |
+| 扫描入口端点 | `code_routes.py:447` `scan_repo_endpoint` | POST `/api/code/scan` | 启 scan_id，触发 `scan_directory` |
+| 进度推送 | `code_routes.py:478` `scan_progress_sse` | GET `/api/code/scan/{scan_id}/sse` | SSE 流式推 progress |
+| 取消扫描 | `code_routes.py:543` `cancel_scan` | POST `/api/code/scan/{scan_id}/cancel` | 设置 cancel_event，线程协作退出 |
 
 #### A.3 数据落地（ASCII + 代码引用）
 ```
-扫描入口：POST /api/code/scan  (code_routes.py:scan_endpoint)
+扫描入口：POST /api/code/scan  (code_routes.py:447 scan_repo_endpoint)
    ↓
-进度推送：GET /api/code/scan/{scan_id}/sse  (code_routes.py:scan_sse)
+进度推送：GET /api/code/scan/{scan_id}/sse  (code_routes.py:478 scan_progress_sse)
    ↓
-取消机制：POST /api/code/scan/{scan_id}/cancel  (code_routes.py:scan_cancel)
+取消机制：POST /api/code/scan/{scan_id}/cancel  (code_routes.py:543 cancel_scan)
    ↓
 数据落盘：
+  config/code_repos.json     ← 仓库元信息 + watchdog 配置
   data/code_lancedb/         ← LanceDB 向量
   data/code_index.db         ← SQLite FTS5 + code_relations
-  data/code_repos.json       ← 仓库元信息 + watchdog 配置
 ```
 
 ### 4.2 B 区 — 🔍 搜索匹配架构
 
 **目的**：让读者看懂"四路混搜怎么召回 + 翻译层怎么把中文翻成英文 + trace 怎么跨文件追踪"。
 
-#### B.1 四路混搜架构图（Mermaid）
+#### B.1 混搜架构图（Mermaid，画代码真实现状：顶层 3 路 + keyword 内 EN/CN 子双路）
 ```mermaid
 flowchart LR
     Q[用户 query<br/>中文 or 英文] --> T[query_translator.translate]
     T -->|词典/缓存命中| KW[英文关键词]
     T -->|未命中| T2[MyMemory API]
     T2 --> KW
-    KW --> A[路径 A: 向量<br/>bge-small-en embed]
-    KW --> B[路径 B: 英文FTS5<br/>SQLite MATCH]
-    Q --> C[路径 C: 中文FTS5<br/>weight=0.3 弱信号]
-    KW --> D[路径 D: 符号名LIKE<br/>symbol_name LIKE %kw%<br/>weight=1.5]
-    A --> R[RRF 融合排序<br/>k=60]
-    B --> R
-    C --> R
-    D --> R
+
+    KW --> P1[顶层路径1: 向量<br/>bge-small-en embed<br/>weight=1.0]
+    KW --> P2[顶层路径2: keyword_dual<br/>英文 FTS5 weight=1.0<br/>中文 FTS5 weight=0.3<br/>组合 weight=0.5]
+    Q --> P2
+    KW --> P3[顶层路径3: 符号名LIKE<br/>symbol_name LIKE %kw%<br/>weight=1.5]
+
+    P1 --> R[RRF 融合排序<br/>k=60]
+    P2 --> R
+    P3 --> R
     R --> O[top_k 结果<br/>含 match_reasons]
 ```
 
-#### B.2 四路召回对比表（CLAUDE.md 表格的"图文版"）
-| 路径 | 模型/方法 | 输入 | 角色 | 权重 | 实际效果 |
-|------|-----------|------|------|------|---------|
-| A | bge-small-en (384维) | 翻译后英文 | 语义模糊召回 | 1.0 | 同语言英文→英文代码 |
-| B | SQLite FTS5 + jieba | 翻译后英文 | 精确匹配 | 1.0 | 英文关键词直接命中 |
-| C | SQLite FTS5 + jieba | 中文原 query | 中文 content 弱信号 | 0.3 | 搜注释/文档 |
-| D | `symbol_name LIKE %kw%` | 翻译后英文 + 驼峰拆词 | 精确命中 | 1.5 | **最可靠**，兜底 FTS5 驼峰拆分盲区 |
+#### B.2 混搜对比表（**反映代码真实现状**：顶层 3 路 + keyword 内 EN/CN 子双路）
+| 层 | 路径 | 方法 | 输入 | 角色 | 权重 | 实际效果 |
+|----|------|------|------|------|------|---------|
+| 顶层 1 | A | bge-small-en (384维) 向量搜索 | 翻译后英文 | 语义模糊召回 | 1.0 | 同语言英文→英文代码 |
+| 顶层 2 | A2 (EN) | SQLite FTS5 + jieba | 翻译后英文 | 英文 content/symbol 精确匹配 | 子权重 1.0 | 英文关键词直接命中 |
+| 顶层 2 | A3 (CN) | SQLite FTS5 + jieba | 中文原 query | 中文 content 弱信号 | 子权重 0.3 | 搜中文注释/文档 |
+| 顶层 2 (合并) | keyword_dual | RRF 融合 A2 + A3 | — | 关键词召回合并 | **0.5** | keyword 路总权重（EN/CN 内部 rrf_fusion）|
+| 顶层 3 | D | `symbol_name LIKE %kw%` | 翻译后英文 + 驼峰拆词 | 精确命中 | 1.5 | **最可靠**，兜底 FTS5 驼峰拆分盲区 |
+
+代码参考：`code_search.py:307`（keyword 内部 EN/CN 双路权重 `[1.0, 0.3]`）、`code_search.py:519`（顶层三路 RRF 融合权重 `[1.0, 0.5, 1.5]`）。
+
+> **与 CLAUDE.md 差异说明**：CLAUDE.md "代码搜索准确率策略" 节描述的是早期"4 路平铺"模型，代码后续重构为"顶层 3 路 + keyword 内 EN/CN 子双路"。本 tab 画代码真实现状，CLAUDE.md 待同步更新。
 
 #### B.3 翻译层降级链（Mermaid）
 ```mermaid
@@ -212,8 +221,8 @@ flowchart TD
 #### B.5 关键代码引用（**示意代码**，落地时按真实行号重写）
 ```python
 # 落地时引用 code_search.py 中真实行号，本 spec 给出的是简化后的关键逻辑
-# 真实入口可能名为 hybrid_search 或 search_code(hybrid=True)，codex review 时需核对
-def hybrid_search(query, top_k=20):
+# 真实入口是 search_code(mode='hybrid')，见 code_search.py:320
+def search_code(query, mode="hybrid", top_k=20, repo_name=None, language=None):
     keywords = query_translator.translate(query)  # 走 B.3 降级链
     vec_results = code_db.vector_search(keywords, top_k)  # 路径 A
     fts_en_results = code_db.fts5_search(keywords, lang="en")  # 路径 B
@@ -236,7 +245,7 @@ def hybrid_search(query, top_k=20):
 | Tool | 入参 | 内部调用 | 返回 |
 |------|------|---------|------|
 | `code_search` | `query, repo, top_k, hybrid` | `code_search.hybrid_search` | top-K chunks + match_reasons |
-| `code_chat` | `query, repo, stream` | `code_search` + `llm_client.stream` | 流式 RAG 回答 |
+| `code_chat` | `question, repo, language`（MCP 入参名是 `question`）| `code_search.search_code` + `llm_client` | **非流式**返回完整 JSON 字符串（REST `/api/code/chat` 才支持流式 SSE）|
 | `code_list_repos` | — | `code_db.list_repos` | 已索引仓库列表 |
 | `code_file_context` | `repo, file_name` | `code_db.resolve_file_by_name` | 单文件所有 chunks（**v2.1 改造**：file_path → file_name）|
 | `code_trace` | `repo, symbol, direction, depth` | `code_db.trace_chain` / `trace_hierarchy` | BFS 调用链 / 继承链 |
@@ -251,27 +260,29 @@ sequenceDiagram
     participant LLM as llm_client.py
 
     Agent->>MCP: POST /mcp/ tools/call code_search
-    MCP->>SR: hybrid_search(query, repo)
-    SR->>CD: vector_search + fts5 + symbol_like
-    CD-->>SR: 四路召回结果
+    MCP->>SR: search_code(mode='hybrid', ...)
+    SR->>CD: vector + fts5_dual + symbol_like
+    CD-->>SR: 三路召回结果
     SR-->>MCP: RRF 融合 top-K
     MCP-->>Agent: JSON-RPC 2.0 响应
 
     Agent->>MCP: POST /mcp/ tools/call code_chat
-    MCP->>SR: hybrid_search
+    MCP->>SR: search_code(mode='hybrid', top_k=5)
     SR-->>MCP: top-K chunks
-    MCP->>LLM: build_rag_prompt + stream
-    LLM-->>MCP: SSE token 流
-    MCP-->>Agent: Streamable HTTP SSE
+    MCP->>LLM: build_rag_prompt (一次性，非流式)
+    LLM-->>MCP: 完整回答 JSON
+    MCP-->>Agent: JSON 字符串 (MCP 端 code_chat 非流式)
 ```
+
+> **注意 MCP 与 REST 差异**：流式 SSE 仅在 REST 端点 `POST /api/code/chat` 才有；MCP tool `code_chat` 入参是 `question: str`（不是 `query`），且**非流式**返回完整 JSON 字符串（`code_mcp_v2.py:62`）。tab C 区描述以 MCP 为准，REST 流式能力放到 C.3 旁注。
 
 #### C.3 e2e 真实 query 链路
 示例：Agent 收到用户问"代码里怎么读取附件"——
 1. Agent 调 `code_search(query="读附件", repo="ghmail")`
-2. MCP 走 B 区四路混搜：翻译"读附件"→`read attachment`，命中 `GHAttachmentLoader.m`、`GHReadProtocolImpl.m`
+2. MCP 走 B 区混搜：翻译"读附件"→`read attachment`，走顶层 3 路（vector/keyword_dual/symbol_like），命中 `GHAttachmentLoader.m`、`GHReadProtocolImpl.m`
 3. Agent 拿 top-3 chunks，再调 `code_file_context(repo="ghmail", file_name="GHAttachmentLoader.m")` 看完整文件
 4. Agent 调 `code_trace(repo="ghmail", symbol="GHAttachmentLoader.fetchData", direction="callees", depth=2)` 看下游调用
-5. Agent 用上面所有上下文调 `code_chat(query="详细说明", stream=true)` 走 RAG 生成回答
+5. Agent 用上面所有上下文调 **MCP** `code_chat(question="详细说明", repo="ghmail")` 拿到**非流式 JSON 回答**；如需流式，改调 **REST** `POST /api/code/chat`（`stream: true`）
 
 ### 4.4 D 区 — 📐 关键设计决策
 
@@ -286,6 +297,7 @@ sequenceDiagram
 | MyMemory 翻译不写入缓存/词典 | ✅ | 直译置信度低，写缓存永久污染 | 翻译层降级链图（B.3）|
 | 向量阈值 0.0→0.5 | ✅ | score = (1+余弦相似度)/2，0.5=正交分界 | 阈值过低召回噪声示例 |
 | 文档侧保持 bge-base-zh-v1.5 | ✅ | 同语言中文→中文，换多语言降低中文单项质量 | 不替换示意 |
+| **混搜架构重构**：CLAUDE.md 旧 4 路 A/B/C/D → 顶层 3 路 vector/keyword_dual/symbol_like（keyword 内 EN/CN 子双路 1.0/0.3）| ✅ 已落地 | 旧 4 路模型融合时 keyword 路被中文噪声带偏；keyword 内 EN/CN 子双路 + 顶层三路让权重可调 | 本 tab B.1/B.2 画代码真实现状；CLAUDE.md 同步更新 |
 
 #### D.2 反例存档（链接到 CLAUDE.md）
 - **案例 1**：PushService deviceToken 并发修复（2026-05-27，ghmail）— 减法思维经典
@@ -302,32 +314,43 @@ sequenceDiagram
 #### E.1 三张演示卡
 | 卡 | 标题 | 输入 | 后端调用 | 输出展示 |
 |---|------|------|---------|---------|
-| 演示 1 | 📥 存入演示（搬自 `code-lancedb.html` C 区）| 代码片段 + language + repo + file_path | `POST /api/code/lancedb/demo/insert` | StepTracker 步骤：分块 → embedding → 写入 LanceDB → 写入 FTS5 |
-| 演示 2 | 🔍 搜索演示（搬自 `code-lancedb.html` C 区）| 查询词 + top_k + score_threshold | `POST /api/code/lancedb/demo/search` | StepTracker 步骤：翻译 → 向量召 → FTS5 召 → 融合 → top-K |
-| 演示 3 | 🌐 四路混搜可视化（新增）| 查询词 | **新增** `POST /api/code/arch/hybrid-demo` | 4 张子卡片分别展示路径 A/B/C/D 召回的 top-3 + 1 张 RRF 融合结果卡 |
+| 演示 1 | 📥 存入演示（搬自 `code-lancedb.html` C 区）| 代码片段 + language + repo + file_path | `POST /api/code/lancedb/demo/insert`（**Sandbox 模式：不真实写库**，`code_routes.py:1221`）| StepTracker 步骤：AST 解析 → 分块（`MAX_CHUNK_SIZE=900`/`SUB_CHUNK_SIZE=500`）→ embedding → 假写入（`would_insert=true`）|
+| 演示 2 | 🔍 搜索演示（搬自 `code-lancedb.html` C 区）| 查询词 + top_k + score_threshold | `POST /api/code/lancedb/demo/search`（**走真实 search_code 但 top_k 受限**，`code_routes.py:1322`）| StepTracker 步骤：翻译 → 向量召 → keyword_dual 召 → symbol_like 召 → RRF 融合 → top-K |
+| 演示 3 | 🌐 混搜可视化（新增）| 查询词 | **新增** `POST /api/code/arch/hybrid-demo` | 3 张子卡片分别展示**顶层 3 路**（vector / keyword_dual / symbol_like）召回的 top-3 + 1 张 RRF 融合结果卡 |
+
+> **演示 1 Sandbox 说明**：`/api/code/lancedb/demo/insert` 设计目的是"展示分块+向量化会发生什么"，**不真实写库**（不污染 `data/code_lancedb/` 和 `data/code_index.db`）。读者输入"垃圾代码片段"也不会污染真实数据。演示 2 走真实 `search_code` 端点，但只读不改。
 
 #### E.2 演示 3 后端端点
 - **路径**：`POST /api/code/arch/hybrid-demo` （新增）
 - **位置**：`backend/code_routes.py`
 - **入参**：`{"query": str, "repo": str, "top_k": int=5}`
-- **repo 缺省策略**：若 `repo` 为空/null，codex 落地时需从 `data/code_repos.json` 取**第一个有索引数据的 repo** 作 fallback（避免读者进来演示卡全空）
-- **实现思路**：调用 `code_search.hybrid_search` 拿到融合结果后，再分别调 4 个底层方法拿到每路原始召回，附带 match_reasons 返回前端
+- **repo 缺省策略**：若 `repo` 为空/null，从 `config/code_repos.json` 取**第一个有索引数据的 repo** 作 fallback
+- **实现思路**（**C2 方案：绕开 `search_code` 顶层封装，直接调底层 3 个方法**）：
+  - 不调用 `search_code(mode='hybrid')`，避免污染其接口
+  - 端点内部按**顶层 3 路**分别调底层方法（`code_search.py` 模块级函数）：
+    - 路径 1：向量 → `embed_text(query)` + `code_db.vector_search()`，取 top-3
+    - 路径 2：keyword_dual → 翻译后调 `_keyword_search_dual()`（`code_search.py:266`），它内部再做 EN/CN 双路 rrf_fusion，取 top-3
+    - 路径 3：symbol_like → `code_db.symbol_like(keywords)`，取 top-3
+  - 最后再调 `search_code(mode='hybrid', top_k=top_k)` 拿 RRF 融合结果（用作演示卡第 4 张）
+  - 这样**演示 3 跟 search_code 顶层接口解耦**，未来 search_code 重构不影响本端点
 - **响应 schema**：
   ```json
   {
     "query": "读附件",
     "translated_keywords": ["read", "attachment"],
-    "vector_path":  [{"file_path": "...", "content": "...", "score": 0.78}, ...],
-    "fts_en_path":  [{"file_path": "...", "content": "...", "rank": -3.2}, ...],
-    "fts_zh_path":  [{"file_path": "...", "content": "...", "rank": -1.1}, ...],
-    "symbol_like_path": [{"file_path": "...", "symbol_name": "...", "score": 1.0}, ...],
-    "rrf_fused":    [{"file_path": "...", "content": "...", "rrf_score": 0.045}, ...]
+    "vector_path":     [{"file_path": "...", "content": "...", "score": 0.78}, ...],
+    "keyword_dual_path":[
+      {"file_path": "...", "content": "...", "rrf_score": 0.012, "from": "en_fts"},
+      {"file_path": "...", "content": "...", "rrf_score": 0.008, "from": "cn_fts"}
+    ],
+    "symbol_like_path":[{"file_path": "...", "symbol_name": "...", "score": 1.0}, ...],
+    "rrf_fused":       [{"file_path": "...", "content": "...", "rrf_score": 0.045}, ...]
   }
   ```
 
 #### E.3 演示卡视觉
 - 三卡横排（`lg:grid-cols-3`），每张卡跟 `code-lancedb.html` 的 C 区演示卡同款（深色 panel + 步骤折叠列表）
-- 演示 3 输出用 5 个子 section（4 路 + 1 融合），用 `<details>` 折叠
+- 演示 3 输出用 4 个子 section（**3 路 + 1 融合**），用 `<details>` 折叠
 
 ## 5. 错误处理
 
@@ -343,10 +366,10 @@ sequenceDiagram
 
 ### 6.1 端到端测试
 - 启动服务 → 浏览器打开 `#code/arch` → 5 分区全部展开
-- A/B/C/D 区所有 Mermaid 图表**渲染成功**（不是回退到源码）
-- E 区演示 1：输入 `def hello():\n    print("hi")`，点执行，5 步内完成
-- E 区演示 2：输入 `读附件`，点执行，返回 top-5 chunks
-- E 区演示 3：输入 `reloadAttachmentByCellModel`，4 张子卡 + 1 融合卡都返回数据
+- A/B/C 区所有 Mermaid 图表（**A.1 扫描流程 / B.1 混搜架构 / B.3 翻译层降级 / B.4 trace BFS / C.2 Streamable HTTP，共 5 张**）**渲染成功**（不是回退到源码）
+- E 区演示 1：输入 `def hello():\n    print("hi")`，点执行，5 步内完成（**Sandbox 不写库**，仅展示分块+向量化）
+- E 区演示 2：输入 `读附件`，点执行，返回 top-5 chunks（**走真实 search_code 但只读不改**）
+- E 区演示 3：输入 `reloadAttachmentByCellModel`，**3 张子卡（vector/keyword_dual/symbol_like）+ 1 融合卡**都返回数据
 
 ### 6.2 回归
 - 现有 11 个 tab 路由不破
@@ -360,7 +383,7 @@ sequenceDiagram
 - [ ] `frontend/index.html:50` 之后追加 1 个侧边栏项
 - [ ] `frontend/index.html:314` `__TAB_VERSION` 从 `'24'` 改为 `'25'`
 - [ ] 浏览器打开 `#code/arch`，5 分区全展开
-- [ ] 5 张 Mermaid 图全部渲染（不止回退到源码）
+- [ ] 5 张 Mermaid 图全部渲染（A.1 扫描 / B.1 混搜 / B.3 翻译降级 / B.4 trace BFS / C.2 Streamable HTTP）
 - [ ] 演示 1/2/3 在有 ghmail 索引时能跑通
 - [ ] 演示 3 后端端点 `POST /api/code/arch/hybrid-demo` 实现并测试通过
 - [ ] 硬刷新浏览器后新 tab 出现
@@ -381,7 +404,7 @@ sequenceDiagram
 |------|------|
 | Mermaid vendor 文件 200KB 增大首屏 | 只在路由命中 `#code/arch` 时才执行 mermaid.run；不在 index.html 启动时自动渲染 |
 | 演示 3 后端需要调用 4 路底层方法，可能漏字段 | 严格按 4.2 schema 写，每路返回字段名固定（`file_path`/`content`/`score`/`rank`）|
-| 详版 tab 体量大（5 区 + 8 张 Mermaid + 3 演示卡）| 用 `lg:grid-cols` 多列 + `<details>` 折叠；首屏只展开 A/B 区，C/D/E 默认折叠，进来时滚动友好 |
+| 详版 tab 体量大（5 区 + **5 张 Mermaid** + 3 演示卡）| 用 `lg:grid-cols` 多列 + `<details>` 折叠；首屏只展开 A/B 区，C/D/E 默认折叠，进来时滚动友好 |
 | 改动 A/B 区文字描述后没同步 CLAUDE.md | commit message 加 `同步 CLAUDE.md`（如有改动）；CI 阶段加 grep 校验（不强制）|
 | 详版会让 tab 滚动条很长 | D7 已对齐默认全展开；读者用各分区的折叠按钮自管（折叠交互见 3.4）|
 
