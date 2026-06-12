@@ -633,6 +633,48 @@ def trace_code(
             "steps": tracker.to_list() if tracker else [],
         }
 
+    # 2a. hierarchy 模式：跳过混搜 step，直接做继承链追踪
+    if direction == "hierarchy":
+        from code_db import trace_hierarchy
+        if tracker:
+            step_hier = tracker.add_step("trace_hierarchy", f"追踪继承链: depth={depth}")
+            step_hier.start()
+        hier = trace_hierarchy(
+            symbol_name=symbol_name,
+            repo_name=repo_name or "",
+            direction="both",
+            depth=min(max(depth, 1), 5),
+        )
+        if tracker:
+            step_hier.complete({
+                "parents": len(hier["parents"]),
+                "children": len(hier["children"]),
+            })
+            tracker.flush()
+        # 把起始符号作为 matched_symbols，方便前端展示
+        return {
+            "query": symbol_name,
+            "depth": depth,
+            "direction": "hierarchy",
+            "matched_symbols": [{
+                "symbol": symbol_name,
+                "file_path": hier["chain"]["nodes"][0]["file"] if hier["chain"]["nodes"] else "",
+                "line_start": 0,
+                "chunk_type": "class_or_protocol",
+                "match_reason": "hierarchy 起始符号",
+            }],
+            "traces": [{
+                "entry_symbol": symbol_name,
+                "entry_file": hier["chain"]["nodes"][0]["file"] if hier["chain"]["nodes"] else "",
+                "entry_type": "class_or_protocol",
+                "entry_chunk_id": hier["chain"]["nodes"][0]["chunk_id"] if hier["chain"]["nodes"] else "",
+                "chain": hier["chain"],
+                "parents": hier["parents"],
+                "children": hier["children"],
+            }],
+            "steps": tracker.to_list() if tracker else [],
+        }
+
     # 2. 对每个匹配的符号做调用链追踪（去重，同一符号名只 trace 一次）
     if tracker:
         step_trace = tracker.add_step("trace_chain", f"追踪调用链: depth={depth}, direction={direction}")

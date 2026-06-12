@@ -14,3 +14,4 @@ einops>=0.7.0
 jieba>=0.42.1
 sse-starlette>=3.0.0
 mcp>=1.12.4,<2.0.0
+nest_asyncio>=1.6.0

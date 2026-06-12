@@ -68,9 +68,14 @@ app.include_router(code_router)
 app.include_router(mcp_router)  # 旧 MCP (SSE), 保留兼容
 app.include_router(log_router)
 
-# 挂载新 MCP v2 (Streamable HTTP) — 客户端连 http://host/mcp
-from code_mcp_v2 import mcp as mcp_v2
-app.mount("/mcp", app=mcp_v2.streamable_http_app())
+# 挂载新 MCP v2 (Streamable HTTP) — 客户端连 http://host/mcp/（带尾 /）
+# mcp 包要求 Python >= 3.10，低版本自动跳过
+try:
+    from code_mcp_v2 import mcp as mcp_v2
+    app.mount("/mcp", app=mcp_v2.streamable_http_app())
+except ImportError:
+    import sys
+    print(f"[WARN] code_mcp_v2 skipped: 'mcp' package requires Python >= 3.10, current: {sys.version}")
 
 
 @app.middleware("http")

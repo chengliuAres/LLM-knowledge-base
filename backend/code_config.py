@@ -134,19 +134,21 @@ def update_file_mtimes(repo_name: str, mtimes: dict[str, float]):
 def compute_incremental(
     repo_name: str,
     scanned_files: list[dict],
+    force_full: bool = False,
 ) -> dict[str, list]:
     """计算增量差异
 
     Args:
         repo_name: 仓库名
         scanned_files: scan_directory 返回的文件列表
+        force_full: True = 跳过 mtime 检查，所有文件当 added（用于 refresh 端点，让 parser 重新提取 metadata）
 
     Returns:
         {
             "added": [file_info, ...],      # 新增文件
             "updated": [file_info, ...],    # mtime 变化的文件
             "deleted": [rel_path_str, ...], # 已删除的文件路径
-            "skipped": [file_info, ...],    # 未变化的文件
+            "skipped": [file_info, ...],    # 未变化的文件（force_full=True 时为空）
         }
     """
     old_mtimes = get_file_mtimes(repo_name)
@@ -158,7 +160,10 @@ def compute_incremental(
 
     for f in scanned_files:
         rel = f['rel_path']
-        if rel not in old_mtimes:
+        if force_full:
+            # 强制全量：所有文件当 added（重新 parse → 重新提取 inherit/calls）
+            added.append(f)
+        elif rel not in old_mtimes:
             added.append(f)
         elif abs(old_mtimes[rel] - f['mtime']) > 0.01:  # 容忍 10ms 精度误差
             updated.append(f)

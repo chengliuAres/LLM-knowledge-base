@@ -168,7 +168,7 @@ async def code_trace(
         symbol_name=symbol,
         repo_name=repo or "",
         direction=direction,
-        depth=min(max(depth, 1), 3),
+        depth=min(max(depth, 1), 5),  # hierarchy 允许更深的链（最多 5）
     )
     result.pop("steps", None)
     return json.dumps(result, ensure_ascii=False, indent=2)
