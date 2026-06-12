@@ -138,7 +138,9 @@ def get_sqlite() -> sqlite3.Connection:
     _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_repo ON code_meta(repo_name)")
     _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_lang ON code_meta(language)")
 
-    # 调用关系表 (call graph)
+    # 调用关系表 (call graph) + 继承关系 (inherit hierarchy)
+    # relation_type: 'call' (函数调用) / 'inherit' (类继承/实现)
+    # 存量数据全部为 'call'，通过 DEFAULT 兼容
     _sqlite_conn.execute("""
         CREATE TABLE IF NOT EXISTS code_relations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -147,16 +149,28 @@ def get_sqlite() -> sqlite3.Connection:
             caller_file_path TEXT,
             callee_name TEXT NOT NULL,
             callee_line INTEGER,
-            repo_name TEXT NOT NULL
+            repo_name TEXT NOT NULL,
+            relation_type TEXT NOT NULL DEFAULT 'call'
         )
     """)
+    # 存量表 ALTER：补 relation_type 列（如果还没加）
+    cols = [r[1] for r in _sqlite_conn.execute("PRAGMA table_info(code_relations)").fetchall()]
+    if "relation_type" not in cols:
+        _sqlite_conn.execute(
+            "ALTER TABLE code_relations ADD COLUMN relation_type TEXT NOT NULL DEFAULT 'call'"
+        )
     _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_rel_caller ON code_relations(caller_chunk_id)")
     _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_rel_callee ON code_relations(callee_name, repo_name)")
     _sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_rel_repo ON code_relations(repo_name)")
-    # 唯一约束: 同一 chunk 内同符号同行的调用只记录一次，支持 INSERT OR IGNORE 去重
+    _sqlite_conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_rel_type ON code_relations(relation_type, callee_name, repo_name)"
+    )
+    # 唯一约束: 同一 chunk 内同符号同行同类型只记录一次
+    # 加 relation_type 后旧 idx_rel_unique 需要重建（否则 unique 冲突但包含 call/inherit 不同类型）
+    _sqlite_conn.execute("DROP INDEX IF EXISTS idx_rel_unique")
     _sqlite_conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_rel_unique "
-        "ON code_relations(caller_chunk_id, callee_name, callee_line, repo_name)"
+        "ON code_relations(caller_chunk_id, callee_name, callee_line, repo_name, relation_type)"
     )
 
     _sqlite_conn.commit()
@@ -225,6 +239,21 @@ def insert_chunks(chunks: list[dict]):
                         call["name"],
                         call.get("line", 0),
                         c["repo_name"],
+                        "call",
+                    ))
+        # 继承关系（caller = 子类，callee_name = 父类，line = 父类在 superclass 子句的行号）
+        inherits = c.get("metadata", {}).get("inherits", [])
+        if isinstance(inherits, list):
+            for inh in inherits:
+                if isinstance(inh, dict) and inh.get("parent"):
+                    rel_rows.append((
+                        c["id"],
+                        c.get("symbol_name", ""),
+                        c["file_path"],
+                        inh["parent"],
+                        inh.get("line", 0),
+                        c["repo_name"],
+                        "inherit",
                     ))
 
     try:
@@ -244,9 +273,9 @@ def insert_chunks(chunks: list[dict]):
         if rel_rows:
             conn.executemany(
                 "INSERT OR IGNORE INTO code_relations "
-                "(caller_chunk_id, caller_symbol_name, caller_file_path, callee_name, callee_line, repo_name) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                rel_rows
+                "(caller_chunk_id, caller_symbol_name, caller_file_path, callee_name, callee_line, repo_name, relation_type) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                rel_rows,
             )
 
         # ── LanceDB 写入（只提取 schema 字段，避免多余字段导致报错） ──
@@ -661,17 +690,24 @@ def search_symbol_by_keywords(
 
 # ── 统计 ─────────────────────────────────────────────────────────
 
-def get_stats() -> dict:
-    """获取代码知识库统计 (用 SQLite 避免全量加载 LanceDB)"""
+def get_stats(repo_name: str | None = None) -> dict:
+    """获取代码知识库统计 (用 SQLite 避免全量加载 LanceDB)
+
+    Args:
+        repo_name: 可选，传入时只统计该仓库的数据
+    """
     conn = get_sqlite()
     try:
-        total = conn.execute("SELECT COUNT(*) FROM code_meta").fetchone()[0]
+        where = "WHERE repo_name = ?" if repo_name else ""
+        params = (repo_name,) if repo_name else ()
+
+        total = conn.execute(f"SELECT COUNT(*) FROM code_meta {where}", params).fetchone()[0]
         if total == 0:
             return {"total_chunks": 0, "total_repos": 0, "by_language": {}, "by_chunk_type": {}, "by_repo": {}}
 
-        by_lang = dict(conn.execute("SELECT language, COUNT(*) FROM code_meta GROUP BY language").fetchall())
-        by_type = dict(conn.execute("SELECT chunk_type, COUNT(*) FROM code_meta GROUP BY chunk_type").fetchall())
-        by_repo = dict(conn.execute("SELECT repo_name, COUNT(*) FROM code_meta GROUP BY repo_name").fetchall())
+        by_lang = dict(conn.execute(f"SELECT language, COUNT(*) FROM code_meta {where} GROUP BY language", params).fetchall())
+        by_type = dict(conn.execute(f"SELECT chunk_type, COUNT(*) FROM code_meta {where} GROUP BY chunk_type", params).fetchall())
+        by_repo = dict(conn.execute(f"SELECT repo_name, COUNT(*) FROM code_meta {where} GROUP BY repo_name", params).fetchall())
 
         return {
             "total_chunks": total,
@@ -1072,6 +1108,135 @@ def trace_chain(
             {"symbol": e["to"], "line": e["line"]}
             for e in callees_list
         ],
+        "chain": {
+            "nodes": [{"symbol": k, "file": v["file"], "chunk_id": v["chunk_id"]} for k, v in nodes.items()],
+            "edges": edges,
+        },
+    }
+
+
+# ── 继承链追踪 ──────────────────────────────────────────────────────
+
+def trace_hierarchy(
+    symbol_name: str,
+    repo_name: str = "",
+    direction: str = "both",  # parents / children / both
+    depth: int = 3,
+) -> dict:
+    """追踪类/接口/协议的继承链（relation_type='inherit'）
+
+    双向 BFS：
+    - parents：找该符号继承的所有父类（沿 relation_type='inherit' 边反向）
+    - children：找继承该符号的所有子类（沿 relation_type='inherit' 边正向）
+
+    Returns:
+        {
+            "symbol": str,
+            "parents": [{"symbol": "Parent", "file": ..., "line": N}, ...],
+            "children": [...],
+            "chain": {"nodes": [...], "edges": [{"from": "Sub", "to": "Parent", "relation": "inherits"}]},
+            "depth": int,
+            "direction": str,
+        }
+    """
+    conn = get_sqlite()
+    repo_filter = "AND repo_name = ?" if repo_name else ""
+    repo_params = [repo_name] if repo_name else []
+
+    def _query_one_hop(current: str, want_parents: bool) -> list[dict]:
+        """查一阶父类（callee_name 匹配）或子类（caller_symbol_name 匹配）"""
+        if want_parents:
+            # 找 current 继承的所有父类：current 是 caller，callee 是父类
+            rows = conn.execute(
+                f"SELECT DISTINCT caller_symbol_name, caller_chunk_id, caller_file_path, "
+                f"callee_name, callee_line "
+                f"FROM code_relations "
+                f"WHERE caller_symbol_name = ? AND relation_type = 'inherit' "
+                f"{repo_filter} LIMIT 30",
+                [current] + repo_params
+            ).fetchall()
+            return [
+                {"symbol": r[3], "chunk_id": "", "file": "", "line": r[4] or 0,
+                 "via": r[0], "via_chunk_id": r[1] or "", "via_file": r[2] or ""}
+                for r in rows
+            ]
+        else:
+            # 找继承 current 的所有子类：current 是 callee，caller 是子类
+            rows = conn.execute(
+                f"SELECT DISTINCT caller_symbol_name, caller_chunk_id, caller_file_path, "
+                f"callee_name, callee_line "
+                f"FROM code_relations "
+                f"WHERE callee_name = ? AND relation_type = 'inherit' "
+                f"{repo_filter} LIMIT 30",
+                [current] + repo_params
+            ).fetchall()
+            return [
+                {"symbol": r[0] or "", "chunk_id": r[1] or "", "file": r[2] or "", "line": r[4] or 0,
+                 "via": r[3], "via_chunk_id": "", "via_file": ""}
+                for r in rows
+            ]
+
+    # BFS 双向遍历
+    nodes: dict[str, dict] = {}
+    edges: list[dict] = []
+    visited = {symbol_name}
+    queue = [(symbol_name, 0)]
+
+    # 起始符号的 chunk/file（从 code_meta 反查）
+    start_meta = conn.execute(
+        f"SELECT chunk_id, file_path FROM code_meta WHERE symbol_name = ? {repo_filter} LIMIT 1",
+        [symbol_name] + repo_params
+    ).fetchone()
+    if start_meta:
+        nodes[symbol_name] = {"symbol": symbol_name, "chunk_id": start_meta[0], "file": start_meta[1]}
+    else:
+        nodes[symbol_name] = {"symbol": symbol_name, "chunk_id": "", "file": ""}
+
+    parents_collected: list[dict] = []
+    children_collected: list[dict] = []
+
+    from collections import deque as _deque
+    bfs = _deque([(symbol_name, 0)])
+
+    while bfs:
+        current, d = bfs.popleft()
+        if d >= depth:
+            continue
+        # parents
+        if direction in ("parents", "both"):
+            for hop in _query_one_hop(current, want_parents=True):
+                p_sym = hop["symbol"]
+                if p_sym not in visited:
+                    visited.add(p_sym)
+                    # 父类的 file/chunk 也要查
+                    p_meta = conn.execute(
+                        f"SELECT chunk_id, file_path FROM code_meta WHERE symbol_name = ? {repo_filter} LIMIT 1",
+                        [p_sym] + repo_params
+                    ).fetchone()
+                    nodes[p_sym] = {"symbol": p_sym, "chunk_id": p_meta[0] if p_meta else "",
+                                    "file": p_meta[1] if p_meta else ""}
+                    edges.append({"from": current, "to": p_sym, "line": hop["line"], "relation": "inherits"})
+                    parents_collected.append({"symbol": p_sym, "file": nodes[p_sym]["file"],
+                                               "line": hop["line"], "via": current})
+                    bfs.append((p_sym, d + 1))
+        # children
+        if direction in ("children", "both"):
+            for hop in _query_one_hop(current, want_parents=False):
+                c_sym = hop["symbol"]
+                if c_sym and c_sym not in visited:
+                    visited.add(c_sym)
+                    nodes[c_sym] = {"symbol": c_sym, "chunk_id": hop["chunk_id"], "file": hop["file"]}
+                    edges.append({"from": c_sym, "to": current, "line": hop["line"], "relation": "inherits"})
+                    children_collected.append({"symbol": c_sym, "file": hop["file"],
+                                                "line": hop["line"], "via": current})
+                    bfs.append((c_sym, d + 1))
+
+    return {
+        "symbol": symbol_name,
+        "depth": depth,
+        "direction": direction,
+        "parents": parents_collected,
+        "children": children_collected,
         "chain": {
             "nodes": [{"symbol": k, "file": v["file"], "chunk_id": v["chunk_id"]} for k, v in nodes.items()],
             "edges": edges,

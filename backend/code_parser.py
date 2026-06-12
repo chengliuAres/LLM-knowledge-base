@@ -370,6 +370,87 @@ def _is_call_node(node, language: str) -> bool:
     return False
 
 
+# ── 继承关系提取 ──────────────────────────────────────────────────────
+# 6 种语言的 superclass / interface 声明语法
+#   ObjC:     @interface Foo : Bar, Baz    (Bar 是直接父类，Baz 是协议)
+#   Java:     class Foo extends Bar implements I1, I2
+#   Kotlin:   class Foo : Bar()            (注意 Bar()，父类构造调用)
+#   Swift:    class Foo: Bar, Proto        (Bar 是父类，Proto 是协议)
+#   Python:   class Foo(Bar):              (单行/多行)
+#   Dart:     class Foo extends Bar
+#   TypeScript: class Foo implements I1, I2  (TS 无 extends 时只有 implements)
+# 返回 [{"parent": "Bar", "line": N}, ...]
+
+import re
+
+_INHERIT_PATTERNS = [
+    # ObjC: @interface Foo : Parent1, Parent2
+    (re.compile(r'@interface\s+\w+\s*:\s*([^\{]+)'), 'objc'),
+    # Java: class Foo extends Parent implements I1, I2
+    # 同时抓 extends 后第一个词和 implements 后的所有词
+    (re.compile(r'class\s+\w+(?:\s*<[^>]+>)?\s+extends\s+(\w+)'), 'java'),
+    (re.compile(r'class\s+\w+(?:\s*<[^>]+>)?(?:\s+extends\s+\w+)?\s+implements\s+([\w\s,]+?)(?:\s*\{|\s*$)', re.MULTILINE), 'java_impl'),
+    # Kotlin: class Foo : Parent() 或 open class Foo : Parent
+    (re.compile(r'class\s+\w+(?:\s*<[^>]+>)?\s*:\s*(\w+)\s*\('), 'kotlin'),
+    # Swift: class Foo: Parent, Proto1  (但不能匹配简单 protocol 声明)
+    (re.compile(r'class\s+\w+(?:\s*<[^>]+>)?\s*:\s*(\w+)(?:\s*,|\s*\{)'), 'swift'),
+    # Python: class Foo(Bar): 或 class Foo(Bar, metaclass=Meta):
+    (re.compile(r'class\s+\w+\s*\(\s*([^):\n]+?)\s*\)'), 'python'),
+    # Dart: class Foo extends Bar
+    (re.compile(r'class\s+\w+(?:\s*<[^>]+>)?\s+extends\s+(\w+)'), 'dart'),
+    # TypeScript: class Foo implements I1, I2
+    (re.compile(r'class\s+\w+(?:\s*<[^>]+>)?\s+implements\s+([\w\s,]+?)(?:\s*\{|\s*$)', re.MULTILINE), 'typescript'),
+]
+
+
+def _extract_inherits(chunk_content: str, language: str) -> list:
+    """从 class/interface chunk 文本中提取父类名（含行号）
+
+    Returns: [{"parent": "Bar", "line": 12}, ...] — 去重 + 排除系统方法
+    """
+    if not chunk_content:
+        return []
+
+    inherits = []
+    seen = set()
+    # 限制只解析前 5 行（class 声明通常在头部）
+    head_lines = chunk_content.split('\n', 5)[:5]
+    head_text = '\n'.join(head_lines)
+
+    for pattern, lang_filter in _INHERIT_PATTERNS:
+        # 严格按语言匹配（避免跨语言误命中）
+        if language == 'java' and lang_filter not in ('java', 'java_impl'):
+            continue
+        if language == 'typescript' and lang_filter != 'typescript':
+            continue
+        if language not in ('java', 'typescript', 'objc') and lang_filter != language:
+            continue
+        for m in pattern.finditer(head_text):
+            raw = m.group(1)
+            # 多父类用 , 分割（如 ObjC @interface Foo : Bar, Baz）
+            for parent in raw.split(','):
+                parent = parent.strip()
+                # 清理协议/泛型/构造调用
+                parent = re.sub(r'<[^>]+>', '', parent)  # 泛型 <T>
+                parent = re.sub(r'\(.*\)$', '', parent)  # Kotlin Bar()
+                parent = parent.split()[0] if parent else ''  # 取第一个 token
+                # 过滤系统类 / 单字符 / 空
+                if not parent or parent in _SYSTEM_CALL_BLACKLIST or len(parent) < 2:
+                    continue
+                # Python: class Foo(Bar, metaclass=Meta) → 排除 metaclass= 形式
+                if '=' in parent:
+                    continue
+                if parent in seen:
+                    continue
+                seen.add(parent)
+                # 行号（chunk 内相对行号）
+                line_offset = head_text[:m.start()].count('\n') + 1
+                inherits.append({"parent": parent, "line": line_offset})
+                if len(inherits) >= 5:  # 限制最多 5 个父类
+                    return inherits
+    return inherits
+
+
 def _extract_calls_in_range(code_bytes: bytes, language: str,
                              start_byte: int, end_byte: int) -> list[dict]:
     """提取指定字节范围内的所有方法/函数调用
@@ -820,7 +901,7 @@ def _extract_symbols(code_bytes: bytes, language: str) -> list[dict]:
 
 # ── 混合分块策略 ──────────────────────────────────────────────────
 
-MAX_CHUNK_SIZE = 1000   # 单 chunk 最大字符数
+MAX_CHUNK_SIZE = 900    # 单 chunk 最大字符数（需给 display_text header 留 ~200 chars 余量，避免 embedding 截断）
 SUB_CHUNK_SIZE = 500    # 超长 chunk 二次切分大小
 
 
@@ -954,7 +1035,7 @@ def chunk_code(
     策略:
     - 短文件 (<500字符) → 整文件一个 chunk
     - 有结构的文件 → 按顶层符号拆分
-    - 超长符号 (>1000字符) → 按 500 字符二次切分
+    - 超长符号 (>900字符) → 按 500 字符二次切分
 
     Returns:
         [{id, repo_name, project_type, file_path, file_name, language,
@@ -989,6 +1070,7 @@ def chunk_code(
             'symbol_name': file_name,
             'content': code_text,
             'display_text': _make_display_text(rel_path, 'file', file_name, 1, line_count, code_text, language),
+            'embedding_text': _make_display_text_for_embedding(rel_path, 'file', file_name, 1, line_count, code_text, language),
             'line_start': 1,
             'line_end': line_count,
             'metadata': {**base_meta},
@@ -1023,6 +1105,7 @@ def chunk_code(
                 'symbol_name': file_name,
                 'content': chunk_text,
                 'display_text': _make_display_text(rel_path, 'file', file_name, 1, line_count, chunk_text, language),
+                'embedding_text': _make_display_text_for_embedding(rel_path, 'file', file_name, 1, line_count, chunk_text, language),
                 'line_start': 1,  # 降级模式下不精确追踪行号
                 'line_end': line_count,
                 'metadata': {**base_meta},
@@ -1059,6 +1142,13 @@ def chunk_code(
         if sym['parent_class']:
             sym_meta['parent_class'] = sym['parent_class']
 
+        # 提取继承关系（仅对 class/interface/protocol 类型 chunk）
+        # 用文本 regex 覆盖 4 种语法：ObjC @interface F:P / Java class F extends P / Kotlin F : P() / Swift F: P
+        if sym.get('chunk_type') in ('class', 'interface', 'protocol', 'implementation'):
+            inherits = _extract_inherits(chunk_content, language)
+            if inherits:
+                sym_meta['inherits'] = inherits
+
         # 过滤归属当前符号的调用（只保留符号体内的调用，排除子符号体内的）
         sym_calls = [c for c in all_file_calls
                      if sym['start_byte'] <= _estimate_byte_pos(code_text, c['line'])
@@ -1082,6 +1172,7 @@ def chunk_code(
                     'symbol_name': sym['name'],
                     'content': sub_text,
                     'display_text': _make_display_text(rel_path, sym['chunk_type'], sym['name'], sym['line_start'], sym['line_end'], sub_text, language),
+                    'embedding_text': _make_display_text_for_embedding(rel_path, sym['chunk_type'], sym['name'], sym['line_start'], sym['line_end'], sub_text, language),
                     'line_start': sym['line_start'],
                     'line_end': sym['line_end'],
                     'metadata': {**sym_meta},
@@ -1098,6 +1189,7 @@ def chunk_code(
                 'symbol_name': sym['name'],
                 'content': chunk_content,
                 'display_text': _make_display_text(rel_path, sym['chunk_type'], sym['name'], sym['line_start'], sym['line_end'], chunk_content, language),
+                'embedding_text': _make_display_text_for_embedding(rel_path, sym['chunk_type'], sym['name'], sym['line_start'], sym['line_end'], chunk_content, language),
                 'line_start': sym['line_start'],
                 'line_end': sym['line_end'],
                 'metadata': {**sym_meta},

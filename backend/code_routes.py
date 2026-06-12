@@ -37,6 +37,7 @@ class ScanRequest(BaseModel):
     languages: list[str] = Field(default_factory=list)
     skip_dirs: list[str] = Field(default_factory=list)
     skip_extensions: list[str] = Field(default_factory=list)
+    force_full: bool = False  # True = 跳过 mtime check，所有文件当 added（重新提取 metadata/inherit）
 
 
 class SearchRequest(BaseModel):
@@ -153,7 +154,7 @@ def _run_scan(job: ScanJob):
         if job.is_cancelled():
             return
         log.info(f"[scan:{job.scan_id}] 计算增量: {len(files)} files")
-        incremental = compute_incremental(req.repo_name, files)
+        incremental = compute_incremental(req.repo_name, files, force_full=req.force_full)
         added_n = len(incremental["added"])
         updated_n = len(incremental["updated"])
         deleted_n = len(incremental["deleted"])
@@ -282,7 +283,7 @@ def _run_scan(job: ScanJob):
             for c in chunks:
                 if c["metadata"].get("parse_warning"):
                     parse_warnings += 1
-                batch_texts.append(c.get("display_text", c["content"]))
+                batch_texts.append(c.get("embedding_text", c.get("display_text", c["content"])))
                 batch_chunks.append(c)
 
             # 每累积 CHUNK_BATCH_SIZE 个 chunks 处理一批
@@ -348,14 +349,15 @@ def _finalize_scan(job: ScanJob, files: list, effective_type: str = ""):
     """扫描完成后更新配置"""
     req = job.req
     from code_db import get_stats as get_code_stats
-    db_stats = get_code_stats()
+    # 只统计当前仓库的 chunks，而不是全局总量
+    repo_stats = get_code_stats(repo_name=req.repo_name)
     register_repo(req.repo_name, os.path.abspath(req.repo_path),
-                  effective_type or req.project_type, req.languages, db_stats)
+                  effective_type or req.project_type, req.languages, repo_stats)
     new_mtimes = {f["rel_path"]: f["mtime"] for f in files}
     update_file_mtimes(req.repo_name, new_mtimes)
-    job.stats = db_stats
+    job.stats = repo_stats
     job.status = "completed"
-    job.update("done", f"扫描完成 ✅ — {db_stats.get('total_chunks', 0)} chunks")
+    job.update("done", f"扫描完成 ✅ — {repo_stats.get('total_chunks', 0)} chunks")
     # 正常完成不需要回滚，立即释放 chunk id 列表
     job._written_chunk_ids.clear()
 
@@ -943,18 +945,23 @@ async def delete_repo_endpoint(name: str):
 # ── POST /api/code/repos/{name}/refresh ──────────────────────────
 
 @router.post("/repos/{name}/refresh")
-async def refresh_repo_endpoint(name: str):
-    """刷新仓库索引 (增量：按 mtime 新增/更新/删除)"""
+async def refresh_repo_endpoint(name: str, force_full: bool = True):
+    """刷新仓库索引
+
+    默认 force_full=True：跳过 mtime 跳过逻辑，所有文件重新 parse（确保 inherit/calls 关系被提取）。
+    传 force_full=False 走增量（仅 mtime 变化的文件）。
+    """
     repo_config = get_repo_config(name)
     if not repo_config:
         raise HTTPException(404, detail=f"仓库 {name} 不存在")
 
-    # 直接触发增量扫描（scan 内部通过 mtime diff 自动处理新增/更新/删除）
+    # 直接触发扫描（force_full 让 SKILL.md 的"全量 re-scan"指引与端点行为一致）
     req = ScanRequest(
         repo_name=name,
         repo_path=repo_config["repo_path"],
         project_type=repo_config.get("project_type", "generic"),
         languages=repo_config.get("languages", []),
+        force_full=force_full,
     )
     return await scan_repo_endpoint(req)
 
