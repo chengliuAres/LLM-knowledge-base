@@ -26,37 +26,31 @@
     }
   };
 
-  function loadSkillMd() {
-    fetch('/api/skill/raw').then(function (r) { return r.json(); }).then(function (data) {
-      cache.md = data;
-      var el = document.getElementById('skill-md-content');
-      if (el) el.innerHTML = renderMarkdown(data.content);
+  function fetchSkillData(url, cacheKey, contentId, renderer) {
+    fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+      cache[cacheKey] = data;
+      var el = document.getElementById(contentId);
+      if (el) renderer(el, data);
     }).catch(function (e) {
-      var el = document.getElementById('skill-md-content');
+      var el = document.getElementById(contentId);
       if (el) el.innerHTML = '<div style="color:#EF4444;">❌ 加载失败: ' + e + '</div>';
+    });
+  }
+
+  function loadSkillMd() {
+    fetchSkillData('/api/skill/raw', 'md', 'skill-md-content', function (el, data) {
+      el.innerHTML = renderMarkdown(data.content);
     });
   }
 
   function loadSkillCommands() {
-    fetch('/api/skill/commands').then(function (r) { return r.json(); }).then(function (data) {
-      cache.commands = data;
-      var el = document.getElementById('skill-commands-content');
-      if (el) renderCommandsTable(el, data.commands || []);
-    }).catch(function (e) {
-      var el = document.getElementById('skill-commands-content');
-      if (el) el.innerHTML = '<div style="color:#EF4444;">❌ 加载失败: ' + e + '</div>';
+    fetchSkillData('/api/skill/commands', 'commands', 'skill-commands-content', function (el, data) {
+      renderCommandsTable(el, data.commands || []);
     });
   }
 
   function loadSkillInfo() {
-    fetch('/api/skill/info').then(function (r) { return r.json(); }).then(function (data) {
-      cache.info = data;
-      var el = document.getElementById('skill-info-content');
-      if (el) renderSkillInfo(el, data);
-    }).catch(function (e) {
-      var el = document.getElementById('skill-info-content');
-      if (el) el.innerHTML = '<div style="color:#EF4444;">❌ 加载失败: ' + e + '</div>';
-    });
+    fetchSkillData('/api/skill/info', 'info', 'skill-info-content', renderSkillInfo);
   }
 
   function renderSkillInfo(el, data) {
