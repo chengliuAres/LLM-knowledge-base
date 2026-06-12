@@ -14,6 +14,8 @@
       style="color: var(--color-muted);" onclick="switchMcpTab('examples')">💡 使用示例</button>
     <button class="mcp-subtab-btn px-3 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap" data-mcp-tab="ai"
       style="color: var(--color-muted);" onclick="switchMcpTab('ai')">🤖 AI 视角</button>
+    <button class="mcp-subtab-btn px-3 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap" data-mcp-tab="test"
+      style="color: var(--color-muted);" onclick="switchMcpTab('test')">🧪 测试</button>
   </div>
 
   <!-- 内容区：接入指南 -->
@@ -273,6 +275,65 @@ python3 export/skill/scripts/kb_api.py repos
       <div style="color: var(--color-muted);">
         上述只是要点速查。完整版（13 章节 / 含 5 个完整对话示例）见 <code>export/skill/SKILL.md</code>，加载方式：<code>cp -r export/skill/ ~/.claude/skills/code-kb/</code>
       </div>
+    </div>
+  </div>
+
+  <!-- 内容区：MCP 测试 — 浏览器直连验证 Streamable HTTP 端点 -->
+  <div id="mcp-tab-test" class="mcp-tab-content hidden space-y-4">
+    <!-- 连接信息 + 测试按钮 -->
+    <div class="rounded-lg p-4 space-y-3" style="background: var(--color-surface);">
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="text-sm" style="color: var(--color-muted);">MCP 端点：</span>
+        <code id="mcp-test-endpoint" class="text-sm font-mono px-2 py-1 rounded" style="background: var(--color-background); color: var(--color-accent);">—</code>
+        <button id="mcp-test-connect-btn" class="ml-auto px-3 py-1.5 rounded text-sm font-medium transition-colors"
+          style="background: var(--color-accent); color: var(--color-on-primary);" onclick="mcpTestConnect()">
+          🔌 测试连接
+        </button>
+        <span id="mcp-test-status" class="text-sm" style="color: var(--color-muted);">未连接</span>
+      </div>
+    </div>
+
+    <!-- 工具调用区 -->
+    <div class="rounded-lg p-4 space-y-3" style="background: var(--color-surface);">
+      <div class="flex flex-wrap items-center gap-3">
+        <label class="text-sm" style="color: var(--color-muted);">工具：</label>
+        <select id="mcp-test-tool" class="px-2 py-1.5 rounded text-sm font-mono"
+          style="background: var(--color-background); color: var(--color-foreground); border: 1px solid var(--color-border);" disabled>
+          <option value="">— 请先连接 —</option>
+        </select>
+        <span id="mcp-test-serverinfo" class="text-xs ml-auto" style="color: var(--color-muted);"></span>
+      </div>
+
+      <div>
+        <label class="text-sm block mb-1" style="color: var(--color-muted);">参数（JSON，对应工具的入参）：</label>
+        <textarea id="mcp-test-args" rows="6" class="w-full font-mono text-xs px-3 py-2 rounded"
+          style="background: var(--color-background); color: var(--color-foreground); border: 1px solid var(--color-border); resize: vertical;"
+          placeholder='例：{"query": "邮件发送", "repo": "", "top_k": 5}' disabled></textarea>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button id="mcp-test-send-btn" class="px-4 py-1.5 rounded text-sm font-medium transition-colors"
+          style="background: var(--color-accent); color: var(--color-on-primary);" onclick="mcpTestSend()" disabled>
+          📤 发送
+        </button>
+        <button class="px-3 py-1.5 rounded text-sm transition-colors"
+          style="background: var(--color-secondary); color: var(--color-foreground); border: 1px solid var(--color-border);"
+          onclick="mcpTestFillSample()">填入示例</button>
+        <span id="mcp-test-spinner" class="text-sm hidden" style="color: var(--color-muted);">⏳ 请求中…</span>
+        <span id="mcp-test-elapsed" class="text-xs ml-auto" style="color: var(--color-muted);"></span>
+      </div>
+    </div>
+
+    <!-- 返回区 -->
+    <div>
+      <div class="flex items-center justify-between mb-1">
+        <label class="text-sm" style="color: var(--color-muted);">返回：</label>
+        <button class="text-xs px-2 py-1 rounded transition-colors"
+          style="background: var(--color-secondary); color: var(--color-foreground); border: 1px solid var(--color-border);"
+          onclick="mcpTestClear()">🗑 清空</button>
+      </div>
+      <pre id="mcp-test-response" class="rounded-lg p-3 text-xs font-mono whitespace-pre-wrap break-all"
+        style="background: var(--color-background); color: var(--color-foreground); border: 1px solid var(--color-border); min-height: 120px; max-height: 480px; overflow: auto;">点击"测试连接"开始验证 MCP 端点…</pre>
     </div>
   </div>
 
