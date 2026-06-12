@@ -119,3 +119,45 @@
 - **影响**：用户搜类名查调用链，得到"找不到调用"（实际有）
 - **修复方向**（P3+）：trace_code 在 BFS 失败时 fallback 搜"包含此符号的类/接口的所有方法"
 - **优先级**：中（影响体验，但 hierarchy 不受影响）
+
+## pre-existing 测试失败 — 非本任务范围
+
+> 来源：2026-06-12 Agent 接入页 Skill 集成（commit 9652f2b）合并前 verify 阶段发现。
+> 本任务交付的 `backend/tests/test_skill_routes.py` 4 个测试**全过**，以下 6 个失败**与本任务无关**——是主仓早期健康检查模块的设计争议或环境依赖问题。
+
+### health_utils：测试期望 error/warning 语义 vs 实现返回 warning（5 个失败）
+
+- **现象**：
+  - `test_check_lancedb_status_ok_when_dir_exists` / `test_check_lancedb_status_error_when_missing`
+  - `test_check_model_status_default_not_loaded` / `test_check_model_status_loaded_when_marker_set`
+  - `test_check_disk_usage_error_for_missing_path`
+- **失败模式**（以代表性为例）：
+  - 测试 `test_check_disk_usage_error_for_missing_path` 期望 `result["status"] == "error"`，实现返回 `warning`
+  - 测试 `test_check_model_status_loaded_when_marker_set` 期望 `status == "loaded"`，实现返回 `warning`
+- **根因**（设计争议，非 bug）：
+  - `health_utils.py` 的"路径不存在 → warning"语义（系统还没用过，但能跑）
+  - 测试的"路径不存在 → error"语义（健康检查应该报红）
+  - 两种语义都自洽，**是产品决策争议**
+- **影响范围**：仅 `backend/health_utils.py` 健康检查端点的状态码显示，不影响业务
+- **修复方向**（P3）：
+  - 选 A：改实现 → warning 改 error（严格按测试）
+  - 选 B：改测试 → 接受 warning 实现（按实现）
+  - 选 C：分级细化 → 引入 "warning" / "error" / "ok" 三档更细粒度判定
+- **优先级**：低（健康检查 UI 不在主路径上，业务不受影响）
+
+### folder_picker：`test_open_in_finder_path_invalid` 失败
+
+- **现象**：单测失败，错误信息 `assert ...` 截断（输出超长）
+- **可能根因**（待查）：
+  - macOS Popen 行为依赖（沙盒/权限）
+  - 测试用 MagicMock 但实现用了 `start_new_session` 后 MagicMock 失效（commit f90bdc2 修复过类似问题）
+  - 路径分隔符（macOS 私路径 `/private/var/...` 与 `os.path.realpath` 的偏差）
+- **修复方向**（P3）：读 `backend/test_folder_picker.py` 完整 + `backend/folder_picker.py` 实现，对比 f90bdc2 修复模式
+- **优先级**：低（仅测试失败，业务路径正常——`/api/code/open-in-finder` 是 IDE 唤起辅助功能）
+
+## 本任务交付 commit 不动
+
+- 13 个 commit 全部保留在 `worktree-skill-integration-tab` 分支（HEAD `9652f2b`）
+- 本任务 4 个 skill routes 测试全过（4 passed）
+- 6 个 pre-existing 失败不在本任务范围
+- 柳哥决定是否合 + 何时修 pre-existing
