@@ -30,6 +30,10 @@ async def code_search(
     """搜索代码库，支持语义搜索和关键词搜索"""
     import json
     from code_search import search_code
+    from code_config import is_repo_scanning
+
+    if repo and is_repo_scanning(repo):
+        return f"⚠️ {repo} 代码索引正在更新中，请稍后再试。"
 
     query = query.strip()
     if not query:
@@ -64,6 +68,10 @@ async def code_chat(
     import json
     from code_search import search_code
     from llm_client import get_llm_client
+    from code_config import is_repo_scanning
+
+    if repo and is_repo_scanning(repo):
+        return f"⚠️ {repo} 代码索引正在更新中，请稍后再试。"
 
     question = question.strip()
     if not question:
@@ -128,6 +136,10 @@ async def code_file_context(
     """
     import json
     from code_db import resolve_file_by_name, get_chunks_by_file
+    from code_config import is_repo_scanning
+
+    if repo and is_repo_scanning(repo):
+        return f"⚠️ {repo} 代码索引正在更新中，请稍后再试。"
 
     matches = resolve_file_by_name(repo, file_name)
     if not matches:
@@ -183,6 +195,10 @@ async def code_trace(
     """追踪符号的调用链：谁调用了它 / 它调用了谁"""
     import json
     from code_search import trace_code
+    from code_config import is_repo_scanning
+
+    if repo and is_repo_scanning(repo):
+        return f"⚠️ {repo} 代码索引正在更新中，请稍后再试。"
 
     symbol = symbol.strip()
     if not symbol:

@@ -6,30 +6,31 @@
       "project_type": "ios",
       "languages": [],
       "total_files": 0,
-      "total_chunks": 62954,
+      "total_chunks": 70734,
       "by_language": {
-        "cpp": 6442,
-        "dart": 2754,
+        "cpp": 9340,
+        "dart": 2740,
         "kotlin": 363,
-        "objc": 52665,
-        "python": 360,
+        "objc": 57628,
+        "python": 318,
         "ruby": 70,
-        "shell": 64,
+        "shell": 49,
         "swift": 142,
-        "yaml": 94
+        "yaml": 84
       },
       "by_chunk_type": {
-        "class": 3032,
+        "class": 2998,
         "extension": 26,
-        "file": 18980,
-        "function": 882,
-        "implementation": 36613,
-        "interface": 3048,
+        "file": 23381,
+        "function": 874,
+        "implementation": 40000,
+        "interface": 3082,
         "object": 181,
         "protocol": 182,
         "struct": 10
       },
-      "last_scanned": "2026-06-12T11:27:12.280763"
+      "last_scanned": "2026-06-12T12:51:18.285411",
+      "indexed_branch": "dev"
     },
     "MailAndroidG": {
       "repo_name": "MailAndroidG",
@@ -55,7 +56,8 @@
         "object": 3830,
         "struct": 1
       },
-      "last_scanned": "2026-06-12T11:27:40.947225"
+      "last_scanned": "2026-06-12T12:51:46.382362",
+      "indexed_branch": "develop"
     }
   },
   "watchdog": {

@@ -6,6 +6,8 @@
 - _schedule_scan debounce 合并多次变更
 - _do_scan 锁冲突时跳过
 - watchdog_loop shutdown_event 1s 内退出
+- run_git_branch 读取 .git/HEAD
+- watchdog_loop 分支切换触发 force_full=True 扫描
 """
 
 import os
@@ -93,7 +95,7 @@ def test_run_git_status_porcelain_propagates_subprocess_error(fresh_module, tmp_
 def test_schedule_scan_merges_consecutive_changes(fresh_module, monkeypatch):
     """5s 内连续 schedule 同一 name → 只触发 1 次 _do_scan"""
     calls = []
-    def fake_do_scan(name, pending):
+    def fake_do_scan(name, pending, force_full):
         calls.append(name)
     monkeypatch.setattr(fresh_module, "_do_scan", fake_do_scan)
 
@@ -123,7 +125,7 @@ def test_schedule_scan_merges_consecutive_changes(fresh_module, monkeypatch):
 def test_schedule_scan_does_not_merge_different_repos(fresh_module, monkeypatch):
     """不同 repo 各自 schedule，独立触发"""
     calls = []
-    def fake_do_scan(name, pending):
+    def fake_do_scan(name, pending, force_full):
         calls.append(name)
     monkeypatch.setattr(fresh_module, "_do_scan", fake_do_scan)
 
@@ -413,3 +415,178 @@ def test_watchdog_loop_cancels_stale_timer(fresh_module, tmp_path, monkeypatch):
             t.join(timeout=1)
 
     fake_timer.cancel.assert_called(), "stale repo 的 timer 必须被 cancel（修复 Bug 2）"
+
+
+# ── run_git_branch + 分支切换检测 ─────────────────────────────────
+
+def test_run_git_branch_returns_branch_name_for_ref(fresh_module, tmp_path):
+    """HEAD 形如 'ref: refs/heads/xxx' 时返回 xxx"""
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    (git_dir / "HEAD").write_text("ref: refs/heads/main\n")
+    assert fresh_module.run_git_branch(str(tmp_path)) == "main"
+
+
+def test_run_git_branch_returns_branch_name_for_feature_branch(fresh_module, tmp_path):
+    """HEAD 形如 'ref: refs/heads/feature/xxx' 时返回 'feature/xxx'"""
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    (git_dir / "HEAD").write_text("ref: refs/heads/feature/auth\n")
+    assert fresh_module.run_git_branch(str(tmp_path)) == "feature/auth"
+
+
+def test_run_git_branch_returns_short_hash_for_detached_head(fresh_module, tmp_path):
+    """detached HEAD（纯 40 位 hash）时返回前 8 位"""
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    (git_dir / "HEAD").write_text("a1b2c3d4e5f6789012345678901234567890abcd\n")
+    assert fresh_module.run_git_branch(str(tmp_path)) == "a1b2c3d4"
+
+
+def test_run_git_branch_returns_empty_for_missing_head(fresh_module, tmp_path):
+    """HEAD 文件不存在时返回空字符串（非 git 仓库）"""
+    assert fresh_module.run_git_branch(str(tmp_path)) == ""
+
+
+def test_run_git_branch_returns_empty_for_malformed_head(fresh_module, tmp_path):
+    """HEAD 内容无法解析时返回空字符串（容错）"""
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    (git_dir / "HEAD").write_text("garbage data\n")
+    assert fresh_module.run_git_branch(str(tmp_path)) == ""
+
+
+def test_watchdog_loop_schedules_with_force_full_on_branch_switch(fresh_module, tmp_path, monkeypatch):
+    """分支切换时 _schedule_scan 必须以 force_full=True 触发
+
+    模拟场景：
+    1. 第一轮：HEAD=main → last_branch 初始化 → 不 schedule（force_full）
+    2. 第二轮：HEAD=dev → 分支变了 → schedule(force_full=True)
+    3. 验证 _schedule_scan 被调用且 force_full=True
+    """
+    (tmp_path / "repos").mkdir()
+    git_repo = tmp_path / "repos" / "r1"
+    git_repo.mkdir()
+    (git_repo / ".git").mkdir()
+
+    with open(fresh_module.CONFIG_PATH, "w") as f:
+        json.dump(
+            {
+                "repos": {"r1": {"repo_path": str(git_repo)}},
+                "watchdog": {"interval_seconds": 60, "debounce_seconds": 1},
+            },
+            f,
+        )
+
+    # porcelain 永远空（避免 porcelain 路径触发 schedule，单独验证分支检测）
+    monkeypatch.setattr(fresh_module, "run_git_status_porcelain", lambda path: "")
+
+    # 第一次返回 main，第二次返回 dev（模拟分支切换），之后保持 dev
+    call_log = []
+    def fake_run_git_branch(path):
+        idx = len(call_log)
+        call_log.append(idx)
+        return "main" if idx == 0 else "dev"
+    monkeypatch.setattr(fresh_module, "run_git_branch", fake_run_git_branch)
+
+    scheduled_calls = []
+    def fake_schedule(name, debounce, pending, force_full=False):
+        scheduled_calls.append({"name": name, "force_full": force_full})
+    monkeypatch.setattr(fresh_module, "_schedule_scan", fake_schedule)
+
+    shutdown = threading.Event()
+
+    def run_loop():
+        fresh_module.watchdog_loop(
+            shutdown,
+            cfg_provider=lambda: {"interval_seconds": 1, "debounce_seconds": 1},
+        )
+
+    stop_thread = threading.Thread(
+        target=lambda: (time.sleep(1.3), shutdown.set()),
+        daemon=True,
+    )
+    stop_thread.start()
+    try:
+        run_loop()
+    finally:
+        stop_thread.join(timeout=2)
+
+    # 至少有一次 force_full=True 的 schedule
+    force_full_calls = [c for c in scheduled_calls if c["force_full"]]
+    assert len(force_full_calls) >= 1, \
+        f"分支切换后应 schedule 一次 force_full=True 扫描，实际: {scheduled_calls}"
+
+
+def test_watchdog_loop_does_not_schedule_on_same_branch(fresh_module, tmp_path, monkeypatch):
+    """同一分支内不触发 force_full schedule（首次 schedule 因 last_porcelain 初始化触发，不算）"""
+    (tmp_path / "repos").mkdir()
+    git_repo = tmp_path / "repos" / "r1"
+    git_repo.mkdir()
+    (git_repo / ".git").mkdir()
+
+    with open(fresh_module.CONFIG_PATH, "w") as f:
+        json.dump(
+            {
+                "repos": {"r1": {"repo_path": str(git_repo)}},
+                "watchdog": {"interval_seconds": 60, "debounce_seconds": 1},
+            },
+            f,
+        )
+
+    monkeypatch.setattr(fresh_module, "run_git_status_porcelain", lambda path: "")
+    monkeypatch.setattr(fresh_module, "run_git_branch", lambda path: "main")
+
+    scheduled_calls = []
+    def fake_schedule(name, debounce, pending, force_full=False):
+        scheduled_calls.append({"force_full": force_full})
+    monkeypatch.setattr(fresh_module, "_schedule_scan", fake_schedule)
+
+    shutdown = threading.Event()
+
+    def run_loop():
+        fresh_module.watchdog_loop(
+            shutdown,
+            cfg_provider=lambda: {"interval_seconds": 1, "debounce_seconds": 1},
+        )
+
+    stop_thread = threading.Thread(
+        target=lambda: (time.sleep(1.3), shutdown.set()),
+        daemon=True,
+    )
+    stop_thread.start()
+    try:
+        run_loop()
+    finally:
+        stop_thread.join(timeout=2)
+
+    # 第一轮会因 last_porcelain 初始化触发一次 force_full=False 的 porcelain schedule
+    # 后续轮因为 branch 不变、porcelain 不变 → 不再 schedule
+    force_full_calls = [c for c in scheduled_calls if c["force_full"]]
+    assert force_full_calls == [], f"同一分支内不应触发 force_full schedule，实际: {scheduled_calls}"
+
+
+def test_schedule_scan_force_full_default_false(fresh_module, monkeypatch):
+    """_schedule_scan 旧调用方（不传 force_full）仍能工作，force_full 默认 False
+
+    回归保护：新增 force_full 参数后，老的 3 参调用不应该被破坏
+    """
+    calls = []
+    def fake_do_scan(name, pending, force_full):
+        calls.append({"name": name, "force_full": force_full})
+    monkeypatch.setattr(fresh_module, "_do_scan", fake_do_scan)
+
+    pending = {}
+    try:
+        # 用位置参数模拟旧调用
+        fresh_module._schedule_scan("repo1", debounce=1, pending=pending)
+        time.sleep(1.5)
+    finally:
+        for t in list(pending.values()):
+            t.cancel()
+        for t in list(pending.values()):
+            t.join(timeout=1)
+
+    assert len(calls) == 1
+    assert calls[0]["name"] == "repo1"
+    assert calls[0]["force_full"] is False, "默认 force_full 必须为 False，保持旧调用行为"

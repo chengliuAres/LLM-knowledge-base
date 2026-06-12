@@ -29,6 +29,36 @@ def detect_git_repo(path: str) -> bool:
     return os.path.isdir(os.path.join(path, ".git"))
 
 
+def run_git_branch(path: str) -> str:
+    """读取 .git/HEAD 推断当前分支
+
+    - 内容形如 `ref: refs/heads/xxx` → 返回 `xxx`
+    - 纯 hash（detached HEAD）→ 返回前 8 位
+    - 文件不存在 / 读取失败 / 内容无法解析 → 返回空字符串 `""`
+
+    不抛异常：watchdog 轮询逻辑希望"分支信息缺失"等同于"无变化"，
+    让调用方走 porcelain 检测路径。
+    """
+    head_path = os.path.join(path, ".git", "HEAD")
+    try:
+        with open(head_path, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+    if not content:
+        return ""
+
+    if content.startswith("ref: refs/heads/"):
+        return content[len("ref: refs/heads/"):]
+
+    # detached HEAD：纯 40 位 hex hash
+    if len(content) >= 8 and all(c in "0123456789abcdef" for c in content[:40].lower()):
+        return content[:8]
+
+    return ""
+
+
 def run_git_status_porcelain(path: str) -> str:
     """调用 git status --porcelain --untracked-files=no
 
@@ -89,22 +119,23 @@ def load_repo_configs() -> dict:
 _lock_failed: set[str] = set()
 
 
-def _schedule_scan(name: str, debounce: int, pending: dict) -> None:
+def _schedule_scan(name: str, debounce: int, pending: dict, force_full: bool = False) -> None:
     """为单个 repo schedule 一次扫描（带 debounce）
 
     Args:
         name: 仓库名
         debounce: debounce 秒数
         pending: {name: threading.Timer} 字典（外部传入，方便测试）
+        force_full: True = 跳过 mtime 增量检查（用于分支切换/手动 refresh 场景）
     """
     if name in pending:
         pending[name].cancel()  # 取消上一次未触发的 timer
-    t = threading.Timer(debounce, _do_scan, args=(name, pending))
+    t = threading.Timer(debounce, _do_scan, args=(name, pending, force_full))
     pending[name] = t
     t.start()
 
 
-def _do_scan(name: str, pending: dict) -> None:
+def _do_scan(name: str, pending: dict, force_full: bool = False) -> None:
     """被 timer 线程调用：拿锁 + 调 _start_scan_job
 
     锁管理：
@@ -137,9 +168,10 @@ def _do_scan(name: str, pending: dict) -> None:
                 repo_path=repo_cfg["repo_path"],
                 project_type=repo_cfg.get("project_type", "generic"),
                 languages=repo_cfg.get("languages", []),
+                force_full=force_full,
             )
             scan_id = _start_scan_job(req)
-            log.info(f"[watchdog] {name} 触发扫描, scan_id={scan_id}, source=watchdog")
+            log.info(f"[watchdog] {name} 触发扫描, scan_id={scan_id}, source=watchdog, force_full={force_full}")
             # 锁不归本函数管；释放由 _run_scan 后台线程 finally 块负责
         except Exception as e:
             # 兜底：拿锁后任何异常都要释放锁，避免泄漏
@@ -174,6 +206,7 @@ def watchdog_loop(
 
     pending: dict[str, threading.Timer] = {}
     last_porcelain: dict[str, str] = {}
+    last_branch: dict[str, str] = {}
 
     while not shutdown_event.is_set():
         # 每轮 reload config，捕获"新增 repo / 被删 repo"变化
@@ -183,6 +216,14 @@ def watchdog_loop(
             path = repo.get("repo_path", "")
             if not path or not detect_git_repo(path):
                 continue
+
+            # 0. 分支检测：分支变了 → 强制全量扫描（porcelain 检测不到切分支）
+            # 文件变更前后都是 clean 状态时 porcelain 不变，必须靠 .git/HEAD 检测
+            branch = run_git_branch(path)
+            if branch and last_branch.get(name) and last_branch[name] != branch:
+                log.info(f"[watchdog] {name} 分支切换: {last_branch[name]} → {branch}")
+                _schedule_scan(name, debounce, pending, force_full=True)
+            last_branch[name] = branch
 
             try:
                 porcelain = run_git_status_porcelain(path)
@@ -203,6 +244,7 @@ def watchdog_loop(
                 if t is not None:
                     t.cancel()
                 last_porcelain.pop(stale, None)
+                last_branch.pop(stale, None)
 
         # 重 schedule 任何在 _do_scan 锁失败的 repo
         # 流程：_do_scan 拿不到锁 → add 到 _lock_failed → 主循环末尾

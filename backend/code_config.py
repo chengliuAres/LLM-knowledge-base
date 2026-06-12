@@ -209,3 +209,8 @@ def release_scan_lock(repo_name: str):
     except RuntimeError:
         pass
     _scan_semaphore.release()
+
+
+def is_repo_scanning(repo_name: str) -> bool:
+    """检查指定仓库是否正在扫描中（端点拦截用）"""
+    return repo_name in _active_scan_repos

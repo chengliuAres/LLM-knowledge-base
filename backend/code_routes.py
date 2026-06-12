@@ -22,7 +22,7 @@ from code_search import search_code
 from code_config import (
     list_repos, get_repo_config, register_repo, remove_repo,
     try_acquire_scan_lock, release_scan_lock, compute_incremental,
-    get_file_mtimes, update_file_mtimes,
+    get_file_mtimes, update_file_mtimes, is_repo_scanning,
 )
 
 router = APIRouter(prefix="/api/code", tags=["code-kb"])
@@ -353,6 +353,18 @@ def _finalize_scan(job: ScanJob, files: list, effective_type: str = ""):
     repo_stats = get_code_stats(repo_name=req.repo_name)
     register_repo(req.repo_name, os.path.abspath(req.repo_path),
                   effective_type or req.project_type, req.languages, repo_stats)
+    # 记录索引建立时的 git 分支（增量 diff 时用 run_git_branch 二次校验）
+    try:
+        from git_watchdog import run_git_branch
+        branch = run_git_branch(os.path.abspath(req.repo_path))
+        if branch:
+            from code_config import load_config, save_config
+            cfg = load_config()
+            if req.repo_name in cfg.get("repos", {}):
+                cfg["repos"][req.repo_name]["indexed_branch"] = branch
+                save_config(cfg)
+    except Exception as e:
+        log.debug(f"[scan:{job.scan_id}] 写 indexed_branch 失败（不影响索引）: {e}")
     new_mtimes = {f["rel_path"]: f["mtime"] for f in files}
     update_file_mtimes(req.repo_name, new_mtimes)
     job.stats = repo_stats
@@ -549,9 +561,23 @@ async def cancel_scan(scan_id: str):
 
 # ── POST /api/code/search ────────────────────────────────────────
 
+def check_repo_scanning(repo_name: str | None):
+    """如果目标 repo 正在扫描中，抛 503"""
+    if repo_name and is_repo_scanning(repo_name):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "index_scanning",
+                "message": f"{repo_name} 代码索引正在更新中，请稍后再试",
+                "repo": repo_name,
+            },
+        )
+
+
 @router.post("/search")
 async def search_endpoint(req: SearchRequest):
     """混合搜索代码"""
+    check_repo_scanning(req.filters.get("repo_name") if req.filters else None)
     if not req.query.strip():
         raise HTTPException(400, detail="query 不能为空")
 
@@ -584,6 +610,8 @@ async def search_endpoint(req: SearchRequest):
 async def chat_endpoint(req: ChatRequest):
     """RAG 代码问答"""
     from llm_client import get_llm_client, build_rag_prompt
+
+    check_repo_scanning(req.filters.get("repo_name") if req.filters else None)
 
     client = get_llm_client()
     if not client:
@@ -675,6 +703,8 @@ async def chat_endpoint(req: ChatRequest):
 async def trace_endpoint(req: TraceRequest):
     """调用链追踪：追踪符号的调用者和被调用者"""
     from code_search import trace_code
+
+    check_repo_scanning(req.repo_name or None)
 
     if not req.symbol.strip():
         raise HTTPException(400, detail="symbol 不能为空")
