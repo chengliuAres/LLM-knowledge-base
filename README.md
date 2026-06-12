@@ -135,16 +135,22 @@ mcp_servers:
 **下载方式**（前端「🤖 Agent 接入 → Skill 接入 → 下载」）：
 ```bash
 curl -O http://localhost:8000/api/skill/download
-# 得到 code-search.zip（3 文件 / ~40KB）
+# 得到 code-search.zip（3 文件 / ~16KB，deflate 压缩后实测）
 ```
 
 **安装方式**（前端页面给了 Claude Code / Cursor / CodeMaker / OpenCode 4 种命令）：
 ```bash
 # Claude Code
-mkdir -p ~/.agents/skills/code-search && unzip code-search.zip -d ~/.agents/skills/
+mkdir -p ~/.agents/skills/code-search && unzip ~/Downloads/code-search.zip -d ~/.agents/skills/
 
 # Cursor
-mkdir -p ~/.cursor/skills/code-search && unzip code-search.zip -d ~/.cursor/skills/
+mkdir -p ~/.cursor/skills/code-search && unzip ~/Downloads/code-search.zip -d ~/.cursor/skills/
+
+# CodeMaker
+mkdir -p ~/.codemaker/skills/code-search && unzip ~/Downloads/code-search.zip -d ~/.codemaker/skills/
+
+# OpenCode
+mkdir -p ~/.config/opencode/skill/code-search && unzip ~/Downloads/code-search.zip -d ~/.config/opencode/skill/
 ```
 
 **后端端点**：
