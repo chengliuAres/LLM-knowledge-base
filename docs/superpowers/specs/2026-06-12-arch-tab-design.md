@@ -209,9 +209,10 @@ flowchart TD
 - **反向 BFS**（`direction=hierarchy`）：找"谁继承了我/谁调用了我"
 - **深度限制**：默认 3 跳，可配；超过的边丢弃
 
-#### B.5 关键代码引用
+#### B.5 关键代码引用（**示意代码**，落地时按真实行号重写）
 ```python
-# code_search.py:hybrid_search
+# 落地时引用 code_search.py 中真实行号，本 spec 给出的是简化后的关键逻辑
+# 真实入口可能名为 hybrid_search 或 search_code(hybrid=True)，codex review 时需核对
 def hybrid_search(query, top_k=20):
     keywords = query_translator.translate(query)  # 走 B.3 降级链
     vec_results = code_db.vector_search(keywords, top_k)  # 路径 A
@@ -308,6 +309,8 @@ sequenceDiagram
 #### E.2 演示 3 后端端点
 - **路径**：`POST /api/code/arch/hybrid-demo` （新增）
 - **位置**：`backend/code_routes.py`
+- **入参**：`{"query": str, "repo": str, "top_k": int=5}`
+- **repo 缺省策略**：若 `repo` 为空/null，codex 落地时需从 `data/code_repos.json` 取**第一个有索引数据的 repo** 作 fallback（避免读者进来演示卡全空）
 - **实现思路**：调用 `code_search.hybrid_search` 拿到融合结果后，再分别调 4 个底层方法拿到每路原始召回，附带 match_reasons 返回前端
 - **响应 schema**：
   ```json
@@ -380,7 +383,7 @@ sequenceDiagram
 | 演示 3 后端需要调用 4 路底层方法，可能漏字段 | 严格按 4.2 schema 写，每路返回字段名固定（`file_path`/`content`/`score`/`rank`）|
 | 详版 tab 体量大（5 区 + 8 张 Mermaid + 3 演示卡）| 用 `lg:grid-cols` 多列 + `<details>` 折叠；首屏只展开 A/B 区，C/D/E 默认折叠，进来时滚动友好 |
 | 改动 A/B 区文字描述后没同步 CLAUDE.md | commit message 加 `同步 CLAUDE.md`（如有改动）；CI 阶段加 grep 校验（不强制）|
-| 详版会让 tab 滚动条很长 | 跟柳哥对齐过 D7 = 默认全展开；如果实际太挤，commit 后再切"只 A/B 展开" |
+| 详版会让 tab 滚动条很长 | D7 已对齐默认全展开；读者用各分区的折叠按钮自管（折叠交互见 3.4）|
 
 ## 9. 不在本次范围（YAGNI）
 
