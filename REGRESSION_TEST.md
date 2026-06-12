@@ -118,8 +118,24 @@
 
 | # | 测试点 | 方法 | 预期 |
 |---|--------|------|------|
-| 10.1 | refresh 增量 | `POST /api/code/repos/{name}/refresh` | 不先 delete_by_repo，直接 scan |
+| 10.1 | refresh 增量 | `POST /api/code/repos/{name}/refresh` | v2.0 默认 `force_full=True` 重新提取所有 chunk 的 inherit/calls |
 | 10.2 | LanceDB 维度不匹配 | 模拟（如已修复则跳过） | 抛 RuntimeError，不静默删表 |
 | 10.3 | embedder 截断日志 | 传入 >1500 字符文本 | log.warning 记录 |
 | 10.4 | 超大文件统计 | 扫描含 >100KB 文件的仓库 | stats.skipped_files 含 oversized 记录 |
 | 10.5 | 搜索阈值默认 0 | 搜索低分内容 | 不过滤，返回所有结果 |
+
+## 十一、代码 MCP 工具与 AI 兜底（v2.0 新增）
+
+| # | 测试点 | 方法 | 预期 |
+|---|--------|------|------|
+| 11.1 | `code_list_repos` MCP 工具 | `tools/call name=code_list_repos` | 返回 repos 数组，含 ghmail + MailAndroidG |
+| 11.2 | `code_search` 中文 | `tools/call name=code_search args={query:"邮件发送",top_k:3}` | 返回 3 hits，top1 邮件相关文件 |
+| 11.3 | `code_trace` direction=callers | `tools/call name=code_trace args={symbol:"sendMail",direction:"callers",depth:2}` | matched≥1（callers BFS 可能为 0，类名 vs 方法名差异，已记 TODO） |
+| 11.4 | `code_trace` direction=hierarchy | `tools/call name=code_trace args={symbol:"AccountMocker",direction:"hierarchy",depth:2}` | parents + children 非空，chain 节点 ≥ 2 |
+| 11.5 | `code_file_context` | `tools/call name=code_file_context args={repo,file_path}` | 返回 content (≤5000 字符) + truncated 标记 |
+| 11.6 | `code_chat` RAG 问答 | `tools/call name=code_chat args={question:"..."}` | answer 字段 + 5 个 sources |
+| 11.7 | `kb_api.py` 6 子命令 | `python3 export/skill/scripts/kb_api.py {search,repos,trace,file,chat}` | 全部输出 JSON，无 Traceback |
+| 11.8 | `kb_api.py` hierarchy | `python3 kb_api.py trace --symbol AccountMocker --direction hierarchy` | direction=hierarchy，parents/children 非空 |
+| 11.9 | `kb_api.py` chat 120s | `python3 kb_api.py chat --question "..."` | 不在 30s 超时（chat 单独 120s）|
+| 11.10 | e2e 测试 6/6 | `SKIP_CHAT=1 python3 test/test_e2e_kb_api.py` | 6/6 PASS（repos/search/trace/file/hierarchy + chat skip）|
+| 11.11 | 端点 `/mcp/` 而非 `/mcp/sse` | `curl -I http://localhost:8000/mcp/` | 200 OK |

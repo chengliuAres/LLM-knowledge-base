@@ -68,14 +68,15 @@
 
 | # | 任务 | 文件 | 状态 | 备注 |
 |---|------|------|------|------|
-| 5.1 | 安装 mcp SDK | requirements.txt | ✅ | 手动实现(兼容3.9), 用 sse-starlette |
-| 5.2 | 实现 MCP server 框架 | code_mcp.py | ✅ | JSON-RPC 2.0 over SSE |
-| 5.3 | 实现 code_search tool | code_mcp.py | ✅ | |
-| 5.4 | 实现 code_chat tool | code_mcp.py | ✅ | |
-| 5.5 | 实现 code_list_repos tool | code_mcp.py | ✅ | |
-| 5.6 | 实现 code_file_context tool | code_mcp.py | ✅ | 支持 line_start/line_end, 5000 字符限制 |
-| 5.7 | 实现 token 认证 | code_mcp.py | ⬜ | 暂跳过 (可选功能) |
-| 5.8 | 注册 MCP 端点到 main.py | main.py | ✅ | /mcp/sse, /mcp/message |
+| 5.1 | 安装 mcp SDK | requirements.txt | ✅ | v2.0 用 mcp SDK v1.12.4（替换 v1 sse-starlette） |
+| 5.2 | 实现 MCP server 框架 | code_mcp_v2.py | ✅ | JSON-RPC 2.0 over Streamable HTTP（v2.0 替换 SSE 旧版） |
+| 5.3 | 实现 code_search tool | code_mcp_v2.py | ✅ | |
+| 5.4 | 实现 code_chat tool | code_mcp_v2.py | ✅ | |
+| 5.5 | 实现 code_list_repos tool | code_mcp_v2.py | ✅ | |
+| 5.6 | 实现 code_file_context tool | code_mcp_v2.py | ✅ | 支持 line_start/line_end, 5000 字符限制 |
+| 5.7 | 实现 token 认证 | code_mcp_v2.py | ⬜ | 暂跳过 (可选功能) |
+| 5.8 | 注册 MCP 端点到 main.py | main.py | ✅ | v2.0 端点 `/mcp/`（替换 `/mcp/sse` 旧端点） |
+| 5.9 | **实现 code_trace direction=hierarchy** | code_mcp_v2.py + code_db.py | ✅ | **v2.0 P2 新增** — 类继承链追踪，6 语言 + implements |
 
 ### M6: 前端
 

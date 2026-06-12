@@ -51,7 +51,8 @@ LLM_MODEL=gpt-3.5-turbo
 代码扫描 → code_parser.py（tree-sitter AST 分块 + 调用关系提取）→ code_embedder.py → code_db.py（LanceDB + SQLite FTS5 + code_relations）
 用户查询 → embedder.py（查询向量化）→ db.py/code_db.py（向量搜索）→ llm_client.py（RAG）
 调用链追踪 → code_search.py（混搜定位符号）→ code_db.py（trace_chain BFS 多跳追踪）
-MCP 调用 → code_mcp.py（MCP tools）→ code_search.py / llm_client.py
+MCP 调用 → code_mcp_v2.py（MCP tools, Streamable HTTP）→ code_search.py / llm_client.py
+继承链追踪 → code_mcp_v2.py(direction=hierarchy) → code_db.py(trace_hierarchy BFS)
 ```
 
 ### 关键设计决策
@@ -124,7 +125,7 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 - `code_db.py`：LanceDB + SQLite FTS5 双存储 + 调用关系表 `code_relations`
 - `code_search.py`：混合搜索 + RRF 融合排序 + `trace_code` 调用链追踪
 - `code_routes.py`：代码知识库 REST API 路由
-- `code_mcp.py`：MCP server + tools（SSE 传输）
+- `code_mcp_v2.py`：MCP server + tools（Streamable HTTP, mcp SDK v1.12.4）
 - `code_config.py`：扫描配置管理（code_repos.json）
 - `code_skip_rules.py`：可配置排除规则（skip_dirs/skip_exts）
 
@@ -282,7 +283,7 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 
 | 端点 | 说明 |
 |------|------|
-| `/mcp/sse` | MCP SSE 传输端点，暴露 code_search / code_chat / code_list_repos / code_file_context / code_trace 五个 tools |
+| `/mcp/` | MCP Streamable HTTP 端点，暴露 code_search / code_chat / code_list_repos / code_file_context / code_trace 五个 tools（v2.0 起替换 `/mcp/sse` 旧端点） |
 
 ## 前端开发规范
 

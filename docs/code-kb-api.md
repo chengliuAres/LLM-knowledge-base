@@ -376,17 +376,37 @@ data: [DONE]
 
 ### code_trace
 
-追踪符号的调用链 — 谁调用了它 / 它调用了谁。用于快速理清跨文件业务逻辑链路。
+追踪符号的调用链 — 谁调用了它 / 它调用了谁 / **类继承层级**（v2.0 新增 hierarchy）。用于快速理清跨文件业务逻辑链路。
 
 **输入:**
 ```json
 {
     "symbol": "processPayment",    // 符号名或搜索查询
     "repo": "ghmail",              // 可选, 仓库名过滤
-    "direction": "both",           // callers / callees / both (默认 both)
-    "depth": 2                     // 追踪跳数 1-3 (默认 2)
+    "direction": "both",           // callers / callees / both / hierarchy (v2.0 新增)
+    "depth": 2                     // 追踪跳数 1-3（hierarchy 1-5；默认 2）
 }
 ```
+
+**direction=hierarchy 输出（v2.0 新增）:**
+```json
+{
+  "symbol": "AccountMocker",
+  "direction": "hierarchy",
+  "matched_symbols": [{"symbol": "AccountMocker", "file_path": "...", "chunk_type": "class_or_protocol"}],
+  "traces": [{
+    "chain": {"nodes": [...], "edges": [...]},  // BFS 完整图
+    "parents": [{"symbol": "BaseMockHandler", "via": "AccountMocker", "line": 1}],
+    "children": [{"symbol": "MailTagGroupMocker", "via": "BaseMockHandler", "line": 1}]
+  }]
+}
+```
+
+**relation_type 说明**：调用图和继承图共用 `code_relations` 表，通过 `relation_type` 字段区分（`'call'` / `'inherit'`）。6 种语言 + Java/TypeScript implements 全部覆盖（`code_parser._extract_inherits`）。
+
+**典型使用场景 (Agent 多跳推理):**
+```
+Agent: code_trace("PaymentService", direction="callees", depth=2)
 
 **输出:**
 ```json

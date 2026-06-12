@@ -257,7 +257,7 @@ email-wiki-demo/
 │   ├── code_db.py           # 代码存储层（LanceDB + SQLite FTS5 + code_relations 调用图）
 │   ├── code_search.py       # 代码搜索层（混合搜索 + RRF 融合 + trace_code 调用链追踪）
 │   ├── code_routes.py       # 代码知识库 REST API 路由（含 /api/code/trace）
-│   ├── code_mcp.py          # MCP Server（5 tools + SSE 传输）
+│   ├── code_mcp_v2.py       # MCP Server v2（5 tools + Streamable HTTP，mcp SDK v1.12.4）
 │   ├── code_config.py       # 代码仓库配置管理（增量扫描）               ← 新增
 │   ├── match_reasons.py     # 搜索匹配原因分析
 │   ├── metrics_db.py        # 性能指标数据库
@@ -288,7 +288,7 @@ email-wiki-demo/
 | 修改搜索融合算法 | `code_search.py` — 修改 `rrf_fusion()` 函数 |
 | 修改前端界面 | `index.html` — 单个 HTML 文件 |
 | 接入其他向量数据库 | `db.py` / `code_db.py` — 替换 LanceDB 调用 |
-| 扩展 MCP 工具 | `code_mcp.py` — 在 `TOOLS` 列表和 `execute_tool()` 中添加（当前 5 tools） |
+| 扩展 MCP 工具 | `code_mcp_v2.py` — 添加 `@mcp.tool()` 装饰器函数（v2.0 起替换 v1 旧 SSE 端点） |
 | 扩展调用关系追踪 | `code_parser.py` — `_extract_call_name()` 添加新语言；`code_db.py` — 调整 `trace_chain()` 遍历策略 |
 
 ## 核心流程

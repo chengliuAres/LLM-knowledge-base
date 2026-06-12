@@ -605,7 +605,7 @@ mcp:
 | `backend/code_db.py` | LanceDB + SQLite FTS 存储层 |
 | `backend/code_search.py` | 混合搜索 + RRF 融合排序 |
 | `backend/code_routes.py` | REST API 路由 |
-| `backend/code_mcp.py` | MCP server + tools |
+| `backend/code_mcp_v2.py` | MCP server + tools（Streamable HTTP, mcp SDK v1.12.4，v2.0 起替换 v1 SSE） |
 | `backend/code_config.py` | 扫描配置管理 (code_repos.json) |
 | `frontend/index.html` | 前端新增代码知识库 tab |
 
