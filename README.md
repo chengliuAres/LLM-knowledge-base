@@ -16,6 +16,7 @@
 - 🔍 **语义搜索**: 基于向量相似度的智能搜索，展示完整执行流程
 - 💬 **智能问答**: RAG 架构，基于知识库内容回答问题，附带来源引用
 - 🔌 **MCP 协议**: 暴露 AI 工具能力，Hermes/Claude 可直接调用代码搜索和问答
+- 📦 **Skill 集成**: 配套 `code-search` skill（zip），封装 MCP 工具用法，Claude/Cursor/CodeMaker 一键接入
 - 📊 **系统看板**: 文档/邮件统计、向量存储状态、性能数据可视化
 
 ## 适用场景
@@ -124,6 +125,37 @@ mcp_servers:
 - `mcp_code-kb_code_list_repos` — 列出已索引仓库
 - `mcp_code-kb_code_file_context` — 获取文件上下文
 - `mcp_code-kb_code_trace` — 追踪调用链（谁调了它 / 它调了谁）
+
+> v2.0 起 MCP 端点已切换为 `/mcp/`（Streamable HTTP，mcp SDK v1.x），同时前端「🤖 Agent 接入」页内置 5 个子 tab 引导接入。
+
+### 📦 Skill 集成（给 Claude/Cursor/CodeMaker 用）
+
+除 MCP 外，本项目还提供 `code-search` skill（zip 包），把 MCP 工具调用流程封装成 AI Agent 友好的"使用说明书"。Agent 装上后**自动学会**怎么调上面的 5 个 MCP 工具。
+
+**下载方式**（前端「🤖 Agent 接入 → Skill 接入 → 下载」）：
+```bash
+curl -O http://localhost:8000/api/skill/download
+# 得到 code-search.zip（3 文件 / ~40KB）
+```
+
+**安装方式**（前端页面给了 Claude Code / Cursor / CodeMaker / OpenCode 4 种命令）：
+```bash
+# Claude Code
+mkdir -p ~/.agents/skills/code-search && unzip code-search.zip -d ~/.agents/skills/
+
+# Cursor
+mkdir -p ~/.cursor/skills/code-search && unzip code-search.zip -d ~/.cursor/skills/
+```
+
+**后端端点**：
+| 端点 | 说明 |
+|------|------|
+| `/api/skill/raw` | SKILL.md 全文 + 关联文件列表 |
+| `/api/skill/info` | 文件清单（name/size）+ 总大小 |
+| `/api/skill/commands` | AST 解析 `kb_api.py` 出的子命令（search/chat/trace/file/repos...） |
+| `/api/skill/download` | 下载 `code-search.zip`（含 SKILL.md / README.md / scripts/kb_api.py） |
+
+> 与 MCP 的关系：MCP 是"工具调用通道"，Skill 是"工具使用说明书"。两者**正交互补** —— Skill 教 AI 怎么用 MCP 工具调用代码知识库。
 
 ## 💻 代码知识库（详细）
 
