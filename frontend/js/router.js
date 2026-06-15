@@ -22,6 +22,7 @@ const Routes = {
   "code/dashboard":  { file: "tabs/code-dashboard.html",  title: "代码统计",     init: "initCodeDashboard" },
   "code/lancedb":    { file: "tabs/code-lancedb.html",    title: "代码 LanceDB",  init: "initCodeLancedb" },
   "code/mcp":       { file: "tabs/code-mcp.html",       title: "MCP 接入",     init: "initCodeMcp" },
+  "code/arch":      { file: "tabs/code-arch.html",      title: "技术架构",     init: "initCodeArch" },
 };
 
 const defaultRoute = "doc/upload";
