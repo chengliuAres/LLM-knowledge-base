@@ -179,17 +179,15 @@ flowchart LR
     TR --> LayerA[顶层 3 路召回]
 
     subgraph LayerA [顶层 3 路 · 权重 1.0/0.5/1.5]
-        V1[path 1: vector<br/>bge-small-en 384d]:::top
-        K1[path 2: keyword_dual<br/>EN 1.0 + CN 0.3]:::top
-        L1[path 3: symbol_like<br/>LIKE %kw%]:::top
+        V1[path 1: vector<br/>bge-small-en 384d]
+        K1[path 2: keyword_dual<br/>EN 1.0 + CN 0.3]
+        L1[path 3: symbol_like<br/>LIKE %kw%]
     end
 
     V1 --> RRF[RRF 融合 k=60]
     K1 --> RRF
     L1 --> RRF
     RRF --> TopK[top-K chunks<br/>+ match_reasons]
-
-    classDef top fill:rgba(59,130,246,0.15),stroke:#3B82F6,color:#E2E8F0
                 </pre>
             </div>
 
@@ -914,7 +912,9 @@ class SearchEngine:
 
 <!-- ─────────── 脚本 ─────────── -->
 <script>
-async function initCodeArch() {
+// router.js 通过 eval 跑本 <script> 块；eval 内的 async function 声明不会挂到 window
+// → 用赋值表达式直接把函数挂到 window
+window.initCodeArch = async function() {
     // 1. 初始化 Mermaid（幂等，多次调用安全）
     if (window.initMermaid) window.initMermaid();
 
@@ -942,5 +942,5 @@ async function initCodeArch() {
             btn.textContent = isCollapsed ? '▼ 折叠' : '▶ 展开';
         });
     });
-}
+};
 </script>
