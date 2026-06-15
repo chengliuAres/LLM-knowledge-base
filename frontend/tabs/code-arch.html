@@ -890,12 +890,6 @@ class SearchEngine:
                 柳哥拍板接受"模块级 + 线程内只读 + 主线程建 parser"现状。
             </li>
             <li style="margin-bottom: 0.5rem;">
-                <strong>vendor 资源不入库：</strong>
-                <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">frontend/vendor/*.js</code>
-                被全局 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">.gitignore</code> 忽略；
-                新克隆需手动 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">curl</code> 下载。
-            </li>
-            <li style="margin-bottom: 0.5rem;">
                 <strong>扫描默认仓库：</strong>
                 首页 UI 未配置默认 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">repo_name</code>，首次扫描需手动输入。
             </li>
@@ -905,6 +899,16 @@ class SearchEngine:
                 且<strong>非流式</strong>返回完整 JSON。
             </li>
         </ol>
+        <div class="mt-4 pt-3" style="border-top: 1px solid var(--color-border);">
+            <p class="text-xs font-semibold mb-2" style="color: #86EFAC;">✅ 已修复（2026-06-15）</p>
+            <ul class="text-xs space-y-1" style="color: var(--color-foreground); padding-left: 1.25rem;">
+                <li><strong>vendor 资源入库：</strong>
+                    <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">frontend/vendor/*.js</code>
+                    （tailwindcss / chart / mermaid）已 <code>.gitignore</code> 移除忽略并入库，
+                    新克隆 clone 即用。
+                </li>
+            </ul>
+        </div>
     </div><!-- D11 -->
 </div>
 
