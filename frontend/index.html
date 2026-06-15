@@ -48,6 +48,7 @@
                 <a class="sidebar-item" data-route="code/dashboard" href="#code/dashboard">📊 <span>代码统计</span></a>
                 <a class="sidebar-item" data-route="code/lancedb"   href="#code/lancedb">🗄️ <span>代码 LanceDB</span></a>
                 <a class="sidebar-item" data-route="code/mcp"     href="#code/mcp">🤖 <span>Agent 接入</span></a>
+                <a class="sidebar-item" data-route="code/arch"    href="#code/arch">🏛️ <span>技术架构</span></a>
             </nav>
 
             <!-- 侧边栏底部：日志抽屉切换 + 导出 -->
@@ -289,6 +290,22 @@
     <!-- ─────────── 脚本 ─────────── -->
     <script src="js/shared.js?v=6"></script>
     <script src="js/router.js?v=7"></script>
+    <!-- Mermaid vendor（技术架构 tab 用） -->
+    <script src="vendor/js/mermaid.min.js"></script>
+    <script>
+        window.initMermaid = function() {
+            if (window.mermaid) {
+                window.mermaid.initialize({
+                    startOnLoad: false,
+                    theme: 'dark',
+                    securityLevel: 'loose',
+                    themeVariables: { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' },
+                });
+            }
+        };
+        if (window.mermaid) { initMermaid(); }
+        else { document.addEventListener('DOMContentLoaded', initMermaid); }
+    </script>
     <!-- 排除规则业务 JS（依赖 shared.js 的 escapeHtml/showToast）
          ⚠️ 必须保持在 router.js 之后、body 末尾：上方 #skip-rules-modal 静态 DOM 已就绪，
          initSkipRuleSelects() IIFE 才能同步访问 #skip-dir-category 等 select 节点。

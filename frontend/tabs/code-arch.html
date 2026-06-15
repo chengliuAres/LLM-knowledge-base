@@ -1,0 +1,942 @@
+<!-- code-arch.html — 代码知识库技术架构（A/B/C/D/E 五区 + D11 已知风险） -->
+
+<div class="max-w-6xl mx-auto space-y-4">
+    <!-- ─────────── 顶部标题 + 全局说明 ─────────── -->
+    <div class="panel">
+        <h2 class="text-lg font-semibold mb-2" style="color: var(--color-foreground);">
+            🏛️ 代码知识库技术架构
+        </h2>
+        <p class="text-sm" style="color: var(--color-muted);">
+            本 tab 拆 5 个区：A 扫描 / B 搜索 / C MCP / D 设计决策 / E 实时演示。每个区可折叠。
+            阅读顺序建议 A → B → C → D → E。
+        </p>
+    </div>
+
+    <!-- ════════════════════════════════════════ -->
+    <!-- ─── A 区：扫描流程（完整实现，Task 4 落地） ─── -->
+    <!-- ════════════════════════════════════════ -->
+    <div class="panel" data-region="A">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-base font-semibold" style="color: var(--color-foreground);">
+                📥 A. 扫描仓库 — 内部流程
+            </h3>
+            <button class="region-toggle"
+                    style="background: none; border: 1px solid var(--color-border); color: var(--color-muted);
+                           padding: 4px 12px; border-radius: 6px; font-size: 0.8125rem; cursor: pointer;">
+                ▼ 折叠
+            </button>
+        </div>
+        <p class="text-sm mb-4" style="color: var(--color-muted);">
+            POST <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">/api/code/scan</code>
+            触发后，后端 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">asyncio.create_task</code>
+            在后台全程异步走完「遍历 → 过滤 → 解析 → 分块 → 向量化 → 三路写库 → SSE 推送」7 个阶段。
+        </p>
+
+        <div class="region-content">
+            <!-- A.1 Mermaid 扫描流程图 -->
+            <h4 class="text-sm font-semibold mb-2" style="color: var(--color-accent);">A.1 扫描流程（Mermaid）</h4>
+            <div class="mb-5" style="background-color: var(--color-bg-elevated); border-radius: 8px; padding: 1rem;
+                        border: 1px solid var(--color-border); overflow-x: auto;">
+                <pre class="mermaid">
+flowchart TD
+    Start([用户 POST /api/code/scan]) --> GenID[生成 scan_id]
+    GenID --> Spawn[asyncio.create_task 后台扫描]
+    Spawn --> Walk[os.walk 遍历目录]
+    Walk --> Filter[skip_rules 过滤<br/>dirs + exts + max_file_size_kb]
+    Filter -->|未跳过| Parse[code_parser.scan_file<br/>tree-sitter AST]
+    Filter -->|跳过| Skip[skip + 累加 skipped_files]
+    Parse --> Chunk[混合分块<br/>function/class/method/struct/enum]
+    Chunk --> Embed[code_embedder.embed_batch<br/>bge-small-en 384d]
+    Embed --> Write1[code_lancedb/chunks.lance<br/>追加行]
+    Embed --> Write2[code_index.db FTS5<br/>build_fts 重建]
+    Embed --> Write3[code_relations 表<br/>caller→callee 边]
+    Write1 --> Progress[更新 scan_progress]
+    Write2 --> Progress
+    Write3 --> Progress
+    Progress -->|每文件 1 次| SSE[GET /sse 流推前端]
+    Progress -->|done=true| Done([扫描完成])
+    Skip --> Walk
+</pre>
+            </div>
+
+            <!-- A.2 关键步骤说明表 -->
+            <h4 class="text-sm font-semibold mb-2" style="color: var(--color-accent);">A.2 关键步骤</h4>
+            <div class="mb-5 overflow-x-auto">
+                <table class="w-full text-sm" style="border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid var(--color-border);">
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted); width: 40px;">#</th>
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted); width: 120px;">步骤</th>
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted); width: 180px;">模块</th>
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted);">关键参数 / 决策</th>
+                        </tr>
+                    </thead>
+                    <tbody style="color: var(--color-foreground);">
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;">1</td>
+                            <td style="padding: 8px 12px;">目录遍历</td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_routes.scan_directory</code></td>
+                            <td style="padding: 8px 12px;">走 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_skip_rules.json</code>（dirs/exts/max_file_size_kb）过滤；首版硬编码 100KB 已迁移配置（v2.1）</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;">2</td>
+                            <td style="padding: 8px 12px;">语法解析</td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_parser.scan_file</code></td>
+                            <td style="padding: 8px 12px;">tree-sitter 多语言（Py/JS/TS/Java/Go/Rust/C++/Swift/OC），每线程独立 parser（pyo3 不可跨线程）</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;">3</td>
+                            <td style="padding: 8px 12px;">混合分块</td>
+                            <td style="padding: 8px 12px;">同上</td>
+                            <td style="padding: 8px 12px;">function/class/method/struct/enum → 子块（sub_chunk_size ≈ 1500 字符）</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;">4</td>
+                            <td style="padding: 8px 12px;">向量化</td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_embedder.embed_batch</code></td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">BAAI/bge-small-en-v1.5</code> 384d；启动时单例预加载</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;">5</td>
+                            <td style="padding: 8px 12px;">三路写库</td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_db.upsert_chunks</code></td>
+                            <td style="padding: 8px 12px;">LanceDB（向量） + SQLite FTS5（关键字） + <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_relations</code>（调用图）</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 12px;">6</td>
+                            <td style="padding: 8px 12px;">进度推送</td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_routes.scan/{id}/sse</code></td>
+                            <td style="padding: 8px 12px;">每文件完成后推 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">progress</code> 事件，前端 chart 实时刷新</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- A.3 关键配置表 -->
+            <h4 class="text-sm font-semibold mb-2" style="color: var(--color-accent);">A.3 关键配置（来自 code_skip_rules.json）</h4>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm" style="border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid var(--color-border);">
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted); width: 160px;">配置项</th>
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted); width: 240px;">默认值</th>
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted);">作用</th>
+                        </tr>
+                    </thead>
+                    <tbody style="color: var(--color-foreground);">
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">skip_dirs</code></td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">.git, node_modules, build, dist, ...</code></td>
+                            <td style="padding: 8px 12px;">整目录跳过（17 项默认）</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">skip_exts</code></td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">.md, .txt, .json, .lock, ...</code></td>
+                            <td style="padding: 8px 12px;">文件后缀跳过（20+ 项默认）</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">max_file_size_kb</code></td>
+                            <td style="padding: 8px 12px;">250</td>
+                            <td style="padding: 8px 12px;">单文件大小上限（v2.1 迁移自硬编码 100KB）</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">sub_chunk_size</code></td>
+                            <td style="padding: 8px 12px;">1500</td>
+                            <td style="padding: 8px 12px;">复合块（class 等）的子块上限字符数</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div><!-- .region-content -->
+    </div><!-- A 区 -->
+
+    <!-- ════════════════════════════════════════ -->
+    <!-- ─── B 区：搜索匹配（占位，Task 5 填充） ─── -->
+    <!-- ════════════════════════════════════════ -->
+    <div class="panel" data-region="B">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-base font-semibold" style="color: var(--color-foreground);">
+                🔍 B. 搜索匹配 — 内部流程
+            </h3>
+            <button class="region-toggle"
+                    style="background: none; border: 1px solid var(--color-border); color: var(--color-muted);
+                           padding: 4px 12px; border-radius: 6px; font-size: 0.8125rem; cursor: pointer;">
+                ▼ 折叠
+            </button>
+        </div>
+        <p class="text-sm mb-4" style="color: var(--color-muted);">
+            POST <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">/api/code/search</code>
+            走「翻译 → 顶层 3 路召回 → RRF 融合 → top-K」四段管线。核心思路：中文 query 先翻译成英文关键词，再在英文代码空间搜，不是跨语言 embedding。
+        </p>
+        <div id="arch-region-B-content" class="region-content">
+
+            <!-- B.1 混搜架构 Mermaid -->
+            <h4 class="text-sm font-semibold mb-2" style="color: var(--color-accent);">B.1 混搜架构（Mermaid）</h4>
+            <div class="mermaid-container" style="background: rgba(15,23,42,0.5); border: 1px solid var(--color-border); border-radius: 6px; padding: 1rem; margin: 0.75rem 0;">
+                <pre class="mermaid">
+flowchart LR
+    Q[用户 query<br/>中文 or 英文] --> TR[query_translator.translate<br/>中文→英文关键词]
+    TR --> LayerA[顶层 3 路召回]
+
+    subgraph LayerA [顶层 3 路 · 权重 1.0/0.5/1.5]
+        V1[path 1: vector<br/>bge-small-en 384d]:::top
+        K1[path 2: keyword_dual<br/>EN 1.0 + CN 0.3]:::top
+        L1[path 3: symbol_like<br/>LIKE %kw%]:::top
+    end
+
+    V1 --> RRF[RRF 融合 k=60]
+    K1 --> RRF
+    L1 --> RRF
+    RRF --> TopK[top-K chunks<br/>+ match_reasons]
+
+    classDef top fill:rgba(59,130,246,0.15),stroke:#3B82F6,color:#E2E8F0
+                </pre>
+            </div>
+
+            <!-- B.2 顶层 3 路降级链表 -->
+            <h4 class="text-sm font-semibold mb-2" style="color: var(--color-accent);">B.2 顶层 3 路降级链表</h4>
+            <div class="mb-5 overflow-x-auto">
+                <table class="w-full text-sm" style="border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid var(--color-border);">
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted); width: 100px;">路径</th>
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted); width: 200px;">模型/方法</th>
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted); width: 180px;">输入</th>
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted); width: 60px;">权重</th>
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted);">角色</th>
+                        </tr>
+                    </thead>
+                    <tbody style="color: var(--color-foreground);">
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">vector</code></td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">bge-small-en</code> 384d</td>
+                            <td style="padding: 8px 12px;">翻译后英文关键词</td>
+                            <td style="padding: 8px 12px;">1.0</td>
+                            <td style="padding: 8px 12px;">语义模糊召回</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">keyword_dual</code></td>
+                            <td style="padding: 8px 12px;">SQLite FTS5 + jieba</td>
+                            <td style="padding: 8px 12px;">翻译后英文 + 中文原 query</td>
+                            <td style="padding: 8px 12px;">0.5</td>
+                            <td style="padding: 8px 12px;">内部子双路 EN(1.0) + CN(0.3)</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">symbol_like</code></td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">symbol_name LIKE '%kw%'</code></td>
+                            <td style="padding: 8px 12px;">翻译后关键词 / 英文驼峰拆词</td>
+                            <td style="padding: 8px 12px;">1.5</td>
+                            <td style="padding: 8px 12px;"><strong>最可靠</strong>，兜底 FTS5 驼峰拆分盲区</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- B.3 翻译降级链 Mermaid -->
+            <h4 class="text-sm font-semibold mb-2" style="color: var(--color-accent);">B.3 翻译降级链（Mermaid）</h4>
+            <div class="mermaid-container" style="background: rgba(15,23,42,0.5); border: 1px solid var(--color-border); border-radius: 6px; padding: 1rem; margin: 0.75rem 0;">
+                <pre class="mermaid">
+flowchart TD
+    Q[query: 读附件] --> DM[词典匹配<br/>贪心最长 → jieba 逐词]
+    DM -->|命中| KW1[返回 read attachment]
+    DM -->|未命中| Cache[translation_cache.json]
+    Cache -->|命中| KW2[返回缓存值]
+    Cache -->|未命中| API[MyMemory API]
+    API -->|成功| KW3[返回 API 翻译<br/>⚠️ 不写缓存]
+    API -->|失败| LLM[LLM 直译]
+    LLM -->|成功| KW4[返回 LLM 翻译]
+    LLM -->|失败| FB[原 query 回退]
+    KW1 --> END([送入 B.1 混搜])
+    KW2 --> END
+    KW3 --> END
+    KW4 --> END
+    FB --> END
+                </pre>
+            </div>
+
+            <!-- B.4 trace BFS Mermaid -->
+            <h4 class="text-sm font-semibold mb-2" style="color: var(--color-accent);">B.4 调用链追踪 BFS（Mermaid）</h4>
+            <div class="mermaid-container" style="background: rgba(15,23,42,0.5); border: 1px solid var(--color-border); border-radius: 6px; padding: 1rem; margin: 0.75rem 0;">
+                <pre class="mermaid">
+flowchart TD
+    S[输入符号:<br/>reloadAttachmentByCellModel] --> L0[L0: search_code 定位定义点]
+    L0 --> N1[节点1: GHReadProtocolImpl.reloadAttachmentByCellModel]
+    N1 -->|查 code_relations.outgoing| N2[节点2: GHMailListCellModel.refreshData]
+    N1 -->|查 code_relations.outgoing| N3[节点3: GHAttachmentLoader.fetchData]
+    N2 -->|outgoing| N4[节点4: addObject:]
+    N2 -->|outgoing| N5[节点5: compare:]
+    N3 -->|outgoing| N6[节点6: sendAsynchronousRequest]
+    M[direction=hierarchy<br/>继承链: 反向查 relations.incoming]
+                </pre>
+            </div>
+
+            <!-- B.5 关键代码引用 -->
+            <h4 class="text-sm font-semibold mb-2" style="color: var(--color-accent);">B.5 关键代码引用</h4>
+            <p class="text-xs mb-2" style="color: var(--color-muted);">以下为示意代码（结构对应 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_search.py</code> 实际入口，非逐字拷贝）：</p>
+            <pre style="background: rgba(15,23,42,0.7); padding: 0.75rem; border-radius: 4px; font-family: var(--font-mono); font-size: 0.85em; overflow-x: auto;">
+# 真实入口 search_code(mode='hybrid')，见 code_search.py:320
+def search_code(query, mode="hybrid", top_k=20, repo_name=None, language=None):
+    # 翻译
+    keywords = query_translator.translate(query)  # 走 B.3 降级链
+    # 顶层 3 路召回
+    vec_results = code_db.vector_search(keywords, top_k)        # 顶层 1
+    kw_results  = _keyword_search_dual(keywords, query)        # 顶层 2（EN+CN 子双路）
+    like_results = code_db.symbol_like(keywords)                 # 顶层 3
+    # 顶层 RRF 融合（权重 [1.0, 0.5, 1.5]）
+    fused = rrf_fusion(
+        [vec_results, kw_results, like_results],
+        weights=[1.0, 0.5, 1.5],
+        k=60,
+    )
+    return fused[:top_k]</pre>
+
+        </div><!-- .region-content -->
+    </div><!-- B 区 -->
+
+    <!-- ════════════════════════════════════════ -->
+    <!-- ─── C 区：MCP 协议（占位，Task 5 填充） ─── -->
+    <!-- ════════════════════════════════════════ -->
+    <div class="panel" data-region="C">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-base font-semibold" style="color: var(--color-foreground);">
+                🔌 C. MCP 协议 — Tools 全景
+            </h3>
+            <button class="region-toggle"
+                    style="background: none; border: 1px solid var(--color-border); color: var(--color-muted);
+                           padding: 4px 12px; border-radius: 6px; font-size: 0.8125rem; cursor: pointer;">
+                ▼ 折叠
+            </button>
+        </div>
+        <p class="text-sm mb-4" style="color: var(--color-muted);">
+            MCP 端点 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">/mcp/</code>
+            暴露 5 个 tools，基于 Streamable HTTP 协议（mcp SDK v1.12.4），AI Agent 通过 JSON-RPC 2.0 调用。
+        </p>
+        <div id="arch-region-C-content" class="region-content">
+
+            <!-- C.1 MCP 5 tools 总览表 -->
+            <h4 class="text-sm font-semibold mb-2" style="color: var(--color-accent);">C.1 5 Tools 总览</h4>
+            <div class="mb-5 overflow-x-auto">
+                <table class="w-full text-sm" style="border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid var(--color-border);">
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted); width: 130px;">Tool</th>
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted); width: 190px;">入参</th>
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted); width: 190px;">内部调用</th>
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted);">返回</th>
+                        </tr>
+                    </thead>
+                    <tbody style="color: var(--color-foreground);">
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_search</code></td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">query, repo, top_k, hybrid</code></td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_search.search_code</code></td>
+                            <td style="padding: 8px 12px;">top-K chunks + match_reasons</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_chat</code></td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">question, repo, language</code></td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_search.search_code</code> + <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">llm_client</code></td>
+                            <td style="padding: 8px 12px;"><strong>非流式</strong> JSON 字符串（REST <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">/api/code/chat</code> 才支持 SSE）</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_list_repos</code></td>
+                            <td style="padding: 8px 12px;">—</td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_db.list_repos</code></td>
+                            <td style="padding: 8px 12px;">已索引仓库列表</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_file_context</code></td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">repo, file_name</code></td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_db.resolve_file_by_name</code></td>
+                            <td style="padding: 8px 12px;">单文件所有 chunks（v2.1 改造：<code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">file_path</code> → <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">file_name</code>）</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_trace</code></td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">repo, symbol, direction, depth</code></td>
+                            <td style="padding: 8px 12px;"><code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_db.trace_chain</code> / <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">trace_hierarchy</code></td>
+                            <td style="padding: 8px 12px;">BFS 调用链 / 继承链</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- C.2 Streamable HTTP Mermaid -->
+            <h4 class="text-sm font-semibold mb-2" style="color: var(--color-accent);">C.2 Streamable HTTP 协议（Mermaid）</h4>
+            <div class="mermaid-container" style="background: rgba(15,23,42,0.5); border: 1px solid var(--color-border); border-radius: 6px; padding: 1rem; margin: 0.75rem 0;">
+                <pre class="mermaid">
+sequenceDiagram
+    participant Agent as AI Agent (MCP client)
+    participant MCP as code_mcp_v2.py<br/>MCP Server
+    participant SR as code_search.py
+    participant CD as code_db.py
+    participant LLM as llm_client.py
+
+    Agent->>MCP: POST /mcp/ tools/call code_search
+    MCP->>SR: search_code(mode='hybrid', ...)
+    SR->>CD: vector + fts5_dual + symbol_like
+    CD-->>SR: 三路召回结果
+    SR-->>MCP: RRF 融合 top-K
+    MCP-->>Agent: JSON-RPC 2.0 响应
+
+    Agent->>MCP: POST /mcp/ tools/call code_chat
+    MCP->>SR: search_code(mode='hybrid', top_k=5)
+    SR-->>MCP: top-K chunks
+    MCP->>LLM: build_rag_prompt (一次性，非流式)
+    LLM-->>MCP: 完整回答 JSON
+    MCP-->>Agent: JSON 字符串 (MCP 端 code_chat 非流式)
+                </pre>
+            </div>
+
+            <!-- C.3 e2e 真实 query 链路 -->
+            <h4 class="text-sm font-semibold mb-2" style="color: var(--color-accent);">C.3 e2e 真实 query 链路</h4>
+            <p class="text-xs mb-2" style="color: var(--color-muted);">示例：Agent 收到"代码里怎么读取附件"——</p>
+            <ol class="text-sm space-y-2" style="color: var(--color-foreground); padding-left: 1.25rem; list-style: decimal;">
+                <li style="margin-bottom: 0.5rem;">
+                    Agent 调 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_search(query="读附件", repo="ghmail")</code>
+                </li>
+                <li style="margin-bottom: 0.5rem;">
+                    MCP 走 B 区混搜：翻译"读附件" → <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">read attachment</code>，顶层 3 路，命中 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">GHAttachmentLoader.m</code>、<code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">GHReadProtocolImpl.m</code>
+                </li>
+                <li style="margin-bottom: 0.5rem;">
+                    Agent 拿 top-3 chunks，调 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_file_context(repo="ghmail", file_name="GHAttachmentLoader.m")</code> 看完整文件
+                </li>
+                <li style="margin-bottom: 0.5rem;">
+                    Agent 调 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_trace(repo="ghmail", symbol="GHAttachmentLoader.fetchData", direction="callees", depth=2)</code> 看下游调用
+                </li>
+                <li>
+                    Agent 用上下文调 <strong>MCP</strong> <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">code_chat(question="详细说明", repo="ghmail")</code> 拿到<strong>非流式 JSON 回答</strong>；如需流式，改调 <strong>REST</strong> <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">POST /api/code/chat</code>（<code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">stream: true</code>）
+                </li>
+            </ol>
+
+        </div><!-- .region-content -->
+    </div><!-- C 区 -->
+
+    <!-- ════════════════════════════════════════ -->
+    <!-- ─── D 区：设计决策（占位，Task 6 填充） ─── -->
+    <!-- ════════════════════════════════════════ -->
+    <div class="panel" data-region="D">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-base font-semibold" style="color: var(--color-foreground);">
+                🧠 D. 设计决策 — 为什么这么做
+            </h3>
+            <button class="region-toggle"
+                    style="background: none; border: 1px solid var(--color-border); color: var(--color-muted);
+                           padding: 4px 12px; border-radius: 6px; font-size: 0.8125rem; cursor: pointer;">
+                ▼ 折叠
+            </button>
+        </div>
+        <p class="text-sm mb-4" style="color: var(--color-muted);">
+            5 个核心设计决策（实验验证），均来自 2026-06-10 搜索准确率实验。每个决策附带反例故事，来自柳哥的实际报修记录。
+        </p>
+        <div id="arch-region-D-content" class="region-content">
+
+            <!-- D.1 设计决策表 -->
+            <h4 class="text-sm font-semibold mb-2" style="color: var(--color-accent);">D.1 5 个核心决策</h4>
+            <div class="mb-5 overflow-x-auto">
+                <table class="w-full text-sm" style="border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid var(--color-border);">
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted); width: 280px;">决策</th>
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted); width: 60px;">结论</th>
+                            <th style="padding: 8px 12px; text-align: left; color: var(--color-muted);">证据</th>
+                        </tr>
+                    </thead>
+                    <tbody style="color: var(--color-foreground);">
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;">跨语言 embedding（e5/bge-m3）代替翻译层</td>
+                            <td style="padding: 8px 12px;">❌</td>
+                            <td style="padding: 8px 12px;">中文 query → 纯英文 OC 代码召回接近随机，跨语言桥训练于平行语料非代码</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;">词典是第一道防线</td>
+                            <td style="padding: 8px 12px;">✅</td>
+                            <td style="padding: 8px 12px;">"读信"→read/mail/message 命中 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">ReadCell.m</code>；缺词典降级 MyMemory 译成 letter/reading 翻车</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;">embedding 前剥离注释/中文字面量</td>
+                            <td style="padding: 8px 12px;">✅</td>
+                            <td style="padding: 8px 12px;">注释/NSString 中的中文会误导 bge 模型，剥离后向量路不再偏到中文噪声</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--color-border);">
+                            <td style="padding: 8px 12px;">MyMemory 翻译不写入缓存/词典</td>
+                            <td style="padding: 8px 12px;">✅</td>
+                            <td style="padding: 8px 12px;">MyMemory 直译（"读信"→letter）置信度低且脱离代码命名习惯，写缓存会永久污染</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 12px;">向量阈值 0.0 → 0.5</td>
+                            <td style="padding: 8px 12px;">✅</td>
+                            <td style="padding: 8px 12px;">score = (1+余弦相似度)/2，0.5=正交分界，砍掉"最近邻但无关"的噪声</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- D.2 反例：跨语言 embedding 翻车 -->
+            <details class="panel" style="background-color: rgba(100, 116, 139, 0.06); padding: 0.75rem 1rem; margin-bottom: 0.5rem;">
+                <summary class="cursor-pointer font-medium" style="color: var(--color-foreground);">
+                    D.2 反例：跨语言 embedding 翻车（e5 中文 → 英文 OC 代码）
+                </summary>
+                <div class="mt-3 text-sm" style="color: var(--color-foreground);">
+                    <p>实测 e5 中文 query → 英文 OC 代码 top-5 命中 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">UITableView</code> / <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">UICollection</code> 等基础类（语义沾边但符号名完全无关）。</p>
+                    <p class="mt-2"><strong>原因</strong>：跨语言桥训练于 XNLI / Bucc 等<strong>平行语料</strong>，<strong>不是代码语料</strong>，所以代码命名（驼峰/蛇形）不在向量空间内有意义映射。</p>
+                    <p class="mt-2"><strong>正确方案</strong>：翻译层（词典 + 缓存 + API + LLM）+ 同语言 embedding（bge-small-en）。</p>
+                </div>
+            </details>
+
+            <!-- D.3 反例：词典缺位翻车 -->
+            <details class="panel" style="background-color: rgba(100, 116, 139, 0.06); padding: 0.75rem 1rem; margin-bottom: 0.5rem;">
+                <summary class="cursor-pointer font-medium" style="color: var(--color-foreground);">
+                    D.3 反例：词典缺位翻车（"读信" → letter/reading）
+                </summary>
+                <div class="mt-3 text-sm" style="color: var(--color-foreground);">
+                    <p>2026-06-12 报"读信" → MyMemory 直译 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">letter/reading</code> → 符号路 LIKE <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">%letter%</code> 命中 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">letter.png</code> 资源文件、零业务方法。</p>
+                    <p class="mt-2"><strong>修复</strong>：在 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">query_translator.py:45</code> <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">TERM_MAP</code> 加 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">读信 → read/mail/message</code> 后，直接命中 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">ReadCell.m</code> / <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">MailBoxViewController.m</code>。</p>
+                </div>
+            </details>
+
+            <!-- D.4 反例：中文注释污染 embedding -->
+            <details class="panel" style="background-color: rgba(100, 116, 139, 0.06); padding: 0.75rem 1rem; margin-bottom: 0.5rem;">
+                <summary class="cursor-pointer font-medium" style="color: var(--color-foreground);">
+                    D.4 反例：中文注释污染 embedding（NSString 字面量干扰 bge 模型）
+                </summary>
+                <div class="mt-3 text-sm" style="color: var(--color-foreground);">
+                    <p>发现向量路 top-3 总偏向带中文 NSString 字面量的 chunk（如 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">NSLog(@"读取附件失败...")</code>），因为 bge-zh 残留能力让模型对中文字面量有"亲和力"。</p>
+                    <p class="mt-2"><strong>修复</strong>：embedder 预处理时正则 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">re.sub(r'[一-龥]+', ' ', text)</code> 剥离中文。</p>
+                </div>
+            </details>
+
+            <!-- D.5 反例：MyMemory 缓存污染 -->
+            <details class="panel" style="background-color: rgba(100, 116, 139, 0.06); padding: 0.75rem 1rem; margin-bottom: 0.5rem;">
+                <summary class="cursor-pointer font-medium" style="color: var(--color-foreground);">
+                    D.5 反例：MyMemory 缓存污染（错误翻译永久驻留缓存）
+                </summary>
+                <div class="mt-3 text-sm" style="color: var(--color-foreground);">
+                    <p>早期版本 MyMemory 翻译结果直接写 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">translation_cache.json</code>，导致后来词典完善后<strong>旧 cache 仍优先命中</strong> <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">letter/reading</code> 等错误翻译。</p>
+                    <p class="mt-2"><strong>修复</strong>：<code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">translation_cache.set()</code> 拒收 MyMemory 来源（<code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">source != 'mymemory'</code> 才允许写入）。</p>
+                </div>
+            </details>
+
+            <!-- D.6 额外：向量阈值过松噪声 -->
+            <details class="panel" style="background-color: rgba(100, 116, 139, 0.06); padding: 0.75rem 1rem;">
+                <summary class="cursor-pointer font-medium" style="color: var(--color-foreground);">
+                    D.6 额外：向量阈值过松噪声（score > 0.0 引入正交无关代码）
+                </summary>
+                <div class="mt-3 text-sm" style="color: var(--color-foreground);">
+                    <p>早期 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">score > 0.0</code> 全部保留，top-10 经常出现"最近邻但正交"的无关代码（如搜 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">read</code> → <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">release/dealloc</code>）。</p>
+                    <p class="mt-2"><strong>修复</strong>：阈值 0.5 = <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">(1 + 0) / 2</code> 正交分界，砍掉负相关噪声。</p>
+                </div>
+            </details>
+
+        </div><!-- .region-content -->
+    </div><!-- D 区 -->
+
+    <!-- ════════════════════════════════════════ -->
+    <!-- ─── E 区：实时演示 ─── -->
+    <!-- ════════════════════════════════════════ -->
+    <div class="panel" data-region="E">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-base font-semibold" style="color: var(--color-foreground);">
+                🎮 E. 实时演示 — 动手试试
+            </h3>
+            <button class="region-toggle"
+                    style="background: none; border: 1px solid var(--color-border); color: var(--color-muted);
+                           padding: 4px 12px; border-radius: 6px; font-size: 0.8125rem; cursor: pointer;">
+                ▼ 折叠
+            </button>
+        </div>
+        <p class="text-sm mb-4" style="color: var(--color-muted);">
+            3 张实操演示卡：📥 存入（Sandbox）/ 🔍 搜索（Sandbox）/ 🌐 混搜可视化（直击 3 路 + RRF）。
+        </p>
+        <div id="arch-region-E-content" class="region-content">
+
+            <!-- 演示 1 + 演示 2 双列布局 -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+
+                <!-- 演示 1：📥 存入演示（Sandbox 不写库） -->
+                <div class="panel" style="background-color: rgba(100, 116, 139, 0.10); border-color: rgba(100, 116, 139, 0.30);">
+                    <h4 class="font-semibold text-sm mb-4" style="color: var(--color-foreground);">📥 存入演示（Sandbox，不写库）</h4>
+                    <div class="space-y-3 mb-4">
+                        <div>
+                            <label class="text-xs mb-1 block" style="color: var(--color-muted);">代码片段</label>
+                            <textarea id="arch-insert-text" rows="4" class="input w-full text-sm font-mono" style="padding: 6px 10px;">def fib(n):
+    if n < 2:
+        return n
+    return fib(n-1) + fib(n-2)
+
+class SearchEngine:
+    def query(self, q):
+        return [r for r in self.index.search(q)]</textarea>
+                        </div>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div>
+                                <label class="text-xs mb-1 block" style="color: var(--color-muted);">language</label>
+                                <select id="arch-insert-lang" class="input w-full text-sm" style="padding: 6px 10px;">
+                                    <option value="python">python</option>
+                                    <option value="javascript">javascript</option>
+                                    <option value="typescript">typescript</option>
+                                    <option value="java">java</option>
+                                    <option value="go">go</option>
+                                    <option value="rust">rust</option>
+                                    <option value="cpp">cpp</option>
+                                    <option value="swift">swift</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-xs mb-1 block" style="color: var(--color-muted);">repo_name</label>
+                                <input type="text" id="arch-insert-repo" value="demo" class="input w-full text-sm" style="padding: 6px 10px;">
+                            </div>
+                            <div>
+                                <label class="text-xs mb-1 block" style="color: var(--color-muted);">file_path</label>
+                                <input type="text" id="arch-insert-path" value="demo/fib.py" class="input w-full text-sm" style="padding: 6px 10px;">
+                            </div>
+                        </div>
+                        <button onclick="runArchInsertDemo()" id="arch-insert-btn"
+                                class="btn w-full"
+                                style="background-color: var(--color-primary); color: var(--color-foreground); border: 1px solid var(--color-border); padding: 8px;">
+                            🚀 执行演示
+                        </button>
+                    </div>
+                    <div id="arch-insert-steps" class="space-y-3"></div>
+                </div>
+
+                <!-- 演示 2：🔍 搜索演示（Sandbox 演示，不写库） -->
+                <div class="panel" style="background-color: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.30);">
+                    <h4 class="font-semibold text-sm mb-4" style="color: var(--color-foreground);">🔍 搜索演示 <span class="text-xs font-normal" style="color: var(--color-muted);">（Sandbox 演示，不写库）</span></h4>
+                    <div class="space-y-3 mb-4">
+                        <div>
+                            <label class="text-xs mb-1 block" style="color: var(--color-muted);">查询词（自然语言 / 符号名均可）</label>
+                            <input type="text" id="arch-search-query" value="递归计算斐波那契" class="input w-full text-sm" style="padding: 6px 10px;">
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="text-xs mb-1 block" style="color: var(--color-muted);">top_k</label>
+                                <input type="number" id="arch-search-topk" value="5" class="input w-full text-sm" style="padding: 6px 10px;">
+                            </div>
+                            <div>
+                                <label class="text-xs mb-1 block" style="color: var(--color-muted);">score_threshold</label>
+                                <input type="number" id="arch-search-threshold" value="0.3" step="0.05" class="input w-full text-sm" style="padding: 6px 10px;">
+                            </div>
+                        </div>
+                        <button onclick="runArchSearchDemo()" id="arch-search-btn"
+                                class="btn w-full"
+                                style="background-color: rgba(245, 158, 11, 0.85); color: white; padding: 8px;">
+                            🔍 执行演示
+                        </button>
+                    </div>
+                    <div id="arch-search-steps" class="space-y-3"></div>
+                </div>
+
+            </div>
+
+            <!-- 演示 3：混搜可视化（直击 3 路召回 + RRF 融合） -->
+            <div class="panel" style="background-color: rgba(59, 130, 246, 0.08); border-color: rgba(59, 130, 246, 0.30);">
+                <h4 class="font-semibold text-sm mb-4" style="color: var(--color-foreground);">
+                    🌐 混搜可视化
+                    <span class="text-xs font-normal" style="color: var(--color-muted);">
+                        （直击 3 路召回 + RRF 融合，绕开 search_code 顶层封装）
+                    </span>
+                </h4>
+                <div class="space-y-3 mb-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-xs mb-1 block" style="color: var(--color-muted);">query（支持中文）</label>
+                            <input type="text" id="arch-hybrid-query" value="递归计算斐波那契" class="input w-full text-sm" style="padding: 6px 10px;">
+                        </div>
+                        <div>
+                            <label class="text-xs mb-1 block" style="color: var(--color-muted);">top_k</label>
+                            <input type="number" id="arch-hybrid-topk" value="5" class="input w-full text-sm" style="padding: 6px 10px;">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-xs mb-1 block" style="color: var(--color-muted);">repo_name (可选)</label>
+                            <input type="text" id="arch-hybrid-repo" placeholder="如 ghmail" class="input w-full text-sm" style="padding: 6px 10px;">
+                        </div>
+                        <div>
+                            <label class="text-xs mb-1 block" style="color: var(--color-muted);">language (可选)</label>
+                            <select id="arch-hybrid-lang" class="input w-full text-sm" style="padding: 6px 10px;">
+                                <option value="">不限</option>
+                                <option value="python">python</option>
+                                <option value="javascript">javascript</option>
+                                <option value="typescript">typescript</option>
+                                <option value="java">java</option>
+                                <option value="go">go</option>
+                                <option value="rust">rust</option>
+                                <option value="cpp">cpp</option>
+                                <option value="swift">swift</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button onclick="runArchHybridDemo()" id="arch-hybrid-btn" class="btn w-full" style="background-color: rgba(59, 130, 246, 0.85); color: white; padding: 8px;">
+                        🌐 执行 3 路召回 + RRF
+                    </button>
+                </div>
+                <div id="arch-hybrid-steps" class="space-y-3"></div>
+            </div>
+
+        </div><!-- .region-content -->
+    </div><!-- E 区 -->
+
+    <!-- ─────────── E 区演示脚本 ─────────── -->
+    <script>
+    // E 区公共：步骤渲染器
+    function renderArchSteps(container, steps, opts = {}) {
+        if (!steps || steps.length === 0) {
+            container.innerHTML = '<div class="text-xs" style="color: var(--color-muted);">⚠️ 演示端点未返回步骤数据。</div>';
+            return;
+        }
+        const title = opts.title || '执行步骤';
+        const meta = opts.meta || {};
+        let html = '<h5 class="text-sm font-semibold mb-2" style="color: var(--color-foreground);">' + window.escapeHtml(title) + '</h5>';
+        if (meta.chunk_id || meta.vector_dim) {
+            html += '<div class="text-xs mb-3" style="color: var(--color-muted);">chunk_id: <code>' + window.escapeHtml(meta.chunk_id || '-') + '</code> · vector_dim: ' + (meta.vector_dim || '-') + '</div>';
+        }
+        if (meta.fused_count != null) {
+            html += '<div class="text-xs mb-3" style="color: var(--color-muted);">RRF 融合返回: <strong>' + meta.fused_count + '</strong> 条</div>';
+        }
+        html += '<div class="space-y-2">';
+        steps.forEach(function(s, idx) {
+            // 兼容两种 schema：
+            //   sandbox 端点（demo_insert/demo_search）：{name, description, output}
+            //   hybrid-demo 端点：{name, description, output, vector_hits/...}
+            const stepName = s.name || s.step || ('步骤' + (idx + 1));
+            const stepDesc = s.description || s.detail || '';
+            // 兼容耗时字段：elapsed_ms / duration_ms
+            const elapsed = s.elapsed_ms != null ? s.elapsed_ms : (s.duration_ms != null ? Math.round(s.duration_ms) : null);
+            html += '<div class="panel" style="background-color: rgba(100, 116, 139, 0.08); padding: 0.75rem;">';
+            html += '<div class="flex items-center justify-between mb-1">';
+            html += '<span class="text-xs font-semibold" style="color: var(--color-accent);">步骤 ' + (idx + 1) + ': ' + window.escapeHtml(stepName) + '</span>';
+            html += '<span class="text-xs" style="color: var(--color-muted);">' + (elapsed != null ? elapsed + ' ms' : '-') + '</span>';
+            html += '</div>';
+            if (stepDesc) {
+                html += '<div class="text-xs mb-1" style="color: var(--color-foreground);">' + window.escapeHtml(stepDesc) + '</div>';
+            }
+            if (s.output) {
+                // 优先显示 output 关键字段（hit_count / model / fused_count 等），再附 JSON
+                const out = s.output;
+                const kv = [];
+                if (out.hit_count != null) kv.push('hit_count=' + out.hit_count);
+                if (out.fused_count != null) kv.push('fused_count=' + out.fused_count);
+                if (out.vector_hits != null) kv.push('vec=' + out.vector_hits);
+                if (out.keyword_hits != null) kv.push('kw=' + out.keyword_hits);
+                if (out.symbol_hits != null) kv.push('sym=' + out.symbol_hits);
+                if (out.en_hits != null) kv.push('en=' + out.en_hits);
+                if (out.cn_hits != null) kv.push('cn=' + out.cn_hits);
+                if (out.fused_hits != null) kv.push('fused=' + out.fused_hits);
+                else if (out.deduped_hits != null) kv.push('dedup=' + out.deduped_hits);
+                if (out.chunk_count != null) kv.push('chunks=' + out.chunk_count);
+                if (out.vector_dim != null) kv.push('dim=' + out.vector_dim);
+                else if (out.dim != null) kv.push('dim=' + out.dim);
+                if (out.model) kv.push('model=' + out.model);
+                if (out.method) kv.push('method=' + out.method);
+                if (out.confidence != null) kv.push('conf=' + out.confidence);
+                if (kv.length) {
+                    html += '<div class="text-xs mb-1" style="color: var(--color-muted);">' + window.escapeHtml(kv.join(' · ')) + '</div>';
+                }
+                // top5 / top_results 摘要
+                if (out.top5 || out.top_results || out.records_preview) {
+                    const list = out.top5 || out.top_results || out.records_preview;
+                    const label = out.top5 ? 'top5' : (out.top_results ? 'top_results' : 'records_preview');
+                    html += '<details style="margin-top:0.25rem;"><summary class="text-xs cursor-pointer" style="color: var(--color-accent);">▸ ' + label + ' (' + list.length + ')</summary>';
+                    html += '<pre class="text-xs whitespace-pre-wrap mt-1" style="color: var(--color-foreground); margin: 0; font-family: var(--font-mono); max-height: 200px; overflow-y: auto;">' + window.escapeHtml(JSON.stringify(list, null, 2)) + '</pre>';
+                    html += '</details>';
+                }
+            }
+            html += '</div>';
+        });
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    // 演示 1：📥 存入演示（Sandbox 不写库）
+    async function runArchInsertDemo() {
+        const btn = document.getElementById('arch-insert-btn');
+        const steps = document.getElementById('arch-insert-steps');
+        const text = document.getElementById('arch-insert-text').value;
+        const language = document.getElementById('arch-insert-lang').value;
+        const repo = document.getElementById('arch-insert-repo').value || 'demo';
+        const path = document.getElementById('arch-insert-path').value || 'demo/demo.py';
+
+        btn.disabled = true; btn.textContent = '⏳ 执行中…';
+        steps.innerHTML = '';
+
+        try {
+            const res = await fetch('/api/code/lancedb/demo/insert', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    text: text,
+                    language: language,
+                    repo_name: repo,
+                    file_path: path
+                })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            renderArchSteps(steps, data.steps || [], {
+                title: '📥 存入演示（Sandbox，不写库）',
+                meta: { chunk_id: data.chunk_id, vector_dim: data.vector_dim }
+            });
+        } catch (err) {
+            steps.innerHTML = '<div class="panel" style="background-color: rgba(239,68,68,0.10); border-color: rgba(239,68,68,0.40); color: #FCA5A5;">❌ ' + window.escapeHtml(err.message) + '</div>';
+        } finally {
+            btn.disabled = false; btn.textContent = '🚀 执行演示';
+        }
+    }
+
+    // 演示 2：🔍 搜索演示（Sandbox 演示，不写库）
+    async function runArchSearchDemo() {
+        const btn = document.getElementById('arch-search-btn');
+        const steps = document.getElementById('arch-search-steps');
+        const query = document.getElementById('arch-search-query').value;
+        const topK = parseInt(document.getElementById('arch-search-topk').value || '5');
+        const threshold = parseFloat(document.getElementById('arch-search-threshold').value || '0.3');
+
+        btn.disabled = true; btn.textContent = '⏳ 执行中…';
+        steps.innerHTML = '';
+
+        try {
+            const res = await fetch('/api/code/lancedb/demo/search', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    query: query,
+                    top_k: topK,
+                    score_threshold: threshold
+                })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            // 注意：demo_search 端点只返回 {steps: [...]}，不返回 results（与 demo_insert 一致）
+            renderArchSteps(steps, data.steps || [], {
+                title: '🔍 搜索演示（Sandbox 演示，不写库）',
+                meta: {}
+            });
+            // 真实 search_code 看 top-K 结果请走 "🌐 混搜可视化" 卡
+            if (!data.steps || data.steps.length === 0) {
+                steps.insertAdjacentHTML('beforeend',
+                    '<div class="text-xs mt-2" style="color: var(--color-muted);">💡 真实 search_code 返回 top-K 结果请用「🌐 混搜可视化」卡。</div>');
+            }
+        } catch (err) {
+            steps.innerHTML = '<div class="panel" style="background-color: rgba(239,68,68,0.10); border-color: rgba(239,68,68,0.40); color: #FCA5A5;">❌ ' + window.escapeHtml(err.message) + '</div>';
+        } finally {
+            btn.disabled = false; btn.textContent = '🔍 执行演示';
+        }
+    }
+
+    // 演示 3：混搜可视化（直击 3 路召回 + RRF 融合，绕开 search_code 顶层封装）
+    async function runArchHybridDemo() {
+        const btn = document.getElementById('arch-hybrid-btn');
+        const steps = document.getElementById('arch-hybrid-steps');
+        const query = document.getElementById('arch-hybrid-query').value;
+        const topK = parseInt(document.getElementById('arch-hybrid-topk').value || '5');
+        const repo = document.getElementById('arch-hybrid-repo').value.trim();
+        const lang = document.getElementById('arch-hybrid-lang').value;
+
+        btn.disabled = true; btn.textContent = '⏳ 3 路召回中…';
+        steps.innerHTML = '';
+
+        try {
+            const res = await fetch('/api/code/arch/hybrid-demo', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    query, top_k: topK,
+                    repo_name: repo || null,
+                    language: lang || null,
+                })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            renderArchSteps(steps, data.steps || [], {
+                title: '🌐 混搜可视化（直击 3 路 + RRF）',
+                meta: { fused_count: data.fused_count || 0 }
+            });
+            // 额外展示融合结果列表（含来源标注）
+            if (data.results && data.results.length) {
+                let listHtml = '<div class="mt-3"><h5 class="text-sm font-semibold mb-2" style="color: var(--color-foreground);">RRF 融合 top-K（标注来源路）</h5><div class="space-y-2">';
+                data.results.forEach(function(r, i) {
+                    listHtml += '<div class="panel" style="background-color: rgba(59, 130, 246, 0.06); padding: 0.5rem 0.75rem;">' +
+                        '<div class="text-xs font-mono" style="color: var(--color-foreground);">#' + (i+1) + ' ' + window.escapeHtml(r.file_path || r.id || '-') + (r.symbol_name ? ' · ' + window.escapeHtml(r.symbol_name) : '') + '</div>' +
+                        '<div class="text-xs mt-0.5" style="color: var(--color-muted);">来源: ' + (r.source || '?') + '</div>' +
+                        '</div>';
+                });
+                listHtml += '</div></div>';
+                steps.insertAdjacentHTML('beforeend', listHtml);
+            }
+        } catch (err) {
+            steps.innerHTML = '<div class="panel" style="background-color: rgba(239,68,68,0.10); border-color: rgba(239,68,68,0.40); color: #FCA5A5;">❌ ' + window.escapeHtml(err.message) + '</div>';
+        } finally {
+            btn.disabled = false; btn.textContent = '🌐 执行 3 路召回 + RRF';
+        }
+    }
+    </script>
+
+    <!-- ════════════════════════════════════════ -->
+    <!-- ─── D11 已知风险段（独立卡片，放最后） ─── -->
+    <!-- ════════════════════════════════════════ -->
+    <div class="panel" style="background-color: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.30);">
+        <h3 class="text-base font-semibold mb-3" style="color: #FCD34D;">
+            ⚠️ D11. 已知风险 / 待办
+        </h3>
+        <p class="text-xs mb-3" style="color: var(--color-muted);">
+            来源：当前主仓 CLAUDE.md 描述与代码实情尚未完全对齐（见 Task 8 同步项），下列为已知风险。
+        </p>
+        <ol class="text-sm space-y-2" style="color: var(--color-foreground); padding-left: 1.25rem;">
+            <li style="margin-bottom: 0.5rem;">
+                <strong><code>_PARSER_CACHE</code> 跨线程：</strong>
+                CLAUDE.md 描述为 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">threading.local()</code>，
+                代码实情是模块级 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">dict</code>；
+                柳哥拍板接受"模块级 + 线程内只读 + 主线程建 parser"现状。
+            </li>
+            <li style="margin-bottom: 0.5rem;">
+                <strong>vendor 资源不入库：</strong>
+                <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">frontend/vendor/*.js</code>
+                被全局 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">.gitignore</code> 忽略；
+                新克隆需手动 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">curl</code> 下载。
+            </li>
+            <li style="margin-bottom: 0.5rem;">
+                <strong>扫描默认仓库：</strong>
+                首页 UI 未配置默认 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">repo_name</code>，首次扫描需手动输入。
+            </li>
+            <li style="margin-bottom: 0;">
+                <strong>MCP <code>code_chat</code> 入参名：</strong>
+                入参为 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">question</code>（不是 <code class="text-xs" style="background-color: var(--color-bg-elevated); padding: 1px 5px; border-radius: 3px;">query</code>），
+                且<strong>非流式</strong>返回完整 JSON。
+            </li>
+        </ol>
+    </div><!-- D11 -->
+</div>
+
+<!-- ─────────── 脚本 ─────────── -->
+<script>
+async function initCodeArch() {
+    // 1. 初始化 Mermaid（幂等，多次调用安全）
+    if (window.initMermaid) window.initMermaid();
+
+    // 2. 渲染所有 <pre class="mermaid"> 块
+    if (window.mermaid && typeof window.mermaid.run === 'function') {
+        try {
+            await window.mermaid.run({ querySelector: '.mermaid' });
+        } catch (err) {
+            console.error('[code-arch] Mermaid 渲染失败:', err);
+        }
+    }
+
+    // 3. 折叠交互（5 个区都支持：A/B/C/D/E）
+    document.querySelectorAll('[data-region]').forEach(region => {
+        const btn = region.querySelector('.region-toggle');
+        const content = region.querySelector('.region-content');
+        if (!btn || !content) return;
+        // 初始：全部展开
+        content.style.display = '';
+        btn.textContent = '▼ 折叠';
+
+        btn.addEventListener('click', () => {
+            const isCollapsed = content.style.display === 'none';
+            content.style.display = isCollapsed ? '' : 'none';
+            btn.textContent = isCollapsed ? '▼ 折叠' : '▶ 展开';
+        });
+    });
+}
+</script>

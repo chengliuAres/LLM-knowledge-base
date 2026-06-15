@@ -1457,6 +1457,184 @@ async def demo_search(req: DemoSearchRequest):
         raise HTTPException(500, detail=str(e))
 
 
+# ── 架构演示：hybrid-demo（直击 3 路召回 + RRF 融合）───────────
+
+class HybridDemoRequest(BaseModel):
+    query: str = "递归计算斐波那契"
+    top_k: int = 5
+    repo_name: Optional[str] = None
+    language: Optional[str] = None
+
+
+@router.post("/arch/hybrid-demo")
+async def hybrid_demo(req: HybridDemoRequest):
+    """技术架构演示：直击 3 路召回 + RRF 融合（绕开 search_code 顶层封装）"""
+    from code_embedder import embed_query, get_code_model_info
+    from code_db import search_vector, search_keyword, search_symbol_by_keywords
+    from code_search import rrf_fusion
+    from query_translator import translate_query_sync
+    import re
+
+    try:
+        steps = []
+        has_cn = bool(re.search(r'[一-龥]', req.query))
+        translated = []
+        translation_info = None
+
+        # clamp top_k
+        top_k = max(1, min(req.top_k, 50))
+        pool_k = max(top_k * 3, 30)
+
+        # Step 1: 翻译（如果含中文）
+        if has_cn:
+            translation = translate_query_sync(req.query, use_llm=False, timeout=2.0)
+            translated = translation.translated
+            translation_info = {
+                "method": translation.method,
+                "translated": translated,
+                "confidence": translation.confidence,
+            }
+            steps.append({
+                "name": "translate",
+                "description": f"中文 query → 英文关键词 (方法: {translation.method}, 置信度: {translation.confidence})",
+                "output": translation_info,
+            })
+
+        # 决定 3 路召回的"输入关键词"
+        symbol_keywords = translated if translated else ([req.query] if req.query else [])
+        if not has_cn and req.query:
+            # 英文 query: 尝试驼峰拆词
+            parts = re.findall(r'[A-Z]?[a-z]+|[A-Z]+(?=[A-Z]|$)|\d+', req.query)
+            parts = [p for p in parts if len(p) >= 3]
+            if parts and parts != [req.query]:
+                symbol_keywords = [req.query] + parts[:3]
+
+        # Step 2: 顶层 1 —— vector（用翻译后关键词，模拟 search_code 内部 _vector_search_per_keyword 行为）
+        vector_results = []
+        if has_cn and translated:
+            # 多关键词：分别 embed + 简单合并去重（演示版不调 RRF，便于前端可视化）
+            seen = set()
+            for kw in translated[:3]:  # 上限 3 个避免延迟
+                vec = embed_query(kw)
+                hits = search_vector(query_vector=vec, top_k=pool_k, repo_name=req.repo_name, language=req.language)
+                for h in hits:
+                    if h["id"] not in seen:
+                        h["_matched_kw"] = kw
+                        seen.add(h["id"])
+                        vector_results.append(h)
+            vector_results = vector_results[:pool_k]
+        else:
+            vec = embed_query(req.query)
+            vector_results = search_vector(query_vector=vec, top_k=pool_k, repo_name=req.repo_name, language=req.language)
+            for h in vector_results:
+                h["_matched_kw"] = req.query
+
+        steps.append({
+            "name": "vector_recall",
+            "description": f"顶层 1 路 · 向量召回 ({len(vector_results)} hits, 权重 1.0)",
+            "output": {
+                "matched_keywords": symbol_keywords[:1] if has_cn else [req.query],
+                "hit_count": len(vector_results),
+                "top5": [
+                    {"id": r["id"], "file_path": r.get("file_path"), "symbol_name": r.get("symbol_name"), "score": round(r.get("score", 0), 3)}
+                    for r in vector_results[:5]
+                ],
+            },
+        })
+
+        # Step 3: 顶层 2 —— keyword_dual：内部 EN+CN 子双路 RRF(1.0, 0.3) 融合
+        #   对齐 search_code._keyword_search_dual 的语义：翻译后关键词走 EN，
+        #   原 query 走 CN（无翻译时只走原 query FTS5）。
+        en_fts: list[dict] = []
+        if translated:
+            for kw in translated[:3]:
+                hits = search_keyword(query=kw, top_k=pool_k, repo_name=req.repo_name, language=req.language)
+                en_fts.extend(hits)
+        cn_fts = search_keyword(query=req.query, top_k=pool_k, repo_name=req.repo_name, language=req.language)
+
+        # 子双路 RRF 融合（与 _keyword_search_dual 行为一致）
+        if en_fts and cn_fts:
+            keyword_results = rrf_fusion(en_fts, cn_fts, top_k=pool_k, weights=[1.0, 0.3])
+        elif en_fts:
+            keyword_results = en_fts[:pool_k]
+        else:
+            keyword_results = cn_fts[:pool_k]
+
+        steps.append({
+            "name": "keyword_recall",
+            "description": f"顶层 2 路 · keyword_dual: 内部 EN+CN 子双路 RRF(1.0, 0.3) → {len(keyword_results)} hits, 顶层权重 0.5",
+            "output": {
+                "en_hits": len(en_fts),
+                "cn_hits": len(cn_fts),
+                "fused_hits": len(keyword_results),
+                "top5": [
+                    {"id": r["id"], "file_path": r.get("file_path"), "symbol_name": r.get("symbol_name"), "score": round(r.get("score", 0), 3)}
+                    for r in keyword_results[:5]
+                ],
+            },
+        })
+
+        # Step 4: 顶层 3 —— symbol_like
+        symbol_results = []
+        if symbol_keywords:
+            symbol_results = search_symbol_by_keywords(keywords=symbol_keywords, top_k=pool_k, repo_name=req.repo_name, language=req.language)
+
+        steps.append({
+            "name": "symbol_recall",
+            "description": f"顶层 3 路 · 符号 LIKE 召回 ({len(symbol_results)} hits, 权重 1.5, **最可靠**)",
+            "output": {
+                "keywords": symbol_keywords,
+                "hit_count": len(symbol_results),
+                "top5": [
+                    {"id": r["id"], "file_path": r.get("file_path"), "symbol_name": r.get("symbol_name"), "score": round(r.get("score", 0), 3)}
+                    for r in symbol_results[:5]
+                ],
+            },
+        })
+
+        # Step 5: RRF 融合
+        if vector_results or keyword_results or symbol_results:
+            fused = rrf_fusion(
+                vector_results, keyword_results, symbol_results,
+                top_k=top_k, weights=[1.0, 0.5, 1.5],
+            )
+            # 标注来源
+            vec_ids = {r["id"] for r in vector_results}
+            kw_ids = {r["id"] for r in keyword_results}
+            sym_ids = {r["id"] for r in symbol_results}
+            for r in fused:
+                sources = []
+                if r["id"] in vec_ids: sources.append("vec")
+                if r["id"] in kw_ids: sources.append("kw")
+                if r["id"] in sym_ids: sources.append("sym")
+                r["source"] = "+".join(sources) if len(sources) > 1 else (sources[0] if sources else "?")
+
+            steps.append({
+                "name": "rrf_fusion",
+                "description": f"RRF 融合 (k=60, 权重 [1.0, 0.5, 1.5]) → top {top_k}",
+                "output": {
+                    "fused_count": len(fused),
+                    "top_results": [
+                        {"id": r["id"], "file_path": r.get("file_path"), "symbol_name": r.get("symbol_name"), "source": r["source"]}
+                        for r in fused
+                    ],
+                },
+            })
+        else:
+            fused = []
+            steps.append({
+                "name": "rrf_fusion",
+                "description": "3 路均为空 → 融合结果为空",
+                "output": {"fused_count": 0, "top_results": []},
+            })
+
+        return {"steps": steps, "results": fused, "fused_count": len(fused)}
+
+    except Exception as e:
+        log.exception("hybrid_demo failed")
+        raise HTTPException(500, detail=str(e))
+
+
 # ── Agent 配置 ───────────────────────────────────────────────────
 
 import threading
