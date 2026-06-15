@@ -122,11 +122,11 @@ export/
 │   ├── requirements.txt   ← 最小依赖
 │   ├── start_mcp_server.py← 独立启动脚本（占位）
 │   └── README.md
-└── skill/                 ← AI Agent Skill（教 AI 怎么用）
+└── code-search/           ← AI Agent Skill（教 AI 怎么用）
     ├── SKILL.md           ← 完整使用说明书（13 章节）
     ├── README.md
     └── scripts/
-        └── kb_api.py      ← Python 兜底 CLI（占位）
+        └── kb_rest.py     ← Python 兜底 CLI
 ```
 
 ## 🔄 双模调用（自动降级）
@@ -134,7 +134,7 @@ export/
 | 模式 | 适用 | 命令 |
 |------|------|------|
 | **A：MCP 工具**（首选） | AI 工具已配置 MCP | AI 直接调用 `code_search` 等 |
-| **B：Python 脚本**（兜底） | MCP 不可用 | `python3 scripts/kb_api.py search --query "XX"` |
+| **B：Python 脚本**（兜底） | MCP 不可用 | `python3 scripts/kb_rest.py search --query "XX"` |
 
 AI Agent 知道自动降级（MCP 失败 → 立即用 Python 脚本继续搜索，不阻塞工作）。
 

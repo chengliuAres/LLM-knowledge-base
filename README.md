@@ -158,8 +158,8 @@ mkdir -p ~/.config/opencode/skill/code-search && unzip ~/Downloads/code-search.z
 |------|------|
 | `/api/skill/raw` | SKILL.md 全文 + 关联文件列表 |
 | `/api/skill/info` | 文件清单（name/size）+ 总大小 |
-| `/api/skill/commands` | AST 解析 `kb_api.py` 出的子命令（search/chat/trace/file/repos...） |
-| `/api/skill/download` | 下载 `code-search.zip`（含 SKILL.md / README.md / scripts/kb_api.py） |
+| `/api/skill/commands` | AST 解析 `kb_rest.py` 出的子命令（repos/search/chat/trace） |
+| `/api/skill/download` | 下载 `code-search.zip`（含 SKILL.md / README.md / scripts/kb_rest.py） |
 
 > 与 MCP 的关系：MCP 是"工具调用通道"，Skill 是"工具使用说明书"。两者**正交互补** —— Skill 教 AI 怎么用 MCP 工具调用代码知识库。
 

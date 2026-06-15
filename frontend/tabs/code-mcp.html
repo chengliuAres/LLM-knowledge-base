@@ -249,17 +249,16 @@ run_in_background(true): code_search(query="membership plus payment", repo=xxx)
         <div class="font-semibold mb-2" style="color: #8B5CF6;">🔄 双模调用（MCP 不可用时降级）</div>
         <div class="mb-2" style="color: var(--color-muted);">MCP 不可用时**同时做两件事**：</div>
         <div class="rounded p-2 text-xs font-mono mb-2" style="background: var(--color-background); color: var(--color-muted); white-space: pre;"># 1. 立即用模式 B（不阻塞）
-python3 export/skill/scripts/kb_api.py search --query "XX" --top_k 5
-python3 export/skill/scripts/kb_api.py trace --symbol XX --direction both --depth 2
-python3 export/skill/scripts/kb_api.py file --repo <repo> --path "src/main.py"
-python3 export/skill/scripts/kb_api.py repos
+python3 export/code-search/scripts/kb_rest.py search --query "XX" --top_k 5
+python3 export/code-search/scripts/kb_rest.py trace --symbol XX --direction both --depth 2
+python3 export/code-search/scripts/kb_rest.py repos
 
 # 2. 引导用户 4 步配置 MCP（不阻塞 AI 工作）
 # Step 1: Location = Project / User
 # Step 2: Name = code-kb
 # Step 3: Type = HTTP
 # Step 4: URL = http://<host>:8000/mcp/</div>
-        <div class="mt-2 text-xs" style="color: var(--color-muted);">⚠️ kb_api.py 零依赖（urllib + json + argparse），Python 3.9+ 直接跑</div>
+        <div class="mt-2 text-xs" style="color: var(--color-muted);">⚠️ kb_rest.py 零依赖（urllib + json + argparse），Python 3.9+ 直接跑</div>
       </div>
     </div>
 
@@ -282,7 +281,7 @@ python3 export/skill/scripts/kb_api.py repos
     <div class="rounded-lg p-3 text-sm" style="background: var(--color-surface); border-left: 3px solid #F97316;">
       <div class="font-semibold mb-1" style="color: #F97316;">📚 完整 AI 使用说明书</div>
       <div style="color: var(--color-muted);">
-        上述只是要点速查。完整版（13 章节 / 含 5 个完整对话示例）见 <code>export/skill/SKILL.md</code>，加载方式：<code>cp -r export/skill/ ~/.claude/skills/code-kb/</code>
+        上述只是要点速查。完整版（13 章节 / 含 5 个完整对话示例）见 <code>export/code-search/SKILL.md</code>，加载方式：<code>cp -r export/code-search/ ~/.claude/skills/code-kb/</code>
       </div>
     </div>
   </div>

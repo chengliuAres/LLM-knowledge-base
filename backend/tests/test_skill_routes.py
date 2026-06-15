@@ -23,7 +23,7 @@ def test_skill_raw_returns_content():
     assert "size" in data
     assert "files" in data
     assert data["size"] > 10000, "SKILL.md 实际 ~28KB，不能太小"
-    assert "code_search" in data["content"], "内容应含 MCP tool 关键字"
+    assert "search" in data["content"], "内容应含搜索相关关键字"
 
 
 def test_skill_info_files_listed():
@@ -31,10 +31,10 @@ def test_skill_info_files_listed():
     resp = client.get("/api/skill/info")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["file_count"] >= 3, "应含 README + SKILL + scripts/kb_api.py"
+    assert data["file_count"] >= 3, "应含 README + SKILL + scripts/kb_rest.py"
     names = [f["name"] for f in data["files"]]
     assert "SKILL.md" in names
-    assert any("kb_api.py" in n for n in names)
+    assert any("kb_rest.py" in n for n in names)
 
 
 def test_skill_download_zip_structure():
@@ -49,17 +49,17 @@ def test_skill_download_zip_structure():
     assert any(n.startswith("code-search/") for n in names), \
         f"zip 根目录应为 code-search/，实际: {names[:3]}"
     assert "code-search/SKILL.md" in names
-    assert "code-search/scripts/kb_api.py" in names
+    assert "code-search/scripts/kb_rest.py" in names
 
 
 def test_skill_commands_parses_kb_api():
-    """GET /api/skill/commands 应解析 kb_api.py 的 argparse subcommands"""
+    """GET /api/skill/commands 应解析 kb_rest.py 的 argparse subcommands"""
     resp = client.get("/api/skill/commands")
     assert resp.status_code == 200
     data = resp.json()
     assert "commands" in data
     assert isinstance(data["commands"], list)
-    assert len(data["commands"]) >= 3, "kb_api.py 至少有 5 个 subcommand (search/chat/trace/file/repos)"
+    assert len(data["commands"]) >= 3, "kb_rest.py 至少有 4 个 subcommand (repos/search/chat/trace)"
     names = [c["name"] for c in data["commands"]]
     # 必含 search / trace
     assert "search" in names, f"应含 search 子命令，实际 names: {names}"

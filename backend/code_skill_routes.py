@@ -9,12 +9,12 @@ from fastapi.responses import StreamingResponse
 
 router = APIRouter()
 
-# export/skill/ 是项目根的相对路径（main.py 启动时 cwd = backend/，所以是 ../export/skill）
-EXPORT_DIR = os.path.join(os.path.dirname(__file__), "..", "export", "skill")
+# export/code-search/ 是项目根的相对路径（main.py 启动时 cwd = backend/，所以是 ../export/code-search）
+EXPORT_DIR = os.path.join(os.path.dirname(__file__), "..", "export", "code-search")
 
 
 def _list_export_files() -> list:
-    """列出 export/skill/ 下所有文件 + 大小（相对 EXPORT_DIR）"""
+    """列出 export/code-search/ 下所有文件 + 大小（相对 EXPORT_DIR）"""
     if not os.path.isdir(EXPORT_DIR):
         return []
     out = []
@@ -50,7 +50,7 @@ def get_skill_info():
 
 @router.get("/api/skill/download")
 def download_skill():
-    """打包 export/skill/ 为 zip，根目录重命名 code-search/"""
+    """打包 export/code-search/ 为 zip，根目录重命名 code-search/"""
     if not os.path.isdir(EXPORT_DIR):
         raise HTTPException(status_code=500, detail={"error": f"{EXPORT_DIR} not found"})
 
@@ -70,12 +70,12 @@ def download_skill():
 
 
 def _parse_kb_api_commands() -> list:
-    """用 ast 解析 kb_api.py 的 argparse subparsers/add_parser 节点
+    """用 ast 解析 kb_rest.py 的 argparse subparsers/add_parser 节点
 
     匹配模式: subparsers.add_parser("xxx", help="yyy")
     返回: [{"name": "xxx", "help": "yyy"}, ...]
     """
-    py_path = os.path.join(EXPORT_DIR, "scripts", "kb_api.py")
+    py_path = os.path.join(EXPORT_DIR, "scripts", "kb_rest.py")
     if not os.path.exists(py_path):
         return []
     try:
@@ -101,5 +101,5 @@ def _parse_kb_api_commands() -> list:
 
 @router.get("/api/skill/commands")
 def get_skill_commands():
-    """解析 kb_api.py 的 argparse subcommands，返回 [{name, help}]"""
+    """解析 kb_rest.py 的 argparse subcommands，返回 [{name, help}]"""
     return {"commands": _parse_kb_api_commands()}
