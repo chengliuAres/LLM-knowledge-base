@@ -28,7 +28,7 @@
         "protocol": 186,
         "struct": 7
       },
-      "last_scanned": "2026-06-12T17:50:18.902418",
+      "last_scanned": "2026-06-15T11:51:52.391082",
       "indexed_branch": "dev"
     },
     "MailAndroidG": {
@@ -51,7 +51,7 @@
         "object": 208,
         "struct": 12
       },
-      "last_scanned": "2026-06-12T17:51:41.857246",
+      "last_scanned": "2026-06-15T11:52:19.875943",
       "indexed_branch": "develop"
     }
   },

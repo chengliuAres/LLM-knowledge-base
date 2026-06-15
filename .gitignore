@@ -33,9 +33,12 @@ Thumbs.db
 diagram/*@2x.png
 .superpowers/
 
-# Node / vendor
+# Node modules（依赖）
 backend/node_modules/
-frontend/vendor/
+
+# frontend/vendor/（tailwindcss / chart / mermaid）—— **必须入库**
+#   项目运行必需的 vendor JS 不再靠 curl 下载，新 clone 直接可用。
+#   2026-06-15 约定反转：之前用全局 .gitignore 忽略导致 Mermaid 渲染踩坑。
 
 # Runtime artifacts (PID files, debug screenshots, MCP caches)
 .start.pid
