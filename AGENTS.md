@@ -137,16 +137,17 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 
 ### 代码搜索准确率策略（⚠️ 2026-06-10 实验结论）
 
-**四路混搜架构**：`code_search.py` 的 `search_code(hybrid)` 走四路召回 + RRF 扁平融合排序。
+> 详见 `docs/superpowers/specs/2026-06-12-arch-tab-design.md`（技术架构 tab 设计文档）。
+
+**顶层 3 路混搜架构**：`code_search.py` 的 `search_code(hybrid)` 走 3 路召回（vector/keyword_dual/symbol_like）+ 1 次 RRF 扁平融合排序。`keyword_dual` 内部再走 EN+CN 子双路 FTS5（子权重 1.0/0.3），合起来 4 路数据来源。
 
 **中文 query → 英文代码的核心策略**：翻译层是唯一正确桥梁，不是跨语言 embedding。
 
-| 路径 | 模型/方法 | 输入 | 角色 | 权重 | 实际效果 |
-|------|-----------|------|------|------|------|
-| A 向量 | `bge-small-en` (384维) 每词分别embed | 翻译后的英文关键词 | 语义模糊召回 | 1.0 | 同语言英文→英文代码，配合翻译层使用 |
-| B 英文FTS5 | SQLite FTS5 + jieba 分词 | 翻译后的英文关键词 | 精确匹配代码标识符 | 1.0 | 英文关键词直接命中 |
-| C 中文FTS5 | SQLite FTS5 + jieba 分词 | 中文原 query | 中文 content 搜索 | 0.3 | 弱信号，搜注释/文档 |
-| D 符号名LIKE | `symbol_name LIKE '%kw%'` | 翻译后的英文关键词 / 英文query驼峰拆词 | 精确命中 | 1.5 | **最可靠的路**，兜底FTS5驼峰拆分盲区 |
+| 路径 | 模型/方法 | 输入 | 角色 | 顶层权重 | 实际效果 |
+|------|-----------|------|------|---------|------|
+| vector | `bge-small-en` (384维) 每词分别embed | 翻译后的英文关键词 | 语义模糊召回 | 1.0 | 同语言英文→英文代码，配合翻译层使用 |
+| keyword_dual | SQLite FTS5 + jieba 分词（EN 1.0 + CN 0.3 子双路） | 翻译后英文 + 中文原 query | 精确匹配代码标识符 + 弱搜注释 | 0.5 | 内部 EN 强 + CN 弱，FTS5 主路 |
+| symbol_like | `symbol_name LIKE '%kw%'` | 翻译后的英文关键词 / 英文query驼峰拆词 | 精确命中 | 1.5 | **最可靠的路**，兜底FTS5驼峰拆分盲区 |
 
 **翻译层降级链**：`query_translator.py` 词典（贪心最长匹配 → jieba分词逐词匹配）→ 缓存 → MyMemory API → LLM → 原 query 回退
 
@@ -228,6 +229,7 @@ metadata      : str   — JSON 字符串（邮件含 email_id/thread_id/subject/
 | POST | `/api/code/scan/{scan_id}/cancel` | 取消扫描 |
 | POST | `/api/code/search` | 混合搜索（向量+关键词） |
 | POST | `/api/code/chat` | RAG 代码问答，支持流式 |
+| POST | `/api/code/arch/hybrid-demo` | 混搜架构演示（直击 3 路 + RRF，技术架构 tab 用） |
 | POST | `/api/code/trace` | 调用链追踪（symbol/direction/depth） |
 | GET | `/api/code/browse` | 浏览代码文件 |
 
