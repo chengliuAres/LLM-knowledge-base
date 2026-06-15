@@ -18,6 +18,7 @@
 import argparse
 import json
 import os
+import socket
 import sys
 import urllib.error
 import urllib.request
@@ -62,13 +63,18 @@ def _request(method: str, path: str, payload: dict | None = None, timeout: int =
     except json.JSONDecodeError as e:
         return {"error": f"响应不是合法 JSON: {e}"}
     except TimeoutError:
+        # Python 3.11+ socket.timeout 是 TimeoutError 子类，已被上面捕获
+        return {"error": f"请求超时（{timeout}s）: {url}"}
+    except socket.timeout:
+        # 老 Python（≤3.10）socket.timeout 不是 TimeoutError 子类的兜底
         return {"error": f"请求超时（{timeout}s）: {url}"}
 
 
 def cmd_repos(args) -> int:
     """列出已索引的代码仓库"""
     result = _request("GET", "/api/code/repos")
-    if "error" in result and "repos" not in result:
+    if result.get("error"):
+        # 错误优先：error 字段存在即视为失败，避免 error+repos 共存时错误被吞
         print(json.dumps(result, ensure_ascii=False, indent=2), file=sys.stderr)
         return 1
 
@@ -122,7 +128,8 @@ def cmd_chat(args) -> int:
     }
     result = _request("POST", "/api/code/chat", payload, timeout=CHAT_TIMEOUT_SEC)
 
-    if "error" in result and "answer" not in result:
+    if result.get("error"):
+        # 错误优先：error 字段存在即视为失败
         print(json.dumps(result, ensure_ascii=False, indent=2), file=sys.stderr)
         return 1
 
@@ -178,7 +185,12 @@ def _print_results(result: dict, top_k: int | None) -> int:
             score = r.get("score", 0)
             reason = r.get("match_reason", "")
             content = r.get("content", "")
-            print(f"[{i}] {file_path}:{line_start}-{line_end}  ({symbol})  score={score:.4f}")
+            # score 可能是 None / str / list 等非数值，格式化前守卫
+            if isinstance(score, (int, float)):
+                score_str = f"{score:.4f}"
+            else:
+                score_str = repr(score)
+            print(f"[{i}] {file_path}:{line_start}-{line_end}  ({symbol})  score={score_str}")
             if reason:
                 print(f"    匹配原因: {reason}")
             # 截断预览
@@ -225,9 +237,10 @@ def _print_results(result: dict, top_k: int | None) -> int:
             print()
         return 0
 
-    # 兜底：原样输出
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
+    # 兜底：未知 schema（既无 results/traces，也无 error）说明后端响应格式异常
+    print(json.dumps(result, ensure_ascii=False, indent=2), file=sys.stderr)
+    print("警告：响应字段不符合预期 schema（缺少 results/traces/error）", file=sys.stderr)
+    return 1
 
 
 def main():
