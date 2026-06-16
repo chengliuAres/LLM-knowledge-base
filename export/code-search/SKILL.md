@@ -1,25 +1,27 @@
 ---
 name: code-search
-description: |
+description: >-
   email-wiki-demo 本地代码知识库搜索引擎（OC/Swift/Java/Kotlin/Dart/...）。
   找代码 / 查调用 / 参考实现 时触发。支持语义搜索（中文→英文代码）、调用链追踪、
   RAG 问答、文件读取、继承链层级（hierarchy）。
 
-  触发词：XX在哪 / 哪里用了XX / 找一下XX / 搜XX / 查找XX /
+  XX在哪 / 哪里用了XX / 找一下XX / 搜XX / 查找XX /
   谁调用了XX / 调用了什么 / 看下XX怎么实现的 / XX的实现在哪 /
   对比两端 / 其他端有吗 / XX端有吗 / 全端支持吗 /
   参考一下XX / 先看看XX的实现 / 对齐XX端 / 要加XX先看现有方案 /
-  改这个会影响哪里 / 删了会怎样 / crash了 / 为什么XX不工作 /
+  改这个会影响哪里 / 删了会怎样 / crash了 / 为什么XX不工作 / 定位问题 /
   架构是怎样的 / XX模块做什么的 / 在哪些地方用到 / XX散落在哪 /
   XX怎么配置的 / 配置在哪 / XX开关在哪 /
   已经有实现了吗 / 重复代码 / 其他地方有吗 /
   XX继承自谁 / XX有哪些子类 / XX父类是什么 /
 
-  策略：用 2-3 个 run_in_background 的搜索并发调用，先 search 语义发现 → Read 补全。
-  排除：已指定文件+行号、纯写代码不参考、通用框架问题。
+  触发时先用 search 做语义发现 → 再 Read 工具补全上下文。
+  排除：已指定文件+行号、纯写代码不参考、通用框架问题("UIView 怎么用")。
 version: "1.0"
-author: 柳哥
-changelog: "v1.0: 直连 REST API（不走 MCP），环境变量 CODE_KB_URL 配服务地址"
+metadata:
+  author: 柳哥
+  parallel: "用 2-3 个 run_in_background=true 的 search_code 并发调用"
+  changelog: "v1.0 初始版本：直连 REST API（不走 MCP），环境变量 CODE_KB_URL 配服务地址"
 ---
 
 # Skill: code-search
@@ -109,7 +111,7 @@ AI 调用 `kb_rest.py` 时，脚本内部读取 `CODE_KB_URL` 决定服务地址
 
 ### 多 query 并行（**核心**——零后端改动）
 
-AI 一次性发出 2-3 个 `search` 调用，全部用 `run_in_background=true`。**注意**：`workdir` 需设为 skill base directory，命令需 `source scripts/.env &&` 前缀（见 Section 7 执行规则）。
+AI 一次性发出 2-3 个 `search` 调用，全部用 `run_in_background=true`：
 
 ```python
 # ✅ 正确做法（并发）
@@ -283,27 +285,22 @@ python3 scripts/kb_rest.py search --query "邮件发送" --repo other-repo  # �
 
 ## Section 7：调用方式
 
-> ⚠️ **执行规则**：
-> 1. 所有命令**必须**通过 Bash 工具的 `workdir` 参数设置工作目录为本 skill 的 base directory
-> 2. 每条命令前加 `source scripts/.env &&` 以注入 `CODE_KB_URL`（URL 存储在 `scripts/.env`）
-> 3. 脚本路径 `scripts/kb_rest.py` 相对于 skill 目录，不依赖项目根
-
 ### 直连 REST API（唯一模式）
 
 ```bash
 # 列出仓库
-source scripts/.env && python3 scripts/kb_rest.py repos
+python3 scripts/kb_rest.py repos
 
 # 混合搜索（向量+关键词+符号）
-source scripts/.env && python3 scripts/kb_rest.py search --query "邮件发送" --top_k 5
-source scripts/.env && python3 scripts/kb_rest.py search --query "sendMail" --repo ghmail
+python3 scripts/kb_rest.py search --query "邮件发送" --top_k 5
+python3 scripts/kb_rest.py search --query "sendMail" --repo ghmail
 
 # 调用链追踪
-source scripts/.env && python3 scripts/kb_rest.py trace --symbol sendMail --direction both --depth 2
-source scripts/.env && python3 scripts/kb_rest.py trace --symbol AccountMocker --direction hierarchy
+python3 scripts/kb_rest.py trace --symbol sendMail --direction both --depth 2
+python3 scripts/kb_rest.py trace --symbol AccountMocker --direction hierarchy
 
 # RAG 问答
-source scripts/.env && python3 scripts/kb_rest.py chat --question "sendMail 如何工作"
+python3 scripts/kb_rest.py chat --question "sendMail 如何工作"
 ```
 
 ### 完整参数

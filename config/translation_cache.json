@@ -356,16 +356,5 @@
     "confidence": 0.7,
     "timestamp": 1781260308.218818,
     "auto_added": false
-  },
-  "邮件": {
-    "keywords": [
-      "mail",
-      "email",
-      "message"
-    ],
-    "method": "dict",
-    "confidence": 0.9,
-    "timestamp": 1781507361.879054,
-    "auto_added": false
   }
 }
