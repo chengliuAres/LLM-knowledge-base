@@ -99,8 +99,27 @@ cleanup() {
 trap cleanup INT TERM EXIT
 
 echo ""
+# HTTPS 支持：存在 cert.pem/key.pem 时自动启用（Chrome 148 PNA 需要）
+SSL_ARGS=""
+SCHEME="http"
+if [ -f "cert.pem" ] && [ -f "key.pem" ]; then
+    SSL_ARGS="--ssl-keyfile=$PWD/key.pem --ssl-certfile=$PWD/cert.pem"
+    SCHEME="https"
+    echo "🔒 检测到 SSL 证书，启用 HTTPS"
+    echo "   ⚠️  首次访问浏览器会提示不安全，点\"继续访问\"即可"
+    echo ""
+else
+    echo "🔑 正在生成自签 SSL 证书（Chrome 148 PNA 需要 HTTPS）..."
+    openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=10.242.15.251" 2>/dev/null
+    SSL_ARGS="--ssl-keyfile=$PWD/key.pem --ssl-certfile=$PWD/cert.pem"
+    SCHEME="https"
+    echo "🔒 证书已生成，启用 HTTPS"
+    echo "   ⚠️  首次访问浏览器会提示不安全，点\"继续访问\"即可"
+    echo ""
+fi
+
 echo "🚀 启动服务..."
-echo "   访问地址: http://localhost:$PORT"
+echo "   访问地址: ${SCHEME}://localhost:$PORT"
 echo ""
 echo "   功能说明："
 echo "   - 📄 文档管理: 上传文档并建立索引"
@@ -111,7 +130,7 @@ echo "   按 Ctrl+C 停止"
 echo ""
 
 cd backend
-python3 -m uvicorn main:app --reload --host 0.0.0.0 --port "$PORT" &
+python3 -m uvicorn main:app --reload --host 0.0.0.0 --port "$PORT" $SSL_ARGS &
 SERVER_PID=$!
 echo "$SERVER_PID" > "../$PID_FILE"
 
