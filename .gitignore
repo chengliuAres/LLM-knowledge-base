@@ -45,7 +45,3 @@ backend/node_modules/
 .playwright-mcp/
 read-letter-search-results.png
 *.pid
-
-# SSL 自签证书（Chrome 148 PNA 需要，本地生成）
-cert.pem
-key.pem
