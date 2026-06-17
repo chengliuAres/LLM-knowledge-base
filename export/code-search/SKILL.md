@@ -5,6 +5,11 @@ description: |
   找代码 / 查调用 / 参考实现 时触发。支持语义搜索（中文→英文代码）、调用链追踪、
   RAG 问答、文件读取、继承链层级（hierarchy）。
 
+  ⚠️ 项目域约束：仅服务于**邮箱大师代码库**（GHMail / mailflutter / mmsharedkmp /
+     网易邮箱大师 iOS / Flutter / KMP 共享层 等）。非邮箱大师项目请改用
+     codemap（search_code / find_symbol）或 Read+Grep 等通用工具，不要走本 skill。
+     索引里只有邮箱大师代码，搜其他项目会大量假阳性 / 0 命中。
+
   触发词：XX在哪 / 哪里用了XX / 找一下XX / 搜XX / 查找XX /
   谁调用了XX / 调用了什么 / 看下XX怎么实现的 / XX的实现在哪 /
   对比两端 / 其他端有吗 / XX端有吗 / 全端支持吗 /
@@ -17,9 +22,9 @@ description: |
 
   策略：用 2-3 个 run_in_background 的搜索并发调用，先 search 语义发现 → Read 补全。
   排除：已指定文件+行号、纯写代码不参考、通用框架问题。
-version: "1.0"
+version: "1.0.1"
 author: 柳哥
-changelog: "v1.0: 直连 REST API（不走 MCP），环境变量 CODE_KB_URL 配服务地址"
+changelog: "v1.0.1: description 加项目域约束（仅邮箱大师代码库）；v1.0: 直连 REST API（不走 MCP），环境变量 CODE_KB_URL 配服务地址"
 ---
 
 # Skill: code-search
