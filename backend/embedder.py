@@ -1,55 +1,89 @@
-"""Embedding 封装 - 基于 sentence-transformers"""
+"""Embedding 封装 - 基于 sentence-transformers (BAAI/bge-base-zh-v1.5)
+
+bge-base-zh-v1.5: 中文优化轻量模型，768-dim，512-token 上下文。
+用于文档/邮件知识库的中文语义检索。
+"""
 
 import os
+import torch
+import logging
 from sentence_transformers import SentenceTransformer
 
-# 项目根目录
+log = logging.getLogger(__name__)
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_CACHE_DIR = os.path.join(PROJECT_ROOT, "config", "models")
 
-# 模型缓存目录（项目内）
-MODEL_CACHE_DIR = os.path.join(PROJECT_ROOT, "models")
-
-# 全局模型实例（懒加载）
 _model = None
-_model_name = "paraphrase-multilingual-MiniLM-L12-v2"  # 多语言模型，支持中文
+_model_name = "BAAI/bge-base-zh-v1.5"  # 中文优化，768-dim，512-token，102M
+_MAX_CHARS = 1500  # 512 tokens ≈ 1500 字符，安全兜底（实际 chunk 上限 500 字符，正常不会触发）
+
+# bge 系列查询前缀（可选，但能提升检索质量）
+_QUERY_PROMPT = "为这个句子生成表示以用于检索相关文章："
 
 
 def get_model() -> SentenceTransformer:
-    """获取模型实例（单例模式）"""
+    """获取模型实例（单例，MPS + fp16）"""
     global _model
     if _model is None:
-        # 确保缓存目录存在
         os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
-        
         print(f"正在加载 Embedding 模型: {_model_name} ...")
         print(f"模型缓存目录: {MODEL_CACHE_DIR}")
-        
-        # 从项目目录加载或下载模型
+
         _model = SentenceTransformer(
             _model_name,
-            cache_folder=MODEL_CACHE_DIR
+            cache_folder=MODEL_CACHE_DIR,
+            model_kwargs={"torch_dtype": "float16"},  # fp16: MPS 上 ~2x 加速 + 省一半显存
         )
-        print("模型加载完成!")
+        # MPS 加速
+        if hasattr(torch, 'backends') and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            try:
+                _model = _model.to('mps')
+                print("Embedding 模型已移至 MPS (Apple Silicon GPU)")
+            except Exception:
+                pass
+
+        print(f"模型加载完成! 维度={get_dimension()}")
     return _model
 
 
 def embed_text(text: str) -> list[float]:
-    """单条文本 embedding"""
+    """单条文本 embedding (passage)"""
     model = get_model()
-    embedding = model.encode(text, normalize_embeddings=True)
+    if len(text) > _MAX_CHARS:
+        log.warning(f"文本过长 ({len(text)} > {_MAX_CHARS})，已截断")
+    safe_text = text[:_MAX_CHARS] if len(text) > _MAX_CHARS else text
+    embedding = model.encode(safe_text, normalize_embeddings=True)
+    return embedding.tolist()
+
+
+def embed_query(text: str) -> list[float]:
+    """查询 embedding (带查询前缀)"""
+    model = get_model()
+    if len(text) > _MAX_CHARS:
+        log.warning(f"查询过长 ({len(text)} > {_MAX_CHARS})，已截断")
+    safe_text = text[:_MAX_CHARS] if len(text) > _MAX_CHARS else text
+    embedding = model.encode(
+        _QUERY_PROMPT + safe_text,
+        normalize_embeddings=True,
+    )
     return embedding.tolist()
 
 
 def embed_batch(texts: list[str]) -> list[list[float]]:
-    """批量 embedding（更高效）"""
+    """批量 embedding（索引阶段用）"""
     model = get_model()
-    embeddings = model.encode(texts, normalize_embeddings=True, batch_size=32)
+    truncated = sum(1 for t in texts if len(t) > _MAX_CHARS)
+    if truncated:
+        log.warning(f"批量 embedding: {truncated}/{len(texts)} 条文本过长，已截断")
+    safe_texts = [t[:_MAX_CHARS] if len(t) > _MAX_CHARS else t for t in texts]
+    embeddings = model.encode(safe_texts, normalize_embeddings=True, batch_size=64)
     return embeddings.tolist()
 
 
 def get_dimension() -> int:
     """返回 embedding 维度"""
-    return 384
+    return 768
 
 
 def get_model_info() -> dict:
@@ -58,7 +92,6 @@ def get_model_info() -> dict:
         "model_name": _model_name,
         "dimension": get_dimension(),
         "cache_dir": MODEL_CACHE_DIR,
-        "model_size_mb": get_dir_size(MODEL_CACHE_DIR) / (1024 * 1024)
     }
 
 

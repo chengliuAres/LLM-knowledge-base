@@ -4,15 +4,29 @@ import os
 import shutil
 import time
 import json
+import uuid
 from typing import Optional
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
+from logging_setup import configure_logging, get_logger, request_id_var
+from log_routes import router as log_router
 from parser import process_file
-from embedder import embed_text, embed_batch, _model_name as EMBED_MODEL_NAME, get_model_info
+from embedder import embed_text, embed_query, embed_batch, _model_name as EMBED_MODEL_NAME, get_model_info
+
+
+def _get_code_embedder_info() -> dict:
+    """延迟加载代码 embedder 信息，避免 import 时触发模型加载"""
+    try:
+        from code_embedder import get_code_model_info
+        return get_code_model_info()
+    except Exception:
+        return {"model_name": "BAAI/bge-small-en-v1.5", "dimension": 384}
 from db import insert_documents, search_similar, list_documents, delete_document, get_stats
 from email_db import init_db, get_all_emails, get_stats as get_email_stats, search_emails, init_sample_data
 from email_parser import email_to_chunks, batch_convert_emails
@@ -21,8 +35,74 @@ from step_tracker import StepTracker
 import metrics_db
 import lancedb_inspect
 from match_reasons import annotate_results
+from code_routes import router as code_router
+from code_mcp import router as mcp_router
+from code_skill_routes import router as skill_router
 
-app = FastAPI(title="文档知识库", version="2.0.0")
+log = get_logger("main")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI 生命周期：启动时配置日志 + 初始化邮件 DB + 启动 git watchdog + MCP session manager；关闭时停止。"""
+    configure_logging()
+    log.info("服务启动")
+    init_db()
+    init_sample_data()
+
+    # 启动 git watchdog 后台线程（git 仓库变更自动触发增量扫描）
+    from git_watchdog import start_watchdog, stop_watchdog
+    start_watchdog()
+
+    # 启动 MCP v2 session manager
+    from code_mcp_v2 import mcp as mcp_v2
+    async with mcp_v2.session_manager.run():
+        log.info("服务启动完成")
+        yield
+
+    # 关闭时停止 watchdog（让线程在 daemon 退前能干净退出）
+    stop_watchdog()
+
+
+app = FastAPI(title="文档知识库", version="2.0.0", lifespan=lifespan)
+app.include_router(code_router)
+app.include_router(mcp_router)  # 旧 MCP (SSE), 保留兼容
+app.include_router(log_router)
+app.include_router(skill_router)
+
+# 挂载新 MCP v2 (Streamable HTTP) — 客户端连 http://host/mcp/（带尾 /）
+# mcp 包要求 Python >= 3.10，低版本自动跳过
+try:
+    from code_mcp_v2 import mcp as mcp_v2
+    app.mount("/mcp", app=mcp_v2.streamable_http_app())
+except ImportError:
+    import sys
+    print(f"[WARN] code_mcp_v2 skipped: 'mcp' package requires Python >= 3.10, current: {sys.version}")
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """给每个请求注入 request_id（取自 X-Request-ID 头或生成 8 位 UUID），写回响应头。"""
+    rid = request.headers.get("X-Request-ID") or str(uuid.uuid4())[:8]
+    token = request_id_var.set(rid)
+    try:
+        response = await call_next(request)
+    finally:
+        request_id_var.reset(token)
+    response.headers["X-Request-ID"] = rid
+    return response
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """全局兜底：未捕获的 Exception 自动打 stack trace + request_id。"""
+    rid = request_id_var.get()
+    log.exception(f"unhandled path={request.url.path} method={request.method} error_type={type(exc).__name__} request_id={rid}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "内部错误", "request_id": rid},
+    )
+
 
 # 上传目录
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads")
@@ -70,26 +150,12 @@ class EmailImportRequest(BaseModel):
     count: int = 50  # 导入数量
 
 
-# ========== 启动事件 ==========
-
-@app.on_event("startup")
-async def startup():
-    """启动时初始化"""
-    from embedder import get_model
-    get_model()  # 预加载 Embedding 模型
-    
-    # 初始化邮件数据库
-    init_db()
-    init_sample_data()
-    
-    print("服务启动完成!")
-
-
 # ========== API 路由 ==========
 
 @app.post("/api/upload", response_model=UploadResponse)
 async def upload_file(file: UploadFile = File(...)):
     """上传并解析文档"""
+    log.info(f"upload_start filename={file.filename!r}")
     tracker = StepTracker(operation_type="insert_file")
     
     # 检查文件格式
@@ -201,7 +267,10 @@ async def upload_file(file: UploadFile = File(...)):
             steps=tracker.to_list()
         )
     
+    except HTTPException:
+        raise
     except Exception as e:
+        log.error(f"upload_failed filename={file.filename} error={e}")
         tracker.flush(status="error")
         raise HTTPException(500, f"处理失败: {str(e)}")
 
@@ -209,6 +278,7 @@ async def upload_file(file: UploadFile = File(...)):
 @app.post("/api/emails/import")
 async def import_emails(request: EmailImportRequest):
     """从邮件DB导入邮件到 LanceDB"""
+    log.info(f"email_import_start count={request.count}")
     tracker = StepTracker(operation_type="email_import")
     
     try:
@@ -258,6 +328,7 @@ async def import_emails(request: EmailImportRequest):
         step4.complete({"stored_count": len(chunks)})
 
         tracker.set_extra(email_count=len(emails), chunk_count=len(chunks))
+        log.info(f"email_import_done emails={len(emails)} chunks={len(chunks)}")
         tracker.flush()
         
         return {
@@ -267,7 +338,10 @@ async def import_emails(request: EmailImportRequest):
             "steps": tracker.to_list()
         }
     
+    except HTTPException:
+        raise
     except Exception as e:
+        log.error(f"email_import_failed count={request.count} error={e}")
         tracker.flush(status="error")
         raise HTTPException(500, f"导入失败: {str(e)}")
 
@@ -275,6 +349,7 @@ async def import_emails(request: EmailImportRequest):
 @app.post("/api/search", response_model=SearchResponse)
 async def search(request: SearchRequest):
     """向量相似度搜索（带步骤追踪）"""
+    log.info(f"search_start query={request.query!r} top_k={request.top_k} file_type={request.file_type}")
     if not request.query.strip():
         raise HTTPException(400, "查询内容不能为空")
     
@@ -311,7 +386,7 @@ async def search(request: SearchRequest):
         step3 = tracker.add_step("embed_query", "生成查询向量 (Embedding)")
         step3.start()
         
-        query_vector = embed_text(query_clean)
+        query_vector = embed_query(query_clean)
         
         step3.complete({
             "model": EMBED_MODEL_NAME,
@@ -365,8 +440,8 @@ async def search(request: SearchRequest):
         step6 = tracker.add_step("filter_results", "结果过滤与排序")
         step6.start()
         
-        # 过滤掉低分结果
-        filtered_results = [r for r in results if r["score"] > 0.3]
+        # 过滤低分结果（默认不过滤）
+        filtered_results = [r for r in results if r["score"] > score_threshold]
 
         annotate_results(request.query, filtered_results)
 
@@ -382,6 +457,7 @@ async def search(request: SearchRequest):
         })
 
         tracker.set_extra(returned_count=len(filtered_results), raw_count=len(results))
+        log.info(f"search_done query={request.query!r} returned={len(filtered_results)}")
         tracker.flush()
         
         return SearchResponse(
@@ -390,7 +466,10 @@ async def search(request: SearchRequest):
             steps=tracker.to_list()
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
+        log.error(f"search_failed query={request.query!r} error={e}")
         tracker.flush(status="error")
         raise HTTPException(500, f"搜索失败: {str(e)}")
 
@@ -398,6 +477,7 @@ async def search(request: SearchRequest):
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     """智能问答（RAG）"""
+    log.info(f"chat_start query={request.query!r} top_k={request.top_k} mode={'stream' if request.stream else 'sync'}")
     if not request.query.strip():
         raise HTTPException(400, "查询内容不能为空")
     
@@ -414,7 +494,7 @@ async def chat(request: ChatRequest):
         step2 = tracker.add_step("retrieve_docs", "检索相关文档")
         step2.start()
         
-        query_vector = embed_text(request.query)
+        query_vector = embed_query(request.query)
         search_results = search_similar(query_vector, top_k=request.top_k)
         annotate_results(request.query, search_results)
         
@@ -448,17 +528,14 @@ async def chat(request: ChatRequest):
             step3.complete({"mode": "stream"})
             
             async def generate():
-                # 先发送步骤信息
                 yield f"data: {json.dumps({'type': 'steps', 'data': tracker.to_list()})}\n\n"
-                
-                # 流式输出回答
-                async for chunk in await llm_client.chat(messages, stream=True):
-                    yield f"data: {json.dumps({'type': 'content', 'data': chunk})}\n\n"
-                
-                # 发送来源信息
-                yield f"data: {json.dumps({'type': 'sources', 'data': search_results})}\n\n"
-                yield "data: [DONE]\n\n"
-                tracker.flush()
+                try:
+                    async for chunk in await llm_client.chat(messages, stream=True):
+                        yield f"data: {json.dumps({'type': 'content', 'data': chunk})}\n\n"
+                    yield f"data: {json.dumps({'type': 'sources', 'data': search_results})}\n\n"
+                finally:
+                    yield "data: [DONE]\n\n"
+                    tracker.flush()
             
             return StreamingResponse(generate(), media_type="text/event-stream")
         else:
@@ -479,7 +556,10 @@ async def chat(request: ChatRequest):
                 steps=tracker.to_list()
             )
     
+    except HTTPException:
+        raise
     except Exception as e:
+        log.error(f"chat_failed query={request.query!r} error={e}")
         tracker.flush(status="error")
         raise HTTPException(500, f"问答失败: {str(e)}")
 
@@ -613,27 +693,39 @@ async def show_in_finder(filename: str):
 
 
 @app.get("/api/stats")
-async def stats():
-    """获取数据库统计 + 性能指标"""
-    doc_stats = get_stats()
-    email_stats = get_email_stats()
+async def stats(db_type: str = Query("")):
+    """获取数据库统计 + 性能指标。db_type: 空=全部 / doc=文档库 / code=代码库"""
+    from code_db import get_stats as get_code_stats
 
-    lancedb_path = os.path.join(os.path.dirname(__file__), "..", "data", "lancedb")
-    search_summary = metrics_db.get_summary("search")
-    chat_summary = metrics_db.get_summary("chat")
-    insert_throughput = metrics_db.get_insert_throughput()
+    LANCEDB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "lancedb")
+    CODE_LANCEDB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "code_lancedb")
 
-    return {
-        "documents": doc_stats,
-        "emails": email_stats,
-        "embedder": get_model_info(),
-        "performance": {
-            "lancedb_disk_bytes": metrics_db.get_disk_usage(lancedb_path),
-            "search": search_summary,
-            "chat": chat_summary,
-            "insert": insert_throughput,
-        },
-    }
+    include_doc = db_type in ("", "doc")
+    include_code = db_type in ("", "code")
+
+    result = {}
+
+    if include_doc:
+        result["documents"] = get_stats()
+        result["emails"] = get_email_stats()
+        result["embedder"] = get_model_info()
+        result["performance"] = {
+            "lancedb_disk_bytes": metrics_db.get_disk_usage(LANCEDB_PATH),
+            "search": metrics_db.get_summary("search"),
+            "chat": metrics_db.get_summary("chat"),
+            "insert": metrics_db.get_insert_throughput(),
+        }
+
+    if include_code:
+        result["code"] = get_code_stats()
+        result["code_embedder"] = _get_code_embedder_info()
+        result["code_performance"] = {
+            "code_lancedb_disk_bytes": metrics_db.get_disk_usage(CODE_LANCEDB_PATH),
+            "code_search": metrics_db.get_summary("code_search"),
+            "code_chat": metrics_db.get_summary("code_chat"),
+        }
+
+    return result
 
 
 @app.get("/api/performance/trend")
@@ -661,6 +753,12 @@ async def performance_breakdown(type: str = Query("search"), days: int = Query(0
 async def performance_baselines(limit: int = Query(20, ge=1, le=200)):
     """列出所有压测基线快照"""
     return {"baselines": metrics_db.list_baselines(limit=limit)}
+
+
+@app.get("/api/user/home")
+async def user_home():
+    """获取用户 HOME 目录（前端快捷路径用）"""
+    return {"home": os.path.expanduser("~")}
 
 
 @app.get("/api/lancedb/inspect")
@@ -738,9 +836,12 @@ async def search_email_api(q: str = Query(...), limit: int = 20):
 
 # ========== 静态文件服务 ==========
 
-# 挂载前端静态文件
+# 挂载前端静态文件子目录（不挂 / 避免与 API 路由冲突）
 frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
-app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
+app.mount("/css", StaticFiles(directory=os.path.join(frontend_dir, "css")), name="css")
+app.mount("/js", StaticFiles(directory=os.path.join(frontend_dir, "js")), name="js")
+app.mount("/tabs", StaticFiles(directory=os.path.join(frontend_dir, "tabs")), name="tabs")
+app.mount("/vendor", StaticFiles(directory=os.path.join(frontend_dir, "vendor")), name="vendor")
 
 
 @app.get("/")

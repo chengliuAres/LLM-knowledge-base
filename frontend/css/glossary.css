@@ -1,0 +1,63 @@
+/* 术语 hover 解释 — 暗色风卡片样式 */
+
+.glossary-term {
+    border-bottom: 1px dashed var(--color-primary, #6366f1);
+    cursor: help;
+    color: inherit;
+    transition: border-bottom-color 0.15s;
+}
+
+.glossary-term:hover,
+.glossary-term:focus {
+    border-bottom-color: var(--color-accent, #22c55e);
+}
+
+.glossary-term:focus {
+    outline: 1px dotted var(--color-primary, #6366f1);
+    outline-offset: 2px;
+}
+
+.glossary-tooltip {
+    position: fixed;
+    z-index: 9999;
+    max-width: 320px;
+    padding: 8px 12px;
+    background: var(--color-bg-elevated, #1e293b);
+    color: var(--color-foreground, #e2e8f0);
+    border: 1px solid var(--color-border, #334155);
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    pointer-events: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.12s, visibility 0.12s;
+}
+
+.glossary-tooltip.is-visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* 默认三角: tooltip 在目标下方, 三角在 tooltip 顶部 (朝上) */
+.glossary-tooltip::after {
+    content: "";
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top: none;
+    border-bottom-color: var(--color-bg-elevated, #1e293b);
+}
+
+/* tooltip 在目标上方时 (is-bottom), 三角在 tooltip 底部 (朝下) */
+.glossary-tooltip.is-bottom::after {
+    top: auto;
+    bottom: -6px;
+    border-top-color: var(--color-bg-elevated, #1e293b);
+    border-bottom: none;
+}

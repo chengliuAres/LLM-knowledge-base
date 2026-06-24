@@ -5,7 +5,7 @@ import time
 from typing import Optional
 
 from db import get_table
-from embedder import embed_text, embed_batch, _model_name as EMBED_MODEL_NAME
+from embedder import embed_text, embed_query, embed_batch, _model_name as EMBED_MODEL_NAME
 from parser import chunk_text
 from match_reasons import explain_match
 
@@ -186,7 +186,7 @@ def demo_insert(text: str, chunk_size: int = 500, overlap: int = 50) -> dict:
             },
             {
                 "name": "embed_chunks",
-                "title": f"2. Embedding（{EMBED_MODEL_NAME} → 384 维）",
+                "title": f"2. Embedding（{EMBED_MODEL_NAME} → {len(vectors[0])} 维）",
                 "duration_ms": round(embed_ms, 2),
                 "description": "每个 chunk 通过 sentence-transformers 编码成单位向量（norm≈1.0）",
                 "output": {
@@ -229,7 +229,7 @@ def demo_search(query: str, top_k: int = 5, score_threshold: float = 0.3) -> dic
     ds = table.to_lance()
 
     t0 = time.time()
-    query_vec = embed_text(query.strip())
+    query_vec = embed_query(query.strip())
     embed_ms = (time.time() - t0) * 1000
 
     has_index = bool(list(ds.list_indices()))
@@ -280,7 +280,7 @@ def demo_search(query: str, top_k: int = 5, score_threshold: float = 0.3) -> dic
                 "name": "embed_query",
                 "title": "1. 查询向量化",
                 "duration_ms": round(embed_ms, 2),
-                "description": "查询文本经过同款 embedding 模型编码，得到 384 维查询向量",
+                "description": f"查询文本经过同款 embedding 模型编码，得到 {len(query_vec)} 维查询向量",
                 "output": {
                     "model": EMBED_MODEL_NAME,
                     "dim": len(query_vec),

@@ -1,0 +1,358 @@
+<!-- 文档看板 tab：统计卡片 + 性能指标 + 趋势/拆解图表 + 数据目录 -->
+
+<div class="max-w-5xl mx-auto space-y-4">
+    <!-- 顶部：标题 + 刷新 -->
+    <div class="panel">
+        <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold" style="color: var(--color-foreground);">📊 系统看板</h2>
+            <div class="flex items-center space-x-3">
+                <span id="dashboardLastUpdated" class="text-xs" style="color: var(--color-muted);">尚未加载</span>
+                <button onclick="refreshDashboard()" id="dashboardRefreshBtn"
+                        class="btn"
+                        style="background-color: rgba(59, 130, 246, 0.12); color: var(--color-accent); padding: 6px 12px;">
+                    <span id="dashboardRefreshIcon">🔄</span>
+                    <span>刷新</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4 元信息卡片 -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="panel" style="background-color: rgba(59, 130, 246, 0.10); border-color: rgba(59, 130, 246, 0.30);">
+            <p class="text-sm" style="color: #93C5FD;">📄 文档数</p>
+            <p id="statDocs" class="text-2xl font-bold" style="color: #BFDBFE;">-</p>
+        </div>
+        <div class="panel" style="background-color: rgba(34, 197, 94, 0.10); border-color: rgba(34, 197, 94, 0.30);">
+            <p class="text-sm" style="color: #86EFAC;">📧 邮件数</p>
+            <p id="statEmails" class="text-2xl font-bold" style="color: #BBF7D0;">-</p>
+        </div>
+        <div class="panel" style="background-color: rgba(168, 85, 247, 0.10); border-color: rgba(168, 85, 247, 0.30);">
+            <p class="text-sm" style="color: #D8B4FE;">🧵 线程数</p>
+            <p id="statThreads" class="text-2xl font-bold" style="color: #E9D5FF;">-</p>
+        </div>
+        <div class="panel" style="background-color: rgba(245, 158, 11, 0.10); border-color: rgba(245, 158, 11, 0.30);">
+            <p class="text-sm" style="color: #FCD34D;">🧩 向量块数</p>
+            <p id="statChunks" class="text-2xl font-bold" style="color: #FDE68A;">-</p>
+        </div>
+    </div>
+
+    <!-- 性能指标卡片 -->
+    <div class="panel">
+        <h3 class="font-semibold text-sm mb-3" style="color: var(--color-foreground);">⚡ 性能指标</h3>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="panel" style="background-color: rgba(6, 182, 212, 0.10); border-color: rgba(6, 182, 212, 0.30);">
+                <p class="text-sm" style="color: #67E8F9;">💾 LanceDB 磁盘</p>
+                <p id="perfDisk" class="text-2xl font-bold" style="color: #A5F3FC;">-</p>
+                <p id="perfDiskBytes" class="text-[10px] mt-1" style="color: rgba(103, 232, 249, 0.7);">-</p>
+            </div>
+            <div class="panel" style="background-color: rgba(99, 102, 241, 0.10); border-color: rgba(99, 102, 241, 0.30);">
+                <p class="text-sm" style="color: #A5B4FC;">🔍 平均搜索耗时</p>
+                <p id="perfSearchAvg" class="text-2xl font-bold" style="color: #C7D2FE;">-</p>
+                <p id="perfSearchMeta" class="text-[10px] mt-1" style="color: rgba(165, 180, 252, 0.7);">-</p>
+            </div>
+            <div class="panel" style="background-color: rgba(20, 184, 166, 0.10); border-color: rgba(20, 184, 166, 0.30);">
+                <p class="text-sm" style="color: #5EEAD4;">📥 平均文件插入</p>
+                <p id="perfInsertFile" class="text-2xl font-bold" style="color: #99F6E4;">-</p>
+                <p id="perfInsertFileMeta" class="text-[10px] mt-1" style="color: rgba(94, 234, 212, 0.7);">-</p>
+            </div>
+            <div class="panel" style="background-color: rgba(236, 72, 153, 0.10); border-color: rgba(236, 72, 153, 0.30);">
+                <p class="text-sm" style="color: #F9A8D4;">🧩 平均 chunk 插入</p>
+                <p id="perfInsertChunk" class="text-2xl font-bold" style="color: #FBCFE8;">-</p>
+                <p id="perfInsertChunkMeta" class="text-[10px] mt-1" style="color: rgba(249, 168, 212, 0.7);">-</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 趋势图 + Step 拆解 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="panel">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-sm" style="color: var(--color-foreground);">📈 耗时趋势（按天）</h3>
+                <select id="trendType" onchange="loadTrend()"
+                        class="text-xs px-2 py-1 rounded"
+                        style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground); border: 1px solid var(--color-border);">
+                    <option value="search">搜索</option>
+                    <option value="chat">问答</option>
+                    <option value="insert_file">文件上传</option>
+                    <option value="email_import">邮件导入</option>
+                </select>
+            </div>
+            <div class="h-64"><canvas id="trendChart"></canvas></div>
+        </div>
+        <div class="panel">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-sm" style="color: var(--color-foreground);">🔬 Step 耗时拆解</h3>
+                <select id="breakdownType" onchange="loadBreakdown()"
+                        class="text-xs px-2 py-1 rounded"
+                        style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground); border: 1px solid var(--color-border);">
+                    <option value="search">搜索</option>
+                    <option value="chat">问答</option>
+                    <option value="insert_file">文件上传</option>
+                    <option value="email_import">邮件导入</option>
+                </select>
+            </div>
+            <div class="h-64"><canvas id="breakdownChart"></canvas></div>
+            <!-- 术语图例（hover 解释旁路）-->
+            <div id="docBreakdownGlossary" class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]"></div>
+        </div>
+    </div>
+
+    <!-- 数据存储目录 -->
+    <div class="panel">
+        <h3 class="font-semibold text-sm mb-4" style="color: var(--color-foreground);">📁 数据存储目录</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="space-y-3">
+                <div>
+                    <p class="font-medium text-sm" style="color: var(--color-foreground);">项目根目录</p>
+                    <code class="text-xs block mt-1 px-2 py-1 rounded"
+                          style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">~/Desktop/AI产出/email-wiki-demo/</code>
+                </div>
+                <div>
+                    <p class="font-medium text-sm" style="color: var(--color-foreground);">向量数据库 (LanceDB)</p>
+                    <code class="text-xs block mt-1 px-2 py-1 rounded"
+                          style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">data/lancedb/</code>
+                </div>
+                <div>
+                    <p class="font-medium text-sm" style="color: var(--color-foreground);">邮件数据库 (SQLite)</p>
+                    <code class="text-xs block mt-1 px-2 py-1 rounded"
+                          style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">data/emails.db</code>
+                </div>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <p class="font-medium text-sm" style="color: var(--color-foreground);">用户上传文档</p>
+                    <code class="text-xs block mt-1 px-2 py-1 rounded"
+                          style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">uploads/</code>
+                </div>
+                <div>
+                    <p class="font-medium text-sm" style="color: var(--color-foreground);">Embedding 模型</p>
+                    <p id="embedderPath" class="text-[10px] mt-1" style="color: var(--color-muted);">模型路径: -</p>
+                    <p id="embedderInfo" class="text-[10px] mt-0.5" style="color: var(--color-muted);">文档: -</p>
+                    <p id="codeEmbedderInfo" class="text-[10px] mt-0.5" style="color: var(--color-muted);">代码: -</p>
+                </div>
+                <div>
+                    <p class="font-medium text-sm" style="color: var(--color-foreground);">测试文档</p>
+                    <code class="text-xs block mt-1 px-2 py-1 rounded"
+                          style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">test_docs/</code>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+/* ============================================================
+ * 文档看板 tab — 页面脚本
+ *
+ * initDocDashboard() 由 router.js 路由命中后调用
+ * 依赖 shared.js 暴露的 formatBytes（formatSize 同义）
+ * Chart.js 全局可用（在 index.html 加载）
+ * ============================================================ */
+
+// Chart 实例引用（避免重复创建）
+let trendChartInstance = null;
+let breakdownChartInstance = null;
+
+// ─── 路由入口 ────────────────────────────────────────────
+window.initDocDashboard = function () {
+    // 暗色主题下 Chart.js 默认色：文字灰青、网格深蓝灰
+    // 注：每次进入 tab 都重置，确保主题色一致
+    Chart.defaults.color = "#94A3B8";
+    Chart.defaults.borderColor = "#334155";
+    refreshDashboard();
+};
+
+// ─── 刷新看板（拉取 stats + 趋势 + 拆解） ─────────────────
+async function refreshDashboard() {
+    const btn = document.getElementById('dashboardRefreshBtn');
+    const icon = document.getElementById('dashboardRefreshIcon');
+    const ts = document.getElementById('dashboardLastUpdated');
+    btn.disabled = true;
+    icon.style.display = 'inline-block';
+    icon.style.transition = 'transform 0.6s ease';
+    icon.style.transform = 'rotate(360deg)';
+    ts.textContent = '刷新中...';
+    try {
+        const stats = await fetch('/api/stats').then(r => r.json());
+        loadDashboardStats(stats);
+        await Promise.all([loadTrend(), loadBreakdown()]);
+        const now = new Date();
+        const hh = String(now.getHours()).padStart(2, '0');
+        const mm = String(now.getMinutes()).padStart(2, '0');
+        const ss = String(now.getSeconds()).padStart(2, '0');
+        ts.textContent = `更新于 ${hh}:${mm}:${ss}`;
+    } catch (err) {
+        console.error('refreshDashboard failed:', err);
+        ts.textContent = '刷新失败';
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => { icon.style.transform = 'rotate(0)'; }, 50);
+    }
+}
+
+// ─── 写入统计卡片 ────────────────────────────────────────
+function loadDashboardStats(stats) {
+    const d = stats.documents || {};
+    const e = stats.emails || {};
+    document.getElementById('statDocs').textContent = d.total_documents || 0;
+    document.getElementById('statEmails').textContent = e.total_emails || 0;
+    document.getElementById('statThreads').textContent = e.total_threads || 0;
+    document.getElementById('statChunks').textContent = d.total_chunks || 0;
+
+    const emb = stats.embedder || {};
+    const embEl = document.getElementById('embedderInfo');
+    const embPathEl = document.getElementById('embedderPath');
+    if (emb.cache_dir && embPathEl) {
+        embPathEl.textContent = `模型路径: ${emb.cache_dir}`;
+    }
+    if (embEl && emb.model_name) {
+        const shortName = emb.model_name.split('/').pop();
+        embEl.textContent = `文档: ${shortName} · ${emb.dimension}维`;
+    }
+    const cemb = stats.code_embedder || {};
+    const cembEl = document.getElementById('codeEmbedderInfo');
+    if (cembEl && cemb.model_name) {
+        const shortName = cemb.model_name.split('/').pop();
+        cembEl.textContent = `代码: ${shortName} · ${cemb.dimension}维`;
+    }
+
+    const perf = stats.performance || {};
+    renderPerfCards(perf);
+}
+
+// ─── 性能指标卡片（搜索 / 插入） ──────────────────────────
+function renderPerfCards(perf) {
+    const disk = perf.lancedb_disk_bytes || 0;
+    document.getElementById('perfDisk').textContent = formatBytes(disk) || '0 B';
+    document.getElementById('perfDiskBytes').textContent = `${disk.toLocaleString()} bytes`;
+
+    const s = perf.search || {};
+    document.getElementById('perfSearchAvg').textContent = s.count ? `${s.avg_ms} ms` : '-';
+    document.getElementById('perfSearchMeta').textContent = s.count
+        ? `n=${s.count} · P95 ${s.p95_ms}ms · max ${s.max_ms}ms` : '暂无搜索记录';
+
+    const ins = perf.insert || {};
+    document.getElementById('perfInsertFile').textContent = ins.file_count ? `${ins.avg_per_file_ms} ms` : '-';
+    document.getElementById('perfInsertFileMeta').textContent = ins.file_count
+        ? `${ins.file_count} 次上传` : '暂无插入记录';
+    document.getElementById('perfInsertChunk').textContent = ins.chunk_count ? `${ins.avg_per_chunk_ms} ms` : '-';
+    document.getElementById('perfInsertChunkMeta').textContent = ins.chunk_count
+        ? `${ins.chunk_count} 个 chunk · 平摊估算` : '暂无 chunk 数据';
+}
+
+// ─── 耗时趋势图（折线） ──────────────────────────────────
+async function loadTrend() {
+    const type = document.getElementById('trendType').value;
+    try {
+        const res = await fetch(`/api/performance/trend?type=${type}&days=7`);
+        const data = await res.json();
+        const labels = data.trend.map(d => d.day);
+        const avg = data.trend.map(d => d.avg_ms);
+        const max = data.trend.map(d => d.max_ms);
+        const ctx = document.getElementById('trendChart');
+        if (trendChartInstance) trendChartInstance.destroy();
+        trendChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    { label: 'avg (ms)', data: avg, borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.15)', tension: 0.3, fill: true },
+                    { label: 'max (ms)', data: max, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.08)', tension: 0.3, borderDash: [4, 4] },
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
+                scales: {
+                    y: { beginAtZero: true, ticks: { font: { size: 10 } }, grid: { color: 'rgba(148, 163, 184, 0.1)' } },
+                    x: { ticks: { font: { size: 10 } }, grid: { color: 'rgba(148, 163, 184, 0.1)' } }
+                }
+            }
+        });
+    } catch (err) { console.error('trend load failed:', err); }
+}
+
+// ─── Step 拆解图（水平条形） ──────────────────────────────
+async function loadBreakdown() {
+    const type = document.getElementById('breakdownType').value;
+    try {
+        const res = await fetch(`/api/performance/breakdown?type=${type}`);
+        const data = await res.json();
+        const labels = data.breakdown.map(d => d.step_name);
+        const avg = data.breakdown.map(d => d.avg_ms);
+        const ctx = document.getElementById('breakdownChart');
+        if (breakdownChartInstance) breakdownChartInstance.destroy();
+        breakdownChartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'avg (ms)', data: avg,
+                    backgroundColor: ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6']
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { beginAtZero: true, ticks: { font: { size: 10 } }, grid: { color: 'rgba(148, 163, 184, 0.1)' } },
+                    y: { ticks: { font: { size: 10 } }, grid: { color: 'rgba(148, 163, 184, 0.1)' } }
+                }
+            }
+        });
+        // 渲染术语图例 (旁路 hover 解释, 替代 Chart.js canvas 不支持 HTML label 的限制)
+        renderBreakdownGlossary('docBreakdownGlossary', labels);
+    } catch (err) { console.error('breakdown load failed:', err); }
+}
+
+// 暴露到 window（路由 / 内联 onclick 用）
+window.refreshDashboard = refreshDashboard;
+window.loadDashboardStats = loadDashboardStats;
+window.renderPerfCards = renderPerfCards;
+window.loadTrend = loadTrend;
+window.loadBreakdown = loadBreakdown;
+
+/**
+ * 渲染 dashboard 拆解图的术语图例 (旁路 hover 解释)
+ * - 对每个 label, 提取其中含 glossary 词典的术语
+ * - 输出为带虚线下划线的 <span>, hover 出解释
+ * @param {string} containerId
+ * @param {string[]} labels - chart 的 y 轴 label 数组
+ */
+function renderBreakdownGlossary(containerId, labels) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (!labels || labels.length === 0) {
+        el.innerHTML = '<span style="color: var(--color-muted);">该类型暂无数据</span>';
+        return;
+    }
+    // 收集所有出现过的术语 key (去重)
+    const seen = new Set();
+    const items = [];
+    // 提一次排序 + 用 SSOT 的转义函数, 避免 key 含正则元字符时崩
+    const keys = Object.keys(window.GLOSSARY || {}).sort((a, b) => b.length - a.length);
+    const escape = window._glossaryEscapeRegExp || (s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    for (const label of labels) {
+        if (typeof label !== "string") continue;
+        for (const key of keys) {
+            if (seen.has(key)) continue;
+            const re = new RegExp(escape(key), "i");
+            if (re.test(label)) {
+                seen.add(key);
+                items.push(key);
+            }
+        }
+    }
+    if (items.length === 0) {
+        el.innerHTML = '';
+        return;
+    }
+    el.innerHTML = '<span style="margin-right: 4px;">💡 术语:</span>' +
+        items.map(k => `<span class="glossary-term" data-glossary="${k}" tabindex="0">${k}</span>`).join(', ');
+}
+window.renderBreakdownGlossary = renderBreakdownGlossary;
+</script>

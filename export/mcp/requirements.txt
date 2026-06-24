@@ -1,0 +1,19 @@
+# MCP Server 最小依赖
+# email-wiki-demo 代码知识库 MCP 端点
+# 完整依赖见 backend/requirements.txt（包含 LanceDB / tree-sitter / bge 等）
+
+mcp>=1.12.4,<2.0.0
+fastapi==0.115.0
+uvicorn==0.30.0
+sse-starlette>=3.0.0
+nest_asyncio>=1.6.0
+pydantic>=2.0.0
+
+# 完整后端依赖（运行完整 email-wiki-demo 后端时需要）
+# 安装方式：pip install -r backend/requirements.txt
+# lancedb>=0.6.0,<0.7.0
+# sentence-transformers==3.0.0
+# tree-sitter-language-pack>=0.9.0
+# jieba>=0.42.1
+# openai>=1.0.0
+# python-dotenv>=1.0.0

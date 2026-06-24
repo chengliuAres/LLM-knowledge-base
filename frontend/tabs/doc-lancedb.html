@@ -1,0 +1,752 @@
+<!-- LanceDB 内部 tab：A 区表概览 + B 区数据浏览 + C 区原理演示（存入 / 搜索） -->
+
+<div class="max-w-6xl mx-auto space-y-4">
+    <!-- 顶部：标题 + 刷新 -->
+    <div class="panel">
+        <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold" style="color: var(--color-foreground);">🗄️ LanceDB 内部</h2>
+            <div class="flex items-center space-x-3">
+                <span id="lancedb-last-updated" class="text-xs" style="color: var(--color-muted);">尚未加载</span>
+                <button onclick="refreshLancedb()" id="lancedb-refresh-btn"
+                        class="btn"
+                        style="background-color: rgba(59, 130, 246, 0.12); color: var(--color-accent); padding: 6px 12px;">
+                    <span id="lancedb-refresh-icon">🔄</span>
+                    <span>刷新</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="lancedb-error" class="hidden panel"
+         style="background-color: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.40); color: #FCA5A5;">
+        <span id="lancedb-error-msg"></span>
+    </div>
+
+    <!-- ─── A 区：表概览 ─── -->
+    <div class="panel">
+        <h3 class="text-base font-semibold mb-4" style="color: var(--color-foreground);">
+            🗄️ A. 表概览 <span id="lancedb-table-name" class="text-sm font-normal ml-2" style="color: var(--color-muted);"></span>
+        </h3>
+
+        <!-- 4 元信息卡片 -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+            <div class="panel" style="background-color: rgba(100, 116, 139, 0.10); border-color: rgba(100, 116, 139, 0.30); padding: 1rem;">
+                <p class="text-sm" style="color: #CBD5E1;">📊 行数</p>
+                <p id="lancedb-total-rows" class="text-2xl font-bold" style="color: #E2E8F0;">-</p>
+            </div>
+            <div class="panel" style="background-color: rgba(245, 158, 11, 0.10); border-color: rgba(245, 158, 11, 0.30); padding: 1rem;">
+                <p class="text-sm" style="color: #FCD34D;">🔖 当前版本</p>
+                <p id="lancedb-version" class="text-2xl font-bold" style="color: #FDE68A;">-</p>
+            </div>
+            <div class="panel" style="background-color: rgba(132, 204, 22, 0.10); border-color: rgba(132, 204, 22, 0.30); padding: 1rem;">
+                <p class="text-sm" style="color: #BEF264;">📦 Fragment 数</p>
+                <p id="lancedb-fragments" class="text-2xl font-bold" style="color: #D9F99D;">-</p>
+            </div>
+            <div class="panel" style="background-color: rgba(217, 70, 239, 0.10); border-color: rgba(217, 70, 239, 0.30); padding: 1rem;">
+                <p class="text-sm" style="color: #F0ABFC;">🧭 索引数</p>
+                <p id="lancedb-indices" class="text-2xl font-bold" style="color: #F5D0FE;">-</p>
+            </div>
+        </div>
+
+        <!-- 搜索策略提示条 -->
+        <div id="lancedb-strategy-bar" class="hidden panel"
+             style="background-color: rgba(245, 158, 11, 0.10); border-color: rgba(245, 158, 11, 0.40); color: #FCD34D; padding: 0.75rem 1rem; margin-bottom: 1.25rem;">
+            <span id="lancedb-strategy-text"></span>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <!-- Schema 表 -->
+            <div>
+                <h4 class="font-semibold text-sm mb-3" style="color: var(--color-foreground);">📋 Schema 字段</h4>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm border-collapse">
+                        <thead>
+                            <tr style="background-color: rgba(255, 255, 255, 0.04);">
+                                <th class="text-left px-3 py-2 font-medium" style="color: var(--color-muted); border-bottom: 1px solid var(--color-border);">字段名</th>
+                                <th class="text-left px-3 py-2 font-medium" style="color: var(--color-muted); border-bottom: 1px solid var(--color-border);">类型</th>
+                                <th class="text-center px-3 py-2 font-medium" style="color: var(--color-muted); border-bottom: 1px solid var(--color-border);">向量</th>
+                                <th class="text-center px-3 py-2 font-medium" style="color: var(--color-muted); border-bottom: 1px solid var(--color-border);">维度</th>
+                            </tr>
+                        </thead>
+                        <tbody id="lancedb-schema-tbody">
+                            <tr><td colspan="4" class="px-3 py-4 text-center text-xs" style="color: var(--color-muted);">加载中…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Fragment 条形图 -->
+            <div>
+                <h4 class="font-semibold text-sm mb-3" style="color: var(--color-foreground);">📦 Fragment 行数分布</h4>
+                <div id="lancedb-fragments-chart" class="space-y-1.5 max-h-64 overflow-y-auto pr-2">
+                    <p class="text-xs" style="color: var(--color-muted);">加载中…</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── B 区：数据浏览 ─── -->
+    <div class="panel">
+        <h3 class="text-base font-semibold mb-4" style="color: var(--color-foreground);">🔍 B. 数据浏览</h3>
+
+        <!-- 工具条 -->
+        <div class="flex flex-wrap items-center gap-3 mb-4 pb-4" style="border-bottom: 1px solid var(--color-border);">
+            <select id="lancedb-filter-type" onchange="loadLancedbRows(0)"
+                    class="input text-sm" style="padding: 6px 10px;">
+                <option value="">全部类型</option>
+                <option value=".eml">📧 .eml</option>
+                <option value=".pdf">📕 .pdf</option>
+                <option value=".md">📝 .md</option>
+                <option value=".docx">📘 .docx</option>
+                <option value=".txt">📄 .txt</option>
+            </select>
+            <input type="text" id="lancedb-search-kw" placeholder="关键词搜索…"
+                   oninput="clearTimeout(window._ldbKwTimer); window._ldbKwTimer=setTimeout(()=>loadLancedbRows(0),500)"
+                   class="input flex-1 text-sm" style="padding: 6px 10px; min-width: 12rem;">
+            <label class="flex items-center gap-1.5 text-xs cursor-pointer select-none" style="color: var(--color-muted);">
+                <input type="checkbox" id="lancedb-include-vector" onchange="loadLancedbRows(0)">
+                显示完整向量
+            </label>
+            <span id="lancedb-rows-count" class="text-xs" style="color: var(--color-muted);"></span>
+            <div class="flex items-center gap-2">
+                <button onclick="lancedbPrevPage()" id="lancedb-prev-btn"
+                        class="btn" style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground); padding: 4px 10px;">
+                    ← 上页
+                </button>
+                <span id="lancedb-page-info" class="text-xs" style="color: var(--color-muted); min-width: 6rem; text-align: center;">-</span>
+                <button onclick="lancedbNextPage()" id="lancedb-next-btn"
+                        class="btn" style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground); padding: 4px 10px;">
+                    下页 →
+                </button>
+            </div>
+        </div>
+
+        <!-- 数据表格 -->
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr style="background-color: rgba(255, 255, 255, 0.04); border-bottom: 1px solid var(--color-border);">
+                        <th class="text-left px-3 py-2 font-medium" style="color: var(--color-muted);">ID</th>
+                        <th class="text-left px-3 py-2 font-medium" style="color: var(--color-muted);">文件名</th>
+                        <th class="text-center px-3 py-2 font-medium" style="color: var(--color-muted);">块#</th>
+                        <th class="text-left px-3 py-2 font-medium" style="color: var(--color-muted);">内容（摘要）</th>
+                        <th class="text-left px-3 py-2 font-medium" style="color: var(--color-muted);">向量前5维</th>
+                        <th class="text-center px-3 py-2 font-medium" style="color: var(--color-muted);">Fragment</th>
+                        <th class="text-center px-3 py-2 font-medium" style="color: var(--color-muted);">Norm</th>
+                    </tr>
+                </thead>
+                <tbody id="lancedb-rows-tbody">
+                    <tr><td colspan="7" class="px-3 py-8 text-center text-xs" style="color: var(--color-muted);">加载中…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ─── C 区：原理演示 ─── -->
+    <div class="panel">
+        <button onclick="toggleLancedbDemo()" class="flex items-center gap-2 text-base font-semibold w-full text-left focus:outline-none" style="color: var(--color-foreground);">
+            <span id="lancedb-demo-arrow" class="transition-transform duration-300" style="color: var(--color-muted); transform: rotate(-90deg);">▼</span>
+            🧪 C. 原理演示
+            <span class="text-xs font-normal ml-2" style="color: var(--color-muted);">点击展开 → 手动输入文本触发逐步演示</span>
+        </button>
+        <div id="lancedb-demo-content" style="max-height:0;overflow:hidden;transition:max-height 0.4s ease-out">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+
+                <!-- 左：📥 存入演示 -->
+                <div class="panel" style="background-color: rgba(100, 116, 139, 0.10); border-color: rgba(100, 116, 139, 0.30);">
+                    <h4 class="font-semibold text-sm mb-4" style="color: var(--color-foreground);">📥 存入演示</h4>
+                    <div class="space-y-3 mb-4">
+                        <div>
+                            <label class="text-xs mb-1 block" style="color: var(--color-muted);">输入文本</label>
+                            <textarea id="lancedb-insert-text" rows="3" class="input w-full text-sm" style="padding: 6px 10px;"
+                                      placeholder="输入要演示写入的文本">机器学习是 AI 子领域。深度学习用神经网络处理高维数据。</textarea>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="text-xs mb-1 block" style="color: var(--color-muted);">chunk_size</label>
+                                <input type="number" id="lancedb-insert-chunk-size" value="500" class="input w-full text-sm" style="padding: 6px 10px;">
+                            </div>
+                            <div>
+                                <label class="text-xs mb-1 block" style="color: var(--color-muted);">overlap</label>
+                                <input type="number" id="lancedb-insert-overlap" value="50" class="input w-full text-sm" style="padding: 6px 10px;">
+                            </div>
+                        </div>
+                        <button onclick="runInsertDemo()" id="lancedb-insert-btn"
+                                class="btn w-full"
+                                style="background-color: var(--color-primary); color: var(--color-foreground); border: 1px solid var(--color-border); padding: 8px;">
+                            🚀 执行演示
+                        </button>
+                    </div>
+                    <div id="lancedb-insert-steps" class="space-y-3"></div>
+                </div>
+
+                <!-- 右：🔍 搜索演示 -->
+                <div class="panel" style="background-color: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.30);">
+                    <h4 class="font-semibold text-sm mb-4" style="color: var(--color-foreground);">🔍 搜索演示</h4>
+                    <div class="space-y-3 mb-4">
+                        <div>
+                            <label class="text-xs mb-1 block" style="color: var(--color-muted);">查询词</label>
+                            <input type="text" id="lancedb-search-query" value="邮件项目" class="input w-full text-sm" style="padding: 6px 10px;">
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="text-xs mb-1 block" style="color: var(--color-muted);">top_k</label>
+                                <input type="number" id="lancedb-search-topk" value="5" class="input w-full text-sm" style="padding: 6px 10px;">
+                            </div>
+                            <div>
+                                <label class="text-xs mb-1 block" style="color: var(--color-muted);">score_threshold</label>
+                                <input type="number" id="lancedb-search-threshold" value="0.3" step="0.05" class="input w-full text-sm" style="padding: 6px 10px;">
+                            </div>
+                        </div>
+                        <button onclick="runSearchDemo()" id="lancedb-search-btn"
+                                class="btn w-full"
+                                style="background-color: rgba(245, 158, 11, 0.85); color: white; padding: 8px;">
+                            🔍 执行演示
+                        </button>
+                    </div>
+                    <div id="lancedb-search-steps" class="space-y-3"></div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* 折叠步骤卡（默认展开，click 切换） */
+    #lancedb-insert-steps .collapsible-content,
+    #lancedb-search-steps .collapsible-content {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease-out;
+    }
+    #lancedb-insert-steps .collapsible-content.expanded,
+    #lancedb-search-steps .collapsible-content.expanded {
+        max-height: 4000px;
+    }
+</style>
+
+<script>
+/* ============================================================
+ * LanceDB 内部 tab — 页面脚本
+ *
+ * initDocLancedb() 由 router.js 路由命中后调用
+ * 依赖 shared.js 暴露的 escapeHtml
+ * ============================================================ */
+
+// ─── 状态 & 常量 ─────────────────────────────────────────
+let lancedbOffset = 0;
+const LANCEDB_PAGE_SIZE = 20;
+let lancedbTotal = 0;
+
+// 匹配原因徽章颜色（暗色主题：rgba 透明底 + 高亮前景色）
+const REASON_COLOR_CLASS = {
+    red:    { bg: 'rgba(239, 68, 68, 0.15)',  fg: '#FCA5A5', border: 'rgba(239, 68, 68, 0.40)' },
+    amber:  { bg: 'rgba(245, 158, 11, 0.15)', fg: '#FCD34D', border: 'rgba(245, 158, 11, 0.40)' },
+    blue:   { bg: 'rgba(59, 130, 246, 0.15)', fg: '#93C5FD', border: 'rgba(59, 130, 246, 0.40)' },
+    indigo: { bg: 'rgba(99, 102, 241, 0.15)', fg: '#A5B4FC', border: 'rgba(99, 102, 241, 0.40)' },
+    slate:  { bg: 'rgba(100, 116, 139, 0.15)',fg: '#CBD5E1', border: 'rgba(100, 116, 139, 0.40)' },
+    purple: { bg: 'rgba(168, 85, 247, 0.15)', fg: '#D8B4FE', border: 'rgba(168, 85, 247, 0.40)' },
+    green:  { bg: 'rgba(34, 197, 94, 0.15)',  fg: '#86EFAC', border: 'rgba(34, 197, 94, 0.40)' },
+};
+
+function renderMatchReasons(reasons) {
+    if (!reasons || reasons.length === 0) return '';
+    return `<div class="flex flex-wrap gap-1 mt-1.5">` +
+        reasons.map(r => {
+            const c = REASON_COLOR_CLASS[r.color] || REASON_COLOR_CLASS.slate;
+            return `<span class="text-[10px] px-1.5 py-0.5 rounded border" style="background-color: ${c.bg}; color: ${c.fg}; border-color: ${c.border};">${escapeHtml(r.label)}</span>`;
+        }).join('') +
+        `</div>`;
+}
+
+// ─── 路由入口 ────────────────────────────────────────────
+window.initDocLancedb = function () {
+    refreshLancedb();
+};
+
+// ─── A 区：刷新 / 加载表概览 ─────────────────────────────
+async function refreshLancedb() {
+    const btn = document.getElementById('lancedb-refresh-btn');
+    const icon = document.getElementById('lancedb-refresh-icon');
+    const ts = document.getElementById('lancedb-last-updated');
+    if (!btn) return;
+    btn.disabled = true;
+    icon.style.transition = 'transform 0.6s ease';
+    icon.style.transform = 'rotate(360deg)';
+    ts.textContent = '刷新中...';
+    try {
+        await Promise.all([loadLancedbInspect(), loadLancedbRows(0)]);
+        const now = new Date();
+        const hh = String(now.getHours()).padStart(2, '0');
+        const mm = String(now.getMinutes()).padStart(2, '0');
+        const ss = String(now.getSeconds()).padStart(2, '0');
+        ts.textContent = `更新于 ${hh}:${mm}:${ss}`;
+    } catch (err) {
+        console.error('refreshLancedb failed:', err);
+        ts.textContent = '刷新失败';
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => { icon.style.transform = 'rotate(0)'; }, 50);
+    }
+}
+
+async function loadLancedbInspect() {
+    const errDiv = document.getElementById('lancedb-error');
+    errDiv.classList.add('hidden');
+    try {
+        const res = await fetch('/api/lancedb/inspect');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || '加载失败');
+
+        // 元信息卡片
+        document.getElementById('lancedb-table-name').textContent = `(${data.table_name})`;
+        document.getElementById('lancedb-total-rows').textContent = data.total_rows;
+        document.getElementById('lancedb-version').textContent = `v${data.current_version}`;
+        document.getElementById('lancedb-fragments').textContent = data.fragment_count;
+        document.getElementById('lancedb-indices').textContent = (data.indices || []).length;
+
+        // 搜索策略提示条
+        const stratBar = document.getElementById('lancedb-strategy-bar');
+        const stratText = document.getElementById('lancedb-strategy-text');
+        stratBar.classList.remove('hidden');
+        if (!data.has_index) {
+            const flops = data.total_rows * data.vector_dim * 2;
+            stratText.innerHTML = `⚠️ 当前无索引 → 每次搜索做全量 L2 扫描（O(n×d) = <strong>${data.total_rows} × ${data.vector_dim}</strong> 次浮点运算 ≈ <strong>${flops.toLocaleString()}</strong> FLOP）`;
+        } else {
+            stratText.innerHTML = `✅ 已有索引（${(data.indices || []).length} 个）→ ${data.search_strategy}`;
+        }
+
+        // Schema 表
+        const schemaBody = document.getElementById('lancedb-schema-tbody');
+        schemaBody.innerHTML = (data.schema || []).map(f => `
+            <tr style="border-bottom: 1px solid var(--color-border);">
+                <td class="px-3 py-2 font-mono text-xs" style="color: #93C5FD;">${f.name}</td>
+                <td class="px-3 py-2 text-xs" style="color: var(--color-muted);">${f.type}</td>
+                <td class="px-3 py-2 text-center">${f.is_vector ? '<span class="text-[10px] px-2 py-0.5 rounded-full font-medium" style="background-color: rgba(217, 70, 239, 0.15); color: #F0ABFC; border: 1px solid rgba(217, 70, 239, 0.40);">✓ 向量</span>' : '<span style="color: var(--color-muted);">-</span>'}</td>
+                <td class="px-3 py-2 text-center text-xs">${f.vector_dim ? `<span class="font-mono" style="color: #F0ABFC;">${f.vector_dim}</span>` : '<span style="color: var(--color-muted);">-</span>'}</td>
+            </tr>
+        `).join('');
+
+        // Fragment 条形图（暗色版：灰色底 + 酸橙色填充 + 浅文字）
+        const frags = data.fragments || [];
+        const maxRows = Math.max(...frags.map(f => f.rows), 1);
+        document.getElementById('lancedb-fragments-chart').innerHTML = frags.map(f => {
+            const pct = Math.round((f.rows / maxRows) * 100);
+            return `
+                <div class="flex items-center gap-2 text-xs">
+                    <span class="text-right shrink-0" style="color: var(--color-muted); width: 4rem;">frag-${f.id}</span>
+                    <div class="flex-1 rounded-full h-5 relative overflow-hidden" style="background-color: rgba(255, 255, 255, 0.04);">
+                        <div class="absolute left-0 top-0 h-full rounded-full" style="width:${pct}%; background-color: rgba(132, 204, 22, 0.7);"></div>
+                        <span class="absolute right-2 top-0 h-full flex items-center text-[10px]" style="color: var(--color-foreground);">${f.rows} 行</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (err) {
+        document.getElementById('lancedb-error-msg').textContent = '❌ 加载概览失败: ' + err.message;
+        document.getElementById('lancedb-error').classList.remove('hidden');
+    }
+}
+
+// ─── B 区：加载数据行 ────────────────────────────────────
+async function loadLancedbRows(offset) {
+    if (offset !== undefined) lancedbOffset = offset;
+    const fileType = document.getElementById('lancedb-filter-type').value;
+    const keyword  = document.getElementById('lancedb-search-kw').value;
+    const includeVector = document.getElementById('lancedb-include-vector').checked;
+
+    const tbody = document.getElementById('lancedb-rows-tbody');
+    tbody.innerHTML = `<tr><td colspan="7" class="px-3 py-8 text-center text-xs" style="color: var(--color-muted);">
+        <div class="inline-block animate-spin rounded-full h-5 w-5 border-b-2 mr-2 align-middle" style="border-color: var(--color-accent);"></div>加载中…
+    </td></tr>`;
+
+    try {
+        let url = `/api/lancedb/rows?limit=${LANCEDB_PAGE_SIZE}&offset=${lancedbOffset}&include_full_vector=${includeVector}`;
+        if (fileType) url += `&file_type=${encodeURIComponent(fileType)}`;
+        if (keyword)  url += `&keyword=${encodeURIComponent(keyword)}`;
+
+        const res  = await fetch(url);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || '加载失败');
+
+        lancedbTotal = data.total;
+        const page       = Math.floor(lancedbOffset / LANCEDB_PAGE_SIZE) + 1;
+        const totalPages = Math.max(1, Math.ceil(lancedbTotal / LANCEDB_PAGE_SIZE));
+
+        document.getElementById('lancedb-rows-count').textContent = `共 ${lancedbTotal} 条`;
+        document.getElementById('lancedb-page-info').textContent  = `第 ${page} / ${totalPages} 页`;
+        document.getElementById('lancedb-prev-btn').disabled = lancedbOffset === 0;
+        document.getElementById('lancedb-next-btn').disabled = lancedbOffset + LANCEDB_PAGE_SIZE >= lancedbTotal;
+
+        if (!data.rows || data.rows.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="px-3 py-8 text-center text-xs" style="color: var(--color-muted);">无数据</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = data.rows.map((row, idx) => {
+            const globalIdx     = lancedbOffset + idx;
+            const shortId       = (row.id || '').length > 22 ? (row.id || '').substring(0, 22) + '…' : (row.id || '');
+            const contentPrev   = (row.content || '').length > 80 ? (row.content || '').substring(0, 80) + '…' : (row.content || '');
+            const vecPrev       = (row.vector_preview || []).slice(0, 5).map(v => v.toFixed(3)).join(', ');
+            const norm          = row.vector_norm != null ? row.vector_norm.toFixed(4) : '-';
+            const detailId      = `ldb-detail-${globalIdx}`;
+            return `
+                <tr style="border-bottom: 1px solid var(--color-border); cursor: pointer;" onclick="toggleLancedbRow('${detailId}')"
+                    onmouseover="this.style.backgroundColor='rgba(255,255,255,0.04)'" onmouseout="this.style.backgroundColor='transparent'">
+                    <td class="px-3 py-2 font-mono text-xs" style="color: #93C5FD;" title="${escapeHtml(row.id || '')}">${escapeHtml(shortId)}</td>
+                    <td class="px-3 py-2 text-xs max-w-[8rem] truncate" style="color: var(--color-foreground);" title="${escapeHtml(row.filename || '')}">${escapeHtml(row.filename || '-')}</td>
+                    <td class="px-3 py-2 text-center text-xs" style="color: var(--color-muted);">${row.chunk_index != null ? row.chunk_index : '-'}</td>
+                    <td class="px-3 py-2 text-xs max-w-[12rem]" style="color: var(--color-muted);" title="${escapeHtml(row.content || '')}">${escapeHtml(contentPrev)}</td>
+                    <td class="px-3 py-2 font-mono text-[10px]" style="color: var(--color-muted);">[${vecPrev}]</td>
+                    <td class="px-3 py-2 text-center text-xs font-medium" style="color: #BEF264;">${row.fragment_id != null ? row.fragment_id : '-'}</td>
+                    <td class="px-3 py-2 text-center text-xs" style="color: var(--color-muted);">${norm}</td>
+                </tr>
+                <tr id="${detailId}" class="hidden" style="background-color: rgba(255, 255, 255, 0.04); border-bottom: 1px solid var(--color-border);">
+                    <td colspan="7" class="px-4 py-4">${renderLancedbRowDetail(row)}</td>
+                </tr>
+            `;
+        }).join('');
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" class="px-3 py-4 text-center text-xs" style="color: #FCA5A5;">❌ 加载失败: ${err.message}</td></tr>`;
+    }
+}
+
+function toggleLancedbRow(detailId) {
+    const el = document.getElementById(detailId);
+    if (el) el.classList.toggle('hidden');
+}
+
+function renderLancedbRowDetail(row) {
+    let metaHtml = '-';
+    try {
+        const meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata;
+        metaHtml = `<pre class="text-xs rounded p-2 max-h-40 overflow-auto whitespace-pre-wrap" style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">${escapeHtml(JSON.stringify(meta, null, 2))}</pre>`;
+    } catch (e) {
+        metaHtml = `<code class="text-xs" style="color: var(--color-muted);">${escapeHtml(String(row.metadata || '-'))}</code>`;
+    }
+    const hasFullVec = row.vector_full && row.vector_full.length > 0;
+    const heatmapHtml = hasFullVec
+        ? `<div class="mt-2">${renderVectorHeatmap(row.vector_full)}</div>`
+        : `<p class="text-xs mt-2" style="color: var(--color-muted);">（勾选"显示完整向量"后重新加载可查看热力图）</p>`;
+    return `
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+                <p class="text-xs font-semibold mb-1" style="color: var(--color-muted);">📝 完整内容</p>
+                <pre class="text-xs rounded p-2 max-h-40 overflow-auto whitespace-pre-wrap" style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-foreground);">${escapeHtml(row.content || '')}</pre>
+            </div>
+            <div>
+                <p class="text-xs font-semibold mb-1" style="color: var(--color-muted);">📋 Metadata JSON</p>
+                ${metaHtml}
+                <p class="text-xs mt-1" style="color: var(--color-muted);">🗂 物理归属：Fragment <strong style="color: #BEF264;">${row.fragment_id != null ? row.fragment_id : '-'}</strong></p>
+            </div>
+            <div>
+                <p class="text-xs font-semibold mb-1" style="color: var(--color-muted);">🌡️ Vector 热力图 (${row.vector_dim || 384} 维)</p>
+                <p class="text-[10px] mb-1" style="color: var(--color-muted);">蓝=正值 · 红=负值 · 深=绝对值大</p>
+                ${heatmapHtml}
+            </div>
+        </div>
+    `;
+}
+
+// 384 格完整热力图（每格 8×8px）
+function renderVectorHeatmap(vector) {
+    if (!vector || vector.length === 0) return '<p class="text-xs" style="color: var(--color-muted);">无向量数据</p>';
+    const cells = vector.map(v => {
+        const abs   = Math.abs(v);
+        const alpha = Math.min(1, abs * 5).toFixed(2);
+        const color = v >= 0 ? `rgba(59,130,246,${alpha})` : `rgba(239,68,68,${alpha})`;
+        return `<div style="width:8px;height:8px;background:${color};flex-shrink:0" title="${v.toFixed(4)}"></div>`;
+    }).join('');
+    return `<div style="display:flex;flex-wrap:wrap;gap:1px;max-width:312px">${cells}</div>`;
+}
+
+// 16 格迷你热力图（每格 10×10px）
+function renderVectorHeatmap16(vec) {
+    if (!vec || vec.length === 0) return '';
+    const cells = vec.map(v => {
+        const abs   = Math.abs(v);
+        const alpha = Math.min(1, abs * 5).toFixed(2);
+        const color = v >= 0 ? `rgba(59,130,246,${alpha})` : `rgba(239,68,68,${alpha})`;
+        return `<div style="width:10px;height:10px;background:${color}" title="${v.toFixed(4)}"></div>`;
+    }).join('');
+    return `<div style="display:flex;gap:2px;flex-wrap:wrap;max-width:200px">${cells}</div>`;
+}
+
+// ─── B 区分页 ────────────────────────────────────────────
+function lancedbPrevPage() {
+    if (lancedbOffset > 0) loadLancedbRows(Math.max(0, lancedbOffset - LANCEDB_PAGE_SIZE));
+}
+function lancedbNextPage() {
+    if (lancedbOffset + LANCEDB_PAGE_SIZE < lancedbTotal) loadLancedbRows(lancedbOffset + LANCEDB_PAGE_SIZE);
+}
+
+// ─── C 区折叠 ────────────────────────────────────────────
+function toggleLancedbDemo() {
+    const content = document.getElementById('lancedb-demo-content');
+    const arrow   = document.getElementById('lancedb-demo-arrow');
+    const isOpen  = content.style.maxHeight && content.style.maxHeight !== '0px';
+    content.style.maxHeight = isOpen ? '0px' : '4000px';
+    arrow.style.transform   = isOpen ? 'rotate(-90deg)' : 'rotate(0deg)';
+}
+
+// ─── C 区通用折叠卡片 ────────────────────────────────────
+function toggleLancedbStepCard(id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('expanded');
+}
+
+// ─── C 左：存入演示 ──────────────────────────────────────
+async function runInsertDemo() {
+    const btn      = document.getElementById('lancedb-insert-btn');
+    const stepsDiv = document.getElementById('lancedb-insert-steps');
+    btn.disabled    = true;
+    btn.textContent = '⏳ 演示中…';
+    stepsDiv.innerHTML = `<div class="text-center text-xs py-4" style="color: var(--color-muted);">
+        <div class="inline-block animate-spin rounded-full h-5 w-5 border-b-2 mr-2 align-middle" style="border-color: var(--color-accent);"></div>执行中…
+    </div>`;
+    try {
+        const res  = await fetch('/api/lancedb/demo/insert', {
+            method : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body   : JSON.stringify({
+                text      : document.getElementById('lancedb-insert-text').value,
+                chunk_size: parseInt(document.getElementById('lancedb-insert-chunk-size').value),
+                overlap   : parseInt(document.getElementById('lancedb-insert-overlap').value)
+            })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || '请求失败');
+        stepsDiv.innerHTML = (data.steps || []).map((step, i) => renderInsertStep(step, i)).join('');
+    } catch (err) {
+        stepsDiv.innerHTML = `<div class="panel" style="background-color: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.40); color: #FCA5A5;">❌ ${err.message}</div>`;
+    } finally {
+        btn.disabled    = false;
+        btn.textContent = '🚀 执行演示';
+    }
+}
+
+function renderInsertStep(step, i) {
+    const stepId = `insert-step-${i}`;
+    const out    = step.output || {};
+    let bodyHtml = `<p class="text-xs mb-3" style="color: var(--color-muted);">${escapeHtml(step.description || '')}</p>`;
+
+    if (step.name === 'parse_and_chunk') {
+        const chunks = out.chunks || [];
+        bodyHtml += `<p class="text-xs mb-2" style="color: var(--color-muted);">共 <strong style="color: var(--color-foreground);">${out.chunk_count}</strong> 块，合计 <strong style="color: var(--color-foreground);">${out.total_chars}</strong> 字符，均 <strong style="color: var(--color-foreground);">${out.avg_chars}</strong> 字符/块</p>`;
+        bodyHtml += chunks.map(c => `
+            <div class="rounded p-2 mb-1.5 text-xs flex gap-3 items-start" style="background-color: rgba(255, 255, 255, 0.04);">
+                <span class="shrink-0" style="color: var(--color-muted);">#${c.index}</span>
+                <span class="shrink-0" style="color: #FCD34D;">${c.length} 字</span>
+                <span style="color: var(--color-foreground);">${escapeHtml(c.preview)}</span>
+            </div>
+        `).join('');
+    } else if (step.name === 'embed_chunks') {
+        const vecs = out.vectors || [];
+        bodyHtml += `<p class="text-xs mb-2" style="color: var(--color-muted);">模型: <strong style="color: var(--color-foreground);">${out.model}</strong> · 维度: <strong style="color: var(--color-foreground);">${out.vector_dim}</strong></p>`;
+        bodyHtml += vecs.map(v => `
+            <div class="rounded p-2 mb-1.5" style="background-color: rgba(255, 255, 255, 0.04);">
+                <div class="flex flex-wrap gap-4 text-xs mb-2" style="color: var(--color-muted);">
+                    <span>Chunk#${v.chunk_index}</span>
+                    <span>dim=<strong style="color: var(--color-foreground);">${v.dim}</strong></span>
+                    <span>norm=<strong style="color: #93C5FD;">${v.norm}</strong></span>
+                    <span>min=${v.min}</span>
+                    <span>max=${v.max}</span>
+                </div>
+                <p class="text-[10px] mb-1" style="color: var(--color-muted);">前16维: ${(v.preview_first16 || []).join(', ')}</p>
+                ${renderVectorHeatmap16(v.preview_first16 || [])}
+            </div>
+        `).join('');
+    } else if (step.name === 'would_insert') {
+        const recs = out.records_preview || [];
+        bodyHtml += `
+            <div class="rounded p-3 mb-3" style="background-color: rgba(245, 158, 11, 0.10); border: 1px solid rgba(245, 158, 11, 0.40);">
+                <p class="text-xs font-semibold mb-1" style="color: #FCD34D;">🏷️ sandbox 仅演示，<em>未真实写入</em></p>
+                <p class="text-xs" style="color: #FCD34D;">将创建 Fragment ID: <strong style="color: #BEF264;">${out.would_create_fragment_id}</strong></p>
+                <p class="text-xs" style="color: #FCD34D;">写入后版本: <strong style="color: var(--color-foreground);">v${out.current_version}</strong> → <strong style="color: #93C5FD;">v${out.version_after_insert}</strong></p>
+            </div>
+        `;
+        bodyHtml += recs.map(r => `
+            <div class="rounded p-2 text-xs mb-1" style="background-color: rgba(255, 255, 255, 0.04); color: var(--color-muted);">
+                <span class="font-mono" style="color: #93C5FD;">${escapeHtml(r.id)}</span>
+                <span class="ml-2">${escapeHtml(r.content_preview)}</span>
+                <div class="mt-1" style="color: var(--color-muted);">向量前8: [${(r.vector_preview_first8 || []).join(', ')}]</div>
+            </div>
+        `).join('');
+    }
+
+    return `
+        <div class="rounded-lg overflow-hidden" style="border: 1px solid var(--color-border);">
+            <button onclick="toggleLancedbStepCard('${stepId}')"
+                    class="w-full flex items-center justify-between px-4 py-3 text-left focus:outline-none"
+                    style="background-color: rgba(255, 255, 255, 0.04);">
+                <div class="flex items-center gap-2">
+                    <span class="w-6 h-6 rounded-full text-xs flex items-center justify-center shrink-0"
+                          style="background-color: var(--color-muted); color: var(--color-background);">${i + 1}</span>
+                    <span class="font-medium text-sm" style="color: var(--color-foreground);">${escapeHtml(step.title)}</span>
+                </div>
+                <span class="text-xs" style="color: var(--color-muted);">${(step.duration_ms || 0).toFixed(0)}ms ▼</span>
+            </button>
+            <div id="${stepId}" class="collapsible-content expanded px-4 py-3">
+                ${bodyHtml}
+            </div>
+        </div>
+    `;
+}
+
+// ─── C 右：搜索演示 ──────────────────────────────────────
+async function runSearchDemo() {
+    const btn      = document.getElementById('lancedb-search-btn');
+    const stepsDiv = document.getElementById('lancedb-search-steps');
+    btn.disabled    = true;
+    btn.textContent = '⏳ 演示中…';
+    stepsDiv.innerHTML = `<div class="text-center text-xs py-4" style="color: var(--color-muted);">
+        <div class="inline-block animate-spin rounded-full h-5 w-5 border-b-2 mr-2 align-middle" style="border-color: #FCD34D;"></div>执行中…
+    </div>`;
+    try {
+        const res  = await fetch('/api/lancedb/demo/search', {
+            method : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body   : JSON.stringify({
+                query          : document.getElementById('lancedb-search-query').value,
+                top_k          : parseInt(document.getElementById('lancedb-search-topk').value),
+                score_threshold: parseFloat(document.getElementById('lancedb-search-threshold').value)
+            })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || '请求失败');
+        stepsDiv.innerHTML = (data.steps || []).map((step, i) => renderSearchStep(step, i)).join('');
+    } catch (err) {
+        stepsDiv.innerHTML = `<div class="panel" style="background-color: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.40); color: #FCA5A5;">❌ ${err.message}</div>`;
+    } finally {
+        btn.disabled    = false;
+        btn.textContent = '🔍 执行演示';
+    }
+}
+
+function renderSearchStep(step, i) {
+    const stepId = `search-step-${i}`;
+    const out    = step.output || {};
+    let bodyHtml = `<p class="text-xs mb-3" style="color: var(--color-muted);">${escapeHtml(step.description || '')}</p>`;
+
+    if (step.name === 'embed_query') {
+        bodyHtml += `
+            <div class="flex flex-wrap gap-4 text-xs mb-2" style="color: var(--color-muted);">
+                <span>模型: <strong style="color: var(--color-foreground);">${escapeHtml(out.model || '')}</strong></span>
+                <span>维度: <strong style="color: var(--color-foreground);">${out.dim}</strong></span>
+                <span>norm: <strong style="color: #93C5FD;">${out.norm}</strong></span>
+            </div>
+            <p class="text-[10px] mb-1" style="color: var(--color-muted);">前16维: ${(out.preview_first16 || []).join(', ')}</p>
+            ${renderVectorHeatmap16(out.preview_first16 || [])}
+        `;
+    } else if (step.name === 'scan_strategy') {
+        const flops     = out.flops_estimate || 0;
+        const formatted = `${out.total_rows_to_scan} × ${out.vector_dim} × 2 = ${flops.toLocaleString()} 次浮点运算`;
+        bodyHtml += `
+            <div class="rounded p-3" style="background-color: rgba(245, 158, 11, 0.10); border: 1px solid rgba(245, 158, 11, 0.40);">
+                <p class="font-bold text-base mb-1" style="color: #FCD34D;">${out.has_index ? '✅ 索引检索' : '⚠️ 全量扫描'}</p>
+                <p class="text-xs" style="color: #FCD34D;">策略: <strong>${escapeHtml(out.strategy || '')}</strong> · 扫描 ${out.fragments_to_scan} 个 fragment · ${out.total_rows_to_scan} 行</p>
+                <p class="text-xs mt-1" style="color: #FDE68A;">估算 FLOP：<code class="px-1 rounded font-mono" style="background-color: rgba(245, 158, 11, 0.08);">${formatted}</code></p>
+            </div>
+        `;
+    } else if (step.name === 'compute_distances') {
+        const cands   = out.candidates || [];
+        const maxDist = out.distance_max || 1;
+        bodyHtml += `<p class="text-xs mb-2" style="color: var(--color-muted);">返回 <strong style="color: var(--color-foreground);">${out.candidates_returned}</strong> 候选，距离范围 [${(out.distance_min || 0).toFixed(4)}, ${(out.distance_max || 0).toFixed(4)}]</p>`;
+        bodyHtml += cands.map(c => {
+            const pct = Math.round((c.distance / maxDist) * 100);
+            return `
+                <div class="rounded p-2 mb-1.5 text-xs" style="background-color: rgba(255, 255, 255, 0.04);">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="font-mono truncate max-w-[6rem]" style="color: #93C5FD;" title="${escapeHtml(c.id || '')}">${escapeHtml((c.id || '').substring(0, 22))}</span>
+                        <span class="truncate flex-1" style="color: var(--color-muted);" title="${escapeHtml(c.filename || '')}">${escapeHtml(c.filename || '')}</span>
+                        <span class="font-mono shrink-0" style="color: var(--color-foreground);">d=${c.distance.toFixed(4)}</span>
+                    </div>
+                    <div class="rounded-full h-2 w-full" style="background-color: rgba(255, 255, 255, 0.04);">
+                        <div class="h-2 rounded-full" style="width:${pct}%; background-color: var(--color-muted);"></div>
+                    </div>
+                    <p class="mt-1 truncate" style="color: var(--color-muted);">${escapeHtml(c.content_preview || '')}</p>
+                </div>
+            `;
+        }).join('');
+    } else if (step.name === 'top_k_selection') {
+        const sel = out.selected || [];
+        bodyHtml += `<p class="text-xs mb-2" style="color: var(--color-muted);">选取 Top-<strong style="color: var(--color-foreground);">${out.k}</strong> 条</p>`;
+        bodyHtml += sel.map((c, ci) => `
+            <div class="rounded p-2 mb-1.5 text-xs flex items-center gap-2" style="background-color: rgba(59, 130, 246, 0.10); border: 1px solid rgba(59, 130, 246, 0.30);">
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0" style="background-color: #3B82F6; color: white;">#${ci + 1}</span>
+                <span class="font-mono truncate" style="color: #93C5FD;">${escapeHtml((c.id || '').substring(0, 28))}</span>
+                <span class="ml-auto shrink-0" style="color: var(--color-muted);">d=${c.distance.toFixed(4)}</span>
+            </div>
+        `).join('');
+    } else if (step.name === 'score_conversion') {
+        const exs = out.examples || [];
+        bodyHtml += `<p class="text-xs mb-2" style="color: var(--color-muted);">公式：<code class="px-1.5 py-0.5 rounded font-mono" style="background-color: rgba(255, 255, 255, 0.04);">${escapeHtml(out.formula || '')}</code></p>`;
+        bodyHtml += `<table class="w-full text-xs border-collapse mb-2"><thead><tr style="background-color: rgba(255, 255, 255, 0.04);">
+            <th class="px-2 py-1 text-left font-medium" style="color: var(--color-muted); border-bottom: 1px solid var(--color-border);">ID</th>
+            <th class="px-2 py-1 text-center font-medium" style="color: var(--color-muted); border-bottom: 1px solid var(--color-border);">distance</th>
+            <th class="px-2 py-1 text-center font-medium" style="color: var(--color-muted); border-bottom: 1px solid var(--color-border);">→ similarity</th>
+        </tr></thead><tbody>`;
+        bodyHtml += exs.map(e => `
+            <tr style="border-bottom: 1px solid var(--color-border);">
+                <td class="px-2 py-1 font-mono truncate max-w-[8rem]" style="color: #93C5FD;">${escapeHtml((e.id || '').substring(0, 24))}</td>
+                <td class="px-2 py-1 text-center font-mono" style="color: var(--color-foreground);">${e.distance.toFixed(4)}</td>
+                <td class="px-2 py-1 text-center font-bold" style="color: #86EFAC;">${e.similarity_score.toFixed(4)}</td>
+            </tr>
+        `).join('');
+        bodyHtml += '</tbody></table>';
+    } else if (step.name === 'filter') {
+        const kept    = out.kept_results    || [];
+        const dropped = out.dropped_results || [];
+        bodyHtml += `<p class="text-xs mb-2" style="color: var(--color-muted);">阈值: <strong style="color: var(--color-foreground);">${out.threshold}</strong> · 保留 <span class="font-bold" style="color: #86EFAC;">${out.kept}</span> 条 · 丢弃 <span class="font-bold" style="color: #FCA5A5;">${out.dropped}</span> 条</p>`;
+        bodyHtml += kept.map(r => `
+            <div class="rounded px-2 py-1.5 mb-1" style="background-color: rgba(34, 197, 94, 0.10); border: 1px solid rgba(34, 197, 94, 0.30);">
+                <div class="flex items-center gap-2 text-xs">
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0" style="background-color: #22C55E; color: white;">✓ 保留</span>
+                    <span class="font-mono truncate" style="color: #93C5FD;">${escapeHtml((r.id || '').substring(0, 28))}</span>
+                    <span class="ml-auto shrink-0" style="color: var(--color-muted);">sim=${r.similarity_score.toFixed(4)}</span>
+                </div>
+                ${renderMatchReasons(r.match_reasons)}
+            </div>
+        `).join('');
+        bodyHtml += dropped.map(r => `
+            <div class="rounded px-2 py-1.5 mb-1" style="background-color: rgba(239, 68, 68, 0.10); border: 1px solid rgba(239, 68, 68, 0.30);">
+                <div class="flex items-center gap-2 text-xs">
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0" style="background-color: #F87171; color: white;">✗ 丢弃</span>
+                    <span class="font-mono truncate" style="color: #93C5FD;">${escapeHtml((r.id || '').substring(0, 28))}</span>
+                    <span class="ml-auto shrink-0" style="color: var(--color-muted);">sim=${r.similarity_score.toFixed(4)}</span>
+                </div>
+                ${renderMatchReasons(r.match_reasons)}
+            </div>
+        `).join('');
+    }
+
+    return `
+        <div class="rounded-lg overflow-hidden" style="border: 1px solid var(--color-border);">
+            <button onclick="toggleLancedbStepCard('${stepId}')"
+                    class="w-full flex items-center justify-between px-4 py-3 text-left focus:outline-none"
+                    style="background-color: rgba(255, 255, 255, 0.04);">
+                <div class="flex items-center gap-2">
+                    <span class="w-6 h-6 rounded-full text-xs flex items-center justify-center shrink-0"
+                          style="background-color: #F59E0B; color: white;">${i + 1}</span>
+                    <span class="font-medium text-sm" style="color: var(--color-foreground);">${escapeHtml(step.title)}</span>
+                </div>
+                <span class="text-xs" style="color: var(--color-muted);">${(step.duration_ms || 0).toFixed(0)}ms ▼</span>
+            </button>
+            <div id="${stepId}" class="collapsible-content expanded px-4 py-3">
+                ${bodyHtml}
+            </div>
+        </div>
+    `;
+}
+
+// 暴露到 window（路由 / 内联 onclick 用）
+window.refreshLancedb = refreshLancedb;
+window.loadLancedbRows = loadLancedbRows;
+window.lancedbPrevPage = lancedbPrevPage;
+window.lancedbNextPage = lancedbNextPage;
+window.toggleLancedbDemo = toggleLancedbDemo;
+window.toggleLancedbRow = toggleLancedbRow;
+window.runInsertDemo = runInsertDemo;
+window.runSearchDemo = runSearchDemo;
+</script>

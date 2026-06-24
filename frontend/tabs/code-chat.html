@@ -1,0 +1,275 @@
+<!-- 代码问答 tab：RAG 对话 + 参考来源展示 -->
+
+<div class="flex flex-col gap-4 h-full">
+    <!-- 对话区 -->
+    <div class="panel flex-1 flex flex-col" style="padding: 0;">
+        <div id="codeChatMessages" class="flex-1 overflow-y-auto p-6 space-y-4">
+            <!-- 欢迎消息 -->
+            <div class="flex items-start gap-3">
+                <div class="rounded-full w-8 h-8 flex items-center justify-center shrink-0 text-sm"
+                     style="background-color: rgba(34, 197, 94, 0.15);">🤖</div>
+                <div class="rounded-lg px-4 py-3 max-w-[80%]"
+                     style="background-color: rgba(255, 255, 255, 0.04);">
+                    <p class="text-sm leading-relaxed" style="color: var(--color-foreground);">
+                        你好！我是代码智能助手，基于已索引的代码仓库回答问题。<br>
+                        可以问我关于代码结构、函数实现、调用关系等问题。
+                    </p>
+                </div>
+            </div>
+        </div>
+        <div style="border-top: 1px solid var(--color-border); padding: 1rem;">
+            <div class="flex gap-2">
+                <input type="text" id="codeChatInput" placeholder="输入你的问题，如：这个函数是怎么实现的？"
+                       class="input flex-1" style="padding: 12px 16px; font-size: 14px;">
+                <select id="codeChatRepo" class="input shrink-0" style="width: auto; max-width: 160px; padding: 12px 16px; font-size: 14px;">
+                    <option value="">全部仓库</option>
+                </select>
+                <button onclick="handleCodeChat()" id="codeChatBtn"
+                        class="btn btn-accent shrink-0" style="padding: 12px 24px;">发送</button>
+                <button onclick="openAgentSettings()" class="btn btn-secondary shrink-0" title="Agent 设置" style="padding: 12px;">⚙️</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 参考来源区 -->
+    <div id="codeChatSources" class="hidden panel">
+        <h3 class="font-semibold text-sm mb-3" style="color: var(--color-foreground);">📚 参考来源</h3>
+        <div id="codeSourcesList" class="space-y-2"></div>
+    </div>
+</div>
+
+<!-- Agent 设置模态框定义在 index.html（body 直属层级），避免被 main 的 overflow 裁剪 -->
+
+<script>
+let isCodeChatting = false;
+
+// ── 加载仓库筛选 ────────────────────────────────────────────
+async function codeChatLoadRepos() {
+    try {
+        const res = await fetch('/api/code/repos');
+        const data = await res.json();
+        const select = document.getElementById('codeChatRepo');
+        if (select) {
+            select.innerHTML = '<option value="">全部仓库</option>' +
+                (data.repos || []).map(r => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.name)}</option>`).join('');
+        }
+    } catch (e) { console.error('加载仓库列表失败:', e); }
+}
+
+// ── 路由入口 ────────────────────────────────────────────────
+window.initCodeChat = function () {
+    codeChatLoadRepos();
+    const input = document.getElementById('codeChatInput');
+    if (input) {
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleCodeChat();
+        });
+    }
+};
+
+// ── 渲染参考来源 ────────────────────────────────────────────
+function renderCodeSources(sources) {
+    if (!sources || sources.length === 0) return;
+    document.getElementById('codeChatSources').classList.remove('hidden');
+    document.getElementById('codeSourcesList').innerHTML = sources.map((s, i) => `
+        <div class="rounded p-3" style="background-color: rgba(255, 255, 255, 0.04); border-left: 2px solid var(--color-accent);">
+            <div class="flex items-start gap-2 flex-wrap">
+                <span class="text-xs font-medium" style="color: var(--color-accent);">[${i + 1}]</span>
+                <code class="text-xs" style="color: var(--color-foreground); font-family: var(--font-mono);" title="${escapeHtml(s.file_path || '')}">${escapeHtml(truncatePath(s.file_path || ''))}</code>
+                <span class="text-xs px-1.5 py-0.5 rounded" style="background: var(--color-border); color: var(--color-muted);">L${s.line_start}-${s.line_end || s.line_start}</span>
+                ${s.symbol_name ? `<span class="text-xs font-medium" style="color: var(--color-accent);">${escapeHtml(s.symbol_name)}</span>` : ''}
+                ${s.score ? `<span class="text-xs ml-auto" style="color: var(--color-muted);">${(s.score * 100).toFixed(1)}%</span>` : ''}
+            </div>
+            ${s.content ? `<pre class="text-xs mt-2 px-2 py-1.5 rounded overflow-x-auto" style="background: var(--color-background); color: var(--color-muted); font-family: var(--font-mono); max-height: 120px; white-space: pre-wrap;">${escapeHtml(s.content.substring(0, 300))}</pre>` : ''}
+        </div>
+    `).join('');
+}
+
+// ── 发送问答 ────────────────────────────────────────────────
+async function handleCodeChat() {
+    const input = document.getElementById('codeChatInput');
+    const question = input ? input.value.trim() : '';
+    if (!question || isCodeChatting) return;
+
+    isCodeChatting = true;
+    input.value = '';
+
+    // 重置参考来源面板
+    const sourcesPanel = document.getElementById('codeChatSources');
+    if (sourcesPanel) sourcesPanel.classList.add('hidden');
+    const sourcesList = document.getElementById('codeSourcesList');
+    if (sourcesList) sourcesList.innerHTML = '';
+
+    const messagesDiv = document.getElementById('codeChatMessages');
+    const chatBtn = document.getElementById('codeChatBtn');
+
+    // 用户消息（右侧气泡）
+    messagesDiv.innerHTML += `
+        <div class="flex items-start gap-3 justify-end fade-in">
+            <div class="rounded-lg px-4 py-3 max-w-[80%]"
+                 style="background-color: var(--color-accent); color: #052E16;">
+                <p class="text-sm">${escapeHtml(question)}</p>
+            </div>
+            <div class="rounded-full w-8 h-8 flex items-center justify-center shrink-0 text-sm"
+                 style="background-color: rgba(34, 197, 94, 0.15);">👤</div>
+        </div>`;
+
+    // AI 占位消息
+    const aiMsgId = `ai-msg-${Date.now()}`;
+    messagesDiv.innerHTML += `
+        <div class="flex items-start gap-3 fade-in" id="${aiMsgId}">
+            <div class="rounded-full w-8 h-8 flex items-center justify-center shrink-0 text-sm"
+                 style="background-color: rgba(34, 197, 94, 0.15);">🤖</div>
+            <div class="rounded-lg px-4 py-3 max-w-[80%]"
+                 style="background-color: rgba(255, 255, 255, 0.04);">
+                <div class="flex items-center gap-2">
+                    <div class="animate-spin rounded-full h-4 w-4 border-b-2"
+                         style="border-color: var(--color-accent);"></div>
+                    <span class="text-sm" style="color: var(--color-muted);">思考中...</span>
+                </div>
+            </div>
+        </div>`;
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+    chatBtn.disabled = true;
+    chatBtn.textContent = '思考中...';
+
+    try {
+        const filters = {};
+        const repo = document.getElementById('codeChatRepo')?.value;
+        if (repo) filters.repo_name = repo;
+
+        const res = await fetch('/api/code/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question, top_k: 5, filters, stream: true }),
+        });
+        if (!res.ok) {
+            let detail = `HTTP ${res.status}`;
+            try { const errData = await res.json(); detail = errData.detail || detail; } catch (_) {}
+            throw new Error(detail);
+        }
+
+        // ── 流式 SSE 解析 ─────────────────────────────────
+        // 拿到 AI 占位的 bubble，后续增量写入
+        const aiMsg = document.getElementById(aiMsgId);
+        const bubble = aiMsg ? aiMsg.querySelector('.rounded-lg.px-4.py-3') : null;
+        if (bubble) {
+            bubble.innerHTML = `<p class="text-sm leading-relaxed whitespace-pre-wrap" style="color: var(--color-foreground);"></p>`;
+        }
+        const contentEl = bubble ? bubble.querySelector('p') : null;
+        let fullAnswer = '';
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            // 按 \n\n 切 SSE 事件
+            const events = buffer.split('\n\n');
+            buffer = events.pop() || '';  // 保留未完整的事件
+
+            for (const ev of events) {
+                const line = ev.split('\n').find(l => l.startsWith('data: '));
+                if (!line) continue;
+                const payload = line.slice(6);
+                if (payload === '[DONE]') continue;
+
+                let msg;
+                try { msg = JSON.parse(payload); } catch (_) { continue; }
+
+                if (msg.type === 'content' && contentEl) {
+                    fullAnswer += msg.data;
+                    contentEl.textContent = fullAnswer;
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                } else if (msg.type === 'sources' && msg.data) {
+                    renderCodeSources(msg.data);
+                }
+                // 'steps' 事件先忽略（UI 没接 step 面板，避免复杂度）
+            }
+        }
+    } catch (err) {
+        const aiMsg = document.getElementById(aiMsgId);
+        if (aiMsg) {
+            aiMsg.innerHTML = `
+                <div class="rounded-full w-8 h-8 flex items-center justify-center shrink-0 text-sm"
+                     style="background-color: rgba(239, 68, 68, 0.15);">❌</div>
+                <div class="rounded-lg px-4 py-3 max-w-[80%]"
+                     style="background-color: rgba(239, 68, 68, 0.08);">
+                    <p class="text-sm" style="color: var(--color-destructive);">${escapeHtml(err.message)}</p>
+                </div>`;
+        }
+    } finally {
+        isCodeChatting = false;
+        chatBtn.disabled = false;
+        chatBtn.textContent = '发送';
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+}
+
+// ── Agent 设置 ───────────────────────────────────────────────
+async function openAgentSettings() {
+    document.getElementById('agent-settings-modal').classList.remove('hidden');
+    try {
+        const res = await fetch('/api/code/agent-config');
+        if (!res.ok) throw new Error('加载配置失败');
+        const data = await res.json();
+        document.getElementById('agent-bot-name').value = data.bot_name || '';
+        document.getElementById('agent-bot-style').value = data.bot_style || '';
+        document.getElementById('agent-system-prompt').value = data.system_prompt || '';
+    } catch (e) {
+        showToast('加载 Agent 配置失败: ' + e.message, 'error');
+    }
+}
+
+function closeAgentSettings() {
+    document.getElementById('agent-settings-modal').classList.add('hidden');
+}
+
+async function saveAgentSettings() {
+    const config = {
+        bot_name: document.getElementById('agent-bot-name').value.trim(),
+        bot_style: document.getElementById('agent-bot-style').value.trim(),
+        system_prompt: document.getElementById('agent-system-prompt').value.trim(),
+    };
+    if (!config.system_prompt) return showToast('System Prompt 不能为空', 'warning');
+    try {
+        const res = await fetch('/api/code/agent-config', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(config),
+        });
+        if (!res.ok) throw new Error('保存失败');
+        showToast('Agent 配置已保存', 'success');
+        closeAgentSettings();
+    } catch (e) {
+        showToast('保存失败: ' + e.message, 'error');
+    }
+}
+
+async function resetAgentSettings() {
+    if (!confirm('确定恢复默认 Agent 配置？当前修改会丢失。')) return;
+    try {
+        const res = await fetch('/api/code/agent-config/reset', {method: 'POST'});
+        if (!res.ok) throw new Error('重置失败');
+        const data = await res.json();
+        document.getElementById('agent-bot-name').value = data.bot_name || '';
+        document.getElementById('agent-bot-style').value = data.bot_style || '';
+        document.getElementById('agent-system-prompt').value = data.system_prompt || '';
+        showToast('已恢复默认配置', 'success');
+    } catch (e) {
+        showToast('重置失败: ' + e.message, 'error');
+    }
+}
+
+// 暴露到 window
+window.handleCodeChat = handleCodeChat;
+window.openAgentSettings = openAgentSettings;
+window.closeAgentSettings = closeAgentSettings;
+window.saveAgentSettings = saveAgentSettings;
+window.resetAgentSettings = resetAgentSettings;
+</script>

@@ -1,0 +1,620 @@
+<!-- 代码仓库 tab：扫描新仓库 + 已索引仓库列表 + 统计 + 过滤器 -->
+
+<div class="max-w-7xl mx-auto">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <!-- 左列：扫描新仓库 -->
+        <div class="lg:col-span-1 space-y-4">
+            <div class="panel">
+                <h3 class="font-semibold text-sm mb-3" style="color: var(--color-foreground);">📂 扫描新仓库</h3>
+                <input id="codeRepoName" type="text" placeholder="仓库名 (自动填入)" class="input w-full mb-2">
+                <div class="flex gap-1 mb-2">
+                    <input id="codeRepoPath" type="text" placeholder="粘贴路径或点下方快捷入口" class="input flex-1" oninput="codeAutoFillName(this.value)">
+                    <button onclick="codePickFolder()" class="btn btn-secondary shrink-0" title="选择目录（系统原生）">📁</button>
+                    <button onclick="codeOpenInFinder()" class="btn btn-secondary shrink-0" title="在系统文件管理器中打开">🔍</button>
+                    <button onclick="codeBrowseFolder()" class="btn btn-secondary shrink-0" title="浏览目录">📂</button>
+                </div>
+                <!-- 快捷路径 -->
+                <div id="codeQuickPaths" class="flex flex-wrap gap-1 mb-2"></div>
+                <!-- 目录浏览器 -->
+                <div id="codeFolderBrowser" class="hidden border rounded max-h-48 overflow-y-auto text-sm mb-2" style="background: var(--color-background); border-color: var(--color-border);"></div>
+                <div class="flex gap-2">
+                    <button onclick="codeScanRepo()" id="codeScanBtn" class="btn btn-accent flex-1">🔍 开始扫描</button>
+                    <button onclick="openSkipRulesModal()" class="btn btn-secondary shrink-0" title="排除规则">⚙️</button>
+                </div>
+                <div id="codeScanProgress" class="hidden mt-2">
+                    <div class="flex items-center gap-2 mb-1">
+                        <div class="flex-1 rounded-full h-2 overflow-hidden" style="background: var(--color-border);">
+                            <div id="codeScanPctBar" class="h-2 rounded-full transition-all duration-300" style="width:0%; background: var(--color-accent);"></div>
+                        </div>
+                        <span id="codeScanPctText" class="text-xs font-mono shrink-0" style="color: var(--color-muted);">0%</span>
+                    </div>
+                    <button onclick="codeCancelScan()" class="btn btn-danger w-full text-xs">✕ 终止扫描</button>
+                </div>
+            </div>
+
+            <!-- 扫描步骤（供 SSE 进度写入） -->
+            <div class="panel">
+                <h3 class="font-semibold text-sm mb-3" style="color: var(--color-foreground);">⚡ 执行流程</h3>
+                <div id="codeSteps" class="space-y-2">
+                    <div class="p-3 text-center text-xs" style="color: var(--color-muted);">等待操作...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右列：仓库列表 + 统计 + 过滤器 -->
+        <div class="lg:col-span-2 space-y-4">
+            <!-- 仓库列表 -->
+            <div class="panel">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="font-semibold text-sm" style="color: var(--color-foreground);">📦 已索引仓库</h3>
+                    <button onclick="codeClearAll()" id="codeClearBtn" class="text-[10px] hover:opacity-80 px-1.5 py-0.5 rounded" style="color: var(--color-destructive);">🗑️ 清空全部</button>
+                </div>
+                <div id="codeRepoList" class="space-y-2">
+                    <div class="p-3 text-center text-xs" style="color: var(--color-muted);">暂无仓库</div>
+                </div>
+            </div>
+
+            <!-- 统计 -->
+            <div class="panel">
+                <h3 class="font-semibold text-sm mb-2" style="color: var(--color-foreground);">📊 统计</h3>
+                <div id="codeStats" class="text-xs" style="color: var(--color-muted);">加载中...</div>
+            </div>
+
+            <!-- 过滤器 -->
+            <div class="panel">
+                <h3 class="font-semibold text-sm mb-2" style="color: var(--color-foreground);">🔧 过滤器</h3>
+                <select id="codeFilterRepo" class="input w-full mb-2"><option value="">全部仓库</option></select>
+                <select id="codeFilterLang" class="input w-full mb-2"><option value="">全部语言</option></select>
+                <select id="codeFilterType" class="input w-full"><option value="">全部类型</option></select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 排除规则模态框已在 index.html 顶层（避免被 .tab-page fadeIn transform 干扰），
+     业务 JS 在 frontend/js/skip-rules.js。本文件保留齿轮入口按钮。 -->
+
+<script>
+// 工具函数（escapeHtml 来自 shared.js）
+
+// 加载仓库列表 + 统计 + 过滤器选项
+async function codeLoadRepos() {
+    try {
+        const [reposRes, statsRes] = await Promise.all([
+            fetch('/api/code/repos').then(r => r.json()),
+            fetch('/api/code/stats').then(r => r.json()),
+        ]);
+
+        // 仓库列表
+        const el = document.getElementById('codeRepoList');
+        if (reposRes.repos.length === 0) {
+            el.innerHTML = '<div class="p-3 text-center text-xs" style="color: var(--color-muted);">暂无仓库，请扫描新仓库</div>';
+        } else {
+            el.innerHTML = reposRes.repos.map(r => `
+                <div class="border rounded p-3" style="border-color: var(--color-border); background: var(--color-background);">
+                    <div class="flex items-center justify-between">
+                        <span class="font-medium text-sm" style="color: var(--color-foreground);">${escapeHtml(r.name)}</span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded" style="background: rgba(34, 197, 94, 0.15); color: var(--color-accent);">${escapeHtml(r.project_type)}</span>
+                    </div>
+                    <div class="text-xs mt-1" style="color: var(--color-muted);">${r.total_chunks || 0} chunks · ${(r.languages || []).join(', ')}</div>
+                    <div class="text-[10px] mt-1" style="color: var(--color-muted);">${r.last_scanned ? new Date(r.last_scanned).toLocaleString() : '未扫描'}</div>
+                    <div class="flex gap-1 mt-2">
+                        <button onclick="codeRefreshRepo('${escapeHtml(r.name)}')" class="btn btn-secondary text-[10px] py-0.5 px-2" title="增量扫描：对比 mtime，新增/更新/删除变化的文件索引">刷新</button>
+                        <button onclick="codeDeleteRepo('${escapeHtml(r.name)}')" class="btn btn-danger text-[10px] py-0.5 px-2" title="删除该仓库的所有索引（LanceDB向量 + SQLite全文 + 调用关系 + 配置），不影响源代码">删除</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 统计
+        const statsEl = document.getElementById('codeStats');
+        if (statsRes.total_chunks > 0) {
+            const langTags = Object.entries(statsRes.by_language || {}).map(([k, v]) => `<span class="px-1 rounded" style="background: var(--color-border); color: var(--color-foreground);">${k}:${v}</span>`).join(' ');
+            const cemb = statsRes.code_embedder || {};
+            const embLine = cemb.model_name ? `<div class="text-[10px] mt-1" style="color: var(--color-accent);">🧠 ${cemb.model_name.split('/').pop()} · ${cemb.dimension}维</div>` : '';
+            statsEl.innerHTML = `<div>总 chunks: <b>${statsRes.total_chunks}</b></div><div>仓库: ${statsRes.total_repos}</div><div class="mt-1">${langTags}</div>${embLine}`;
+        } else {
+            const cemb = statsRes.code_embedder || {};
+            const embLine = cemb.model_name ? `<div class="text-[10px] mt-1" style="color: var(--color-accent);">🧠 ${cemb.model_name.split('/').pop()} · ${cemb.dimension}维</div>` : '';
+            statsEl.innerHTML = `<div style="color: var(--color-muted);">暂无数据</div>${embLine}`;
+        }
+
+        // 过滤器选项
+        const repoSelect = document.getElementById('codeFilterRepo');
+        repoSelect.innerHTML = '<option value="">全部仓库</option>' + reposRes.repos.map(r => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.name)}</option>`).join('');
+
+        // 语言列表：优先从 /api/code/languages 获取解析器支持的完整列表
+        try {
+            const langRes = await fetch('/api/code/languages');
+            const langData = await langRes.json();
+            const allLangs = langData.languages || [];
+            document.getElementById('codeFilterLang').innerHTML = '<option value="">全部语言</option>' + allLangs.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join('');
+        } catch {
+            const langs = new Set();
+            reposRes.repos.forEach(r => (r.languages || []).forEach(l => langs.add(l)));
+            document.getElementById('codeFilterLang').innerHTML = '<option value="">全部语言</option>' + [...langs].map(l => `<option value="${l}">${l}</option>`).join('');
+        }
+
+    } catch (e) {
+        console.error('codeLoadRepos error:', e);
+    }
+}
+
+// SSE 扫描步骤去重渲染
+function codeRenderScanProgress(steps) {
+    const el = document.getElementById('codeSteps');
+    const stepIcons = {
+        scan_files: '📂', scan_files_done: '✅',
+        compute_diff: '🔄', compute_diff_done: '✅',
+        delete_removed: '🗑️', delete_removed_done: '✅',
+        parsing: '📝', parse_done: '✅',
+        embedding: '🧠', storing: '💾', store_done: '✅',
+        done: '🎉', cancelled: '🛑', error: '❌', cleanup_done: '🧹',
+    };
+
+    // 高频步骤（parsing/embedding/storing）只保留最新一条
+    const deduped = [];
+    const seen = new Set();
+    for (let i = steps.length - 1; i >= 0; i--) {
+        const s = steps[i];
+        const dedupeKey = ['parsing', 'embedding', 'storing'].includes(s.step) ? s.step : null;
+        if (dedupeKey) {
+            if (!seen.has(dedupeKey)) {
+                seen.add(dedupeKey);
+                deduped.unshift(s);
+            }
+        } else {
+            deduped.unshift(s);
+        }
+    }
+
+    el.innerHTML = deduped.map((s, i) => {
+        const icon = stepIcons[s.step] || '⚙️';
+        const isLast = i === deduped.length - 1;
+        const isError = s.step === 'error';
+        const isCancelled = s.step === 'cancelled';
+        const borderColor = isError ? 'var(--color-destructive)' : isCancelled ? '#F59E0B' : 'var(--color-border)';
+        const textColor = isError ? 'var(--color-destructive)' : isLast ? 'var(--color-foreground)' : 'var(--color-muted)';
+
+        // 进度条
+        let progressBar = '';
+        if (s.pct !== undefined) {
+            const barColor = s.pct >= 100 ? 'var(--color-accent)' : 'var(--color-accent)';
+            progressBar = `
+                <div class="mt-1.5 w-full rounded-full h-1.5 overflow-hidden" style="background: var(--color-border);">
+                    <div class="h-1.5 rounded-full transition-all duration-300" style="width: ${s.pct}%; background: ${barColor};"></div>
+                </div>
+                <div class="flex justify-between text-[10px] mt-0.5" style="color: var(--color-muted);">
+                    <span>${s.detail}</span>
+                    <span class="font-mono">${s.pct}%</span>
+                </div>`;
+        }
+
+        // 次要信息
+        let subInfo = '';
+        if (!progressBar) {
+            if (s.file_idx) {
+                subInfo = `<div class="text-[10px] mt-0.5" style="color: var(--color-muted);">文件 ${s.file_idx}/${s.total_files} · ${s.chunks_so_far || 0} chunks</div>`;
+            } else if (s.total_chunks) {
+                subInfo = `<div class="text-[10px] mt-0.5" style="color: var(--color-muted);">${s.total_chunks} chunks</div>`;
+            }
+        }
+
+        return `<div class="border rounded p-2" style="border-color: ${borderColor};">
+            <div class="flex items-start gap-1.5">
+                <span class="shrink-0">${icon}</span>
+                <div class="flex-1 min-w-0">
+                    ${progressBar ? '' : `<div class="text-xs" style="color: ${textColor}; ${isLast && !isError && !isCancelled ? 'font-weight: 500;' : ''}">${s.detail || s.step}</div>`}
+                    ${progressBar}
+                    ${subInfo}
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+
+    el.scrollTop = el.scrollHeight;
+}
+
+// 通用步骤渲染（codeRenderSteps 来自 shared.js）
+
+// 扫描按钮重置
+function _resetScanBtn() {
+    const btn = document.getElementById('codeScanBtn');
+    btn.disabled = false;
+    btn.textContent = '🔍 开始扫描';
+}
+
+// 启动扫描 + SSE 订阅
+async function codeScanRepo() {
+    const name = document.getElementById('codeRepoName').value.trim();
+    const path = document.getElementById('codeRepoPath').value.trim();
+    if (!name || !path) return showToast('请填写仓库名和路径', 'warning');
+
+    const btn = document.getElementById('codeScanBtn');
+    const progressEl = document.getElementById('codeScanProgress');
+    const pctBar = document.getElementById('codeScanPctBar');
+    const pctText = document.getElementById('codeScanPctText');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ 扫描中...';
+    progressEl.classList.remove('hidden');
+    pctBar.style.width = '0%';
+    pctText.textContent = '0%';
+
+    try {
+        const res = await fetch('/api/code/scan', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({repo_name: name, repo_path: path, languages: []}),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || '扫描启动失败');
+
+        window._currentScanId = data.scan_id;
+
+        const stepsEl = document.getElementById('codeSteps');
+        stepsEl.innerHTML = '';
+
+        const evtSource = new EventSource(`/api/code/scan/${data.scan_id}/sse`);
+        let steps = [];
+
+        evtSource.addEventListener('progress', (e) => {
+            const entry = JSON.parse(e.data);
+            steps.push(entry);
+            codeRenderScanProgress(steps);
+            if (entry.pct !== undefined) {
+                pctBar.style.width = entry.pct + '%';
+                pctText.textContent = entry.pct + '%';
+            }
+        });
+
+        evtSource.addEventListener('done', (e) => {
+            const result = JSON.parse(e.data);
+            evtSource.close();
+            window._currentScanId = null;
+            _resetScanBtn();
+
+            if (result.status === 'completed') {
+                pctBar.style.width = '100%';
+                pctText.textContent = '100%';
+                setTimeout(() => progressEl.classList.add('hidden'), 2000);
+                codeLoadRepos();
+            } else if (result.status === 'cancelled') {
+                progressEl.classList.add('hidden');
+                codeRenderScanProgress([...steps, {step: 'cancelled', detail: '🛑 已终止并清理'}]);
+            } else if (result.status === 'error') {
+                progressEl.classList.add('hidden');
+                showToast('扫描出错: ' + result.error, 'error');
+            }
+        });
+
+        evtSource.onerror = () => {
+            evtSource.close();
+            window._currentScanId = null;
+            _resetScanBtn();
+            progressEl.classList.add('hidden');
+        };
+
+    } catch (e) {
+        showToast('扫描失败: ' + e.message, 'error');
+        _resetScanBtn();
+        progressEl.classList.add('hidden');
+    }
+}
+
+// 终止当前扫描
+async function codeCancelScan() {
+    const scanId = window._currentScanId;
+    if (!scanId) return;
+    const btn = document.querySelector('#codeScanProgress button');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ 终止中...'; }
+    try {
+        await fetch(`/api/code/scan/${scanId}/cancel`, {method: 'POST'});
+    } catch (e) {
+        console.error('Cancel failed:', e);
+    }
+}
+
+// 路径输入时自动填仓库名
+function codeAutoFillName(pathVal) {
+    const nameEl = document.getElementById('codeRepoName');
+    if (nameEl.value.trim()) return;
+    const parts = pathVal.replace(/\/+$/, '').split('/');
+    const folder = parts[parts.length - 1];
+    if (folder && folder !== '.' && folder.length < 50) {
+        nameEl.value = folder;
+    }
+}
+
+// 快捷路径按钮：填入路径并打开目录浏览器
+function codeQuickPath(path) {
+    document.getElementById('codeRepoPath').value = path;
+    codeLoadDirs(path);
+}
+
+// 切换目录浏览器显示
+async function codeBrowseFolder() {
+    const browser = document.getElementById('codeFolderBrowser');
+    if (!browser.classList.contains('hidden')) {
+        browser.classList.add('hidden');
+        return;
+    }
+    const currentPath = document.getElementById('codeRepoPath').value.trim() || (window.__USER_HOME || '.');
+    await codeLoadDirs(currentPath);
+}
+
+// 加载指定目录的子目录列表
+async function codeLoadDirs(dirPath) {
+    const browser = document.getElementById('codeFolderBrowser');
+    browser.classList.remove('hidden');
+    browser.innerHTML = '<div class="p-2 text-center text-xs" style="color: var(--color-muted);">加载中...</div>';
+    try {
+        const res = await fetch(`/api/code/browse?path=${encodeURIComponent(dirPath)}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail);
+
+        let html = `<div class="sticky top-0 px-2 py-1.5 border-b flex items-center gap-2" style="background: var(--color-primary); border-color: var(--color-border);">
+            <span class="text-xs truncate flex-1 font-mono" style="color: var(--color-muted);">${escapeHtml(data.current)}</span>
+            ${data.parent ? `<button id="btnParentDir" data-path="${escapeHtml(data.parent)}" class="btn btn-secondary text-xs py-0.5 px-2 shrink-0">⬆ 上级</button>` : ''}
+        </div>`;
+
+        if (data.dirs.length === 0) {
+            html += '<div class="p-3 text-center text-xs" style="color: var(--color-muted);">无子目录</div>';
+        } else {
+            for (const d of data.dirs) {
+                html += `<div class="dir-item flex items-center cursor-pointer px-2 py-1.5 border-b" style="border-color: var(--color-border);"
+                            data-path="${escapeHtml(d.path)}" data-name="${escapeHtml(d.name)}">
+                            <span class="mr-2">📁</span>
+                            <span class="truncate" style="color: var(--color-foreground);">${escapeHtml(d.name)}</span>
+                            <button class="dir-enter ml-auto text-[10px] hover:opacity-80 shrink-0" data-path="${escapeHtml(d.path)}" style="color: var(--color-muted);">进入 →</button>
+                         </div>`;
+            }
+        }
+
+        browser.innerHTML = html;
+        // 事件委托：上级目录按钮
+        const btnParent = browser.querySelector('#btnParentDir');
+        if (btnParent) btnParent.addEventListener('click', () => codeLoadDirs(btnParent.dataset.path));
+        // 事件委托：点击目录行填入路径，点击"进入"按钮导航
+        browser.querySelectorAll('.dir-item').forEach(el => {
+            el.addEventListener('click', (e) => {
+                if (e.target.closest('.dir-enter')) {
+                    e.stopPropagation();
+                    codeLoadDirs(el.dataset.path);
+                } else {
+                    codeSelectDir(el.dataset.path, el.dataset.name);
+                }
+            });
+        });
+    } catch (e) {
+        browser.innerHTML = `<div class="p-2 text-xs" style="color: var(--color-destructive);">⚠ ${e.message}</div>`;
+    }
+}
+
+// 选中目录后填入路径 + 仓库名
+function codeSelectDir(fullPath, name) {
+    document.getElementById('codeRepoPath').value = fullPath;
+    document.getElementById('codeRepoName').value = name;
+    document.getElementById('codeFolderBrowser').classList.add('hidden');
+}
+
+// 隐藏的 webkitdirectory input（页面加载时插入一次）
+let __webkitInput = null;
+function __ensureWebkitInput() {
+    if (__webkitInput) return __webkitInput;
+    __webkitInput = document.createElement('input');
+    __webkitInput.type = 'file';
+    __webkitInput.webkitdirectory = true;
+    __webkitInput.style.display = 'none';
+    document.body.appendChild(__webkitInput);
+    return __webkitInput;
+}
+
+// 📁 选择：能力探测（showDirectoryPicker → webkitdirectory → 现有目录浏览器）
+async function codePickFolder() {
+    // A. 优先 showDirectoryPicker（Chrome 86+ / Edge）
+    if (window.showDirectoryPicker) {
+        try {
+            const dir = await window.showDirectoryPicker();
+            const name = dir.name;
+            const path = await __resolvePathByName(name);
+            codeSelectDir(path, name);
+            return;
+        } catch (e) {
+            if (e.name === 'AbortError') return;  // 用户取消
+            console.warn('showDirectoryPicker 失败, 降级:', e);
+        }
+    }
+    // B. 降级 webkitdirectory（Safari / Firefox）—— 部分浏览器支持但拿不到路径
+    if ('webkitdirectory' in HTMLInputElement.prototype) {
+        const input = __ensureWebkitInput();
+        input.value = '';  // 允许重复选同一目录
+        input.onchange = async () => {
+            const file = input.files[0];
+            if (!file) return;
+            const name = file.webkitRelativePath.split('/')[0];
+            try {
+                const path = await __resolvePathByName(name);
+                codeSelectDir(path, name);
+            } catch (e) {
+                // 反查失败 → 降级到现有目录浏览器
+                console.warn('反查失败, 降级到目录浏览器:', e);
+                codeBrowseFolder();
+            }
+        };
+        input.click();
+        return;
+    }
+    // C. 兜底：现有目录浏览器
+    codeBrowseFolder();
+}
+
+// 通过名字反查真实路径（同名多个时弹层让用户选）
+async function __resolvePathByName(name) {
+    const home = window.__USER_HOME || '';
+    const url = `/api/code/resolve-path?name=${encodeURIComponent(name)}&parent=${encodeURIComponent(home)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '反查失败');
+    if (data.matches && data.matches.length > 1) {
+        const choice = prompt(`找到 ${data.matches.length} 个同名目录，请选择（输入序号）:\n` +
+            data.matches.map((p, i) => `${i + 1}. ${p}`).join('\n'));
+        const idx = parseInt(choice, 10) - 1;
+        if (isNaN(idx) || !data.matches[idx]) throw new Error('无效选择');
+        return data.matches[idx];
+    }
+    return data.path;
+}
+
+// 🔍 Finder：在系统文件管理器中打开当前路径
+async function codeOpenInFinder() {
+    const path = document.getElementById('codeRepoPath').value.trim();
+    if (!path) { alert('请先输入路径'); return; }
+    try {
+        const res = await fetch('/api/code/open-in-finder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail);
+        if (data.skipped) {
+            // 非 macOS 或命令缺失 → 复制到剪贴板兜底
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(data.path);
+            }
+            alert(`已复制路径到剪贴板: ${data.path}\n(${data.reason})`);
+        }
+    } catch (e) {
+        alert('打开失败: ' + e.message);
+    }
+}
+
+// 刷新指定仓库（与 codeScanRepo 一致的 SSE 体验）
+async function codeRefreshRepo(name) {
+    if (!confirm(`确认刷新仓库 ${name}？`)) return;
+
+    const stepsEl = document.getElementById('codeSteps');
+    if (stepsEl) stepsEl.innerHTML = '';
+
+    try {
+        const res = await fetch(`/api/code/repos/${name}/refresh`, {method: 'POST'});
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail);
+
+        // 后端返回 {status, scan_id, repo_name, message}，订阅 SSE 看进度
+        const scanId = data.scan_id;
+        if (!scanId) throw new Error('后端未返回 scan_id');
+
+        const evtSource = new EventSource(`/api/code/scan/${scanId}/sse`);
+        let steps = [];
+
+        evtSource.addEventListener('progress', (e) => {
+            const entry = JSON.parse(e.data);
+            steps.push(entry);
+            codeRenderScanProgress(steps);
+        });
+
+        evtSource.addEventListener('done', (e) => {
+            const result = JSON.parse(e.data);
+            evtSource.close();
+
+            if (result.status === 'completed') {
+                // done 事件的 data.stats 来自 code_db.get_stats()，含 total_chunks
+                const totalChunks = (result.stats && result.stats.total_chunks) || 0;
+                showToast(`刷新完成: ${totalChunks} chunks`, 'success');
+                codeLoadRepos();
+            } else if (result.status === 'cancelled') {
+                showToast('刷新已取消', 'warning');
+            } else if (result.status === 'error') {
+                showToast('刷新出错: ' + (result.error || ''), 'error');
+            }
+        });
+
+        evtSource.onerror = () => {
+            evtSource.close();
+            showToast('刷新失败: SSE 连接异常', 'error');
+        };
+    } catch (e) {
+        showToast('刷新失败: ' + e.message, 'error');
+    }
+}
+
+// 清空全部仓库
+async function codeClearAll() {
+    if (!confirm('确认清空全部索引？\n\n将删除所有仓库的 LanceDB 向量数据 + SQLite 关键词索引 + 配置记录。\n此操作不可恢复。')) return;
+    const btn = document.getElementById('codeClearBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ 清空中...';
+    try {
+        const res = await fetch('/api/code/repos', {method: 'DELETE'});
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail);
+        showToast(`已清空: ${data.deleted_chunks} chunks, ${data.cleared_repos.length} 个仓库`, 'success');
+        codeLoadRepos();
+    } catch (e) {
+        showToast('清空失败: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🗑️ 清空全部';
+    }
+}
+
+// 删除指定仓库
+async function codeDeleteRepo(name) {
+    if (!confirm(`确认删除仓库 ${name} 的索引？`)) return;
+    try {
+        const res = await fetch(`/api/code/repos/${name}`, {method: 'DELETE'});
+        if (!res.ok) throw new Error((await res.json()).detail);
+        codeLoadRepos();
+    } catch (e) {
+        showToast('删除失败: ' + e.message, 'error');
+    }
+}
+
+// 加载快捷路径（动态获取 HOME）
+async function codeLoadQuickPaths() {
+    try {
+        const res = await fetch('/api/user/home');
+        if (!res.ok) throw new Error('获取 HOME 失败');
+        const data = await res.json();
+        window.__USER_HOME = data.home;
+        const container = document.getElementById('codeQuickPaths');
+        if (!container) return;
+        const h = data.home;
+        const paths = [
+            { label: 'Desktop', path: h + '/Desktop' },
+            { label: 'Documents', path: h + '/Documents' },
+            { label: 'MailProject', path: h + '/MailProject', accent: true },
+        ];
+        container.innerHTML = paths.map(p =>
+            `<button onclick="codeQuickPath('${p.path.replace(/'/g, "\\'")}')" class="text-xs border rounded px-1.5 py-0.5 hover:opacity-80${p.accent ? ' font-medium' : ''}" style="border-color: ${p.accent ? 'var(--color-accent)' : 'var(--color-border)'}; color: ${p.accent ? 'var(--color-accent)' : 'var(--color-muted)'};">${p.label}</button>`
+        ).join('');
+    } catch (e) {
+        console.error('加载快捷路径失败:', e);
+    }
+}
+
+// 初始化入口（由路由调用）
+window.initCodeRepos = function() {
+    codeLoadRepos();
+    codeLoadQuickPaths();
+};
+
+// 暴露到 window（内联 onclick / 路由用）
+window.codeLoadRepos = codeLoadRepos;
+window.codeScanRepo = codeScanRepo;
+window.codeCancelScan = codeCancelScan;
+window.codeAutoFillName = codeAutoFillName;
+window.codeQuickPath = codeQuickPath;
+window.codePickFolder = codePickFolder;
+window.codeOpenInFinder = codeOpenInFinder;
+window.codeBrowseFolder = codeBrowseFolder;
+window.codeLoadDirs = codeLoadDirs;
+window.codeSelectDir = codeSelectDir;
+window.codeRefreshRepo = codeRefreshRepo;
+window.codeClearAll = codeClearAll;
+window.codeDeleteRepo = codeDeleteRepo;
+window.codeRenderScanProgress = codeRenderScanProgress;
+// skip-rules 相关函数（addSkipRule/openSkipRulesModal/switchSkipTab 等）已搬到 frontend/js/skip-rules.js
+</script>

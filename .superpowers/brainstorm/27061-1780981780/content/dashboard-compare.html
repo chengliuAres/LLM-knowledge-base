@@ -1,0 +1,133 @@
+<h2>看板对比：文档知识管理 vs 代码知识库</h2>
+<p class="subtitle">左侧是当前文档看板，右侧是建议的代码知识库看板。看看有没有需要增减的。</p>
+
+<div class="split">
+  <!-- 左：文档知识管理看板（现有） -->
+  <div class="mockup">
+    <div class="mockup-header">📄 文档知识管理 — 看板（现有）</div>
+    <div class="mockup-body" style="font-size:13px;">
+
+      <div style="font-weight:600;margin-bottom:8px;">📊 概览卡片</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px;">
+        <div style="background:#eff6ff;padding:8px 10px;border-radius:6px;">📄 文档数 <b>12</b></div>
+        <div style="background:#f0fdf4;padding:8px 10px;border-radius:6px;">📧 邮件数 <b>50</b></div>
+        <div style="background:#faf5ff;padding:8px 10px;border-radius:6px;">🧵 线程数 <b>17</b></div>
+        <div style="background:#fff7ed;padding:8px 10px;border-radius:6px;">🧩 向量块数 <b>238</b></div>
+      </div>
+
+      <div style="font-weight:600;margin-bottom:8px;">⚡ 性能指标</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px;">
+        <div style="background:#ecfeff;padding:8px 10px;border-radius:6px;">💾 LanceDB 磁盘 <b>2.4MB</b></div>
+        <div style="background:#eef2ff;padding:8px 10px;border-radius:6px;">🔍 平均搜索耗时 <b>45ms</b></div>
+        <div style="background:#f0fdfa;padding:8px 10px;border-radius:6px;">📥 平均文件插入 <b>320ms</b></div>
+        <div style="background:#fdf2f8;padding:8px 10px;border-radius:6px;">🧩 平均 chunk 插入 <b>12ms</b></div>
+      </div>
+
+      <div style="font-weight:600;margin-bottom:8px;">📈 图表</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px;">
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;padding:12px;border-radius:6px;text-align:center;color:#9ca3af;">📈 耗时趋势（按天）<br>搜索/问答/上传/邮件导入</div>
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;padding:12px;border-radius:6px;text-align:center;color:#9ca3af;">🔬 Step 耗时拆解<br>搜索/问答/上传/邮件导入</div>
+      </div>
+
+      <div style="font-weight:600;margin-bottom:8px;">📁 数据存储目录</div>
+      <div style="background:#f9fafb;border:1px solid #e5e7eb;padding:10px;border-radius:6px;font-size:12px;color:#6b7280;">
+        <div>项目根目录: <code>~/Desktop/AI产出/email-wiki-demo/</code></div>
+        <div>向量数据库: <code>data/lancedb/</code></div>
+        <div>邮件数据库: <code>data/emails.db</code></div>
+        <div>用户上传: <code>uploads/</code></div>
+        <div>Embedding 模型: <code>~/.cache/huggingface/hub/</code></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右：代码知识库看板（建议） -->
+  <div class="mockup">
+    <div class="mockup-header">💻 代码知识库 — 看板（建议）</div>
+    <div class="mockup-body" style="font-size:13px;">
+
+      <div style="font-weight:600;margin-bottom:8px;">📊 概览卡片</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px;">
+        <div style="background:#eff6ff;padding:8px 10px;border-radius:6px;">📦 仓库数 <b>6</b></div>
+        <div style="background:#f0fdf4;padding:8px 10px;border-radius:6px;">🧩 代码块数 <b>1,247</b></div>
+        <div style="background:#faf5ff;padding:8px 10px;border-radius:6px;">🔤 语言数 <b>8</b></div>
+        <div style="background:#fff7ed;padding:8px 10px;border-radius:6px;">📋 Chunk 类型 <b>5</b></div>
+      </div>
+
+      <div style="font-weight:600;margin-bottom:8px;">🏷️ 语言分布</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:14px;">
+        <span style="background:#dbeafe;padding:2px 8px;border-radius:4px;font-size:11px;">Swift: 340</span>
+        <span style="background:#dcfce7;padding:2px 8px;border-radius:4px;font-size:11px;">Java: 280</span>
+        <span style="background:#fef3c7;padding:2px 8px;border-radius:4px;font-size:11px;">Kotlin: 210</span>
+        <span style="background:#fce7f3;padding:2px 8px;border-radius:4px;font-size:11px;">ObjC: 180</span>
+        <span style="background:#e0e7ff;padding:2px 8px;border-radius:4px;font-size:11px;">Dart: 120</span>
+        <span style="background:#f3e8ff;padding:2px 8px;border-radius:4px;font-size:11px;">JS/TS: 67</span>
+        <span style="background:#ccfbf1;padding:2px 8px;border-radius:4px;font-size:11px;">C++: 30</span>
+        <span style="background:#fef9c3;padding:2px 8px;border-radius:4px;font-size:11px;">Python: 20</span>
+      </div>
+
+      <div style="font-weight:600;margin-bottom:8px;">⚡ 性能指标</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px;">
+        <div style="background:#ecfeff;padding:8px 10px;border-radius:6px;">💾 Code LanceDB 磁盘 <b>8.7MB</b></div>
+        <div style="background:#eef2ff;padding:8px 10px;border-radius:6px;">🔍 平均代码搜索耗时 <b>62ms</b></div>
+        <div style="background:#f0fdfa;padding:8px 10px;border-radius:6px;">📥 平均仓库扫描耗时 <b>4.2s</b></div>
+        <div style="background:#fdf2f8;padding:8px 10px;border-radius:6px;">💬 平均代码问答耗时 <b>1.8s</b></div>
+      </div>
+
+      <div style="font-weight:600;margin-bottom:8px;">📈 图表</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px;">
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;padding:12px;border-radius:6px;text-align:center;color:#9ca3af;">📈 耗时趋势（按天）<br>搜索/问答/扫描/追踪</div>
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;padding:12px;border-radius:6px;text-align:center;color:#9ca3af;">🔬 Step 耗时拆解<br>搜索/问答/扫描/追踪</div>
+      </div>
+
+      <div style="font-weight:600;margin-bottom:8px;">📁 数据存储目录</div>
+      <div style="background:#f9fafb;border:1px solid #e5e7eb;padding:10px;border-radius:6px;font-size:12px;color:#6b7280;">
+        <div>代码向量库: <code>data/code_lancedb/</code></div>
+        <div>代码索引 DB: <code>data/code_index.db</code></div>
+        <div>仓库配置: <code>data/code_repos.json</code></div>
+        <div>排除规则: <code>data/code_skip_rules.json</code></div>
+        <div>代码 Embedding: <code>~/.cache/huggingface/hub/</code></div>
+      </div>
+
+      <div style="font-weight:600;margin-bottom:8px;margin-top:10px;">📦 仓库明细</div>
+      <div style="background:#f9fafb;border:1px solid #e5e7eb;padding:8px;border-radius:6px;font-size:11px;color:#6b7280;">
+        <div style="display:flex;justify-content:space-between;"><span>ghmail (iOS)</span><span>340 chunks · Swift/ObjC</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>macmail (macOS)</span><span>280 chunks · Swift/C++</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>MailAndroidG</span><span>210 chunks · Java/Kotlin</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:20px;">
+  <h3>🆕 代码看板新增项（对比文档看板）</h3>
+  <div class="options">
+    <div class="option" data-choice="language-dist" onclick="toggleSelect(this)">
+      <div class="letter">+</div>
+      <div class="content">
+        <h3>🏷️ 语言分布标签云</h3>
+        <p>文档看板没有这个 — 代码按语言分布是核心维度</p>
+      </div>
+    </div>
+    <div class="option" data-choice="repo-detail" onclick="toggleSelect(this)">
+      <div class="letter">+</div>
+      <div class="content">
+        <h3>📦 仓库明细表</h3>
+        <p>每个仓库的 chunks 数、语言、最后扫描时间</p>
+      </div>
+    </div>
+    <div class="option" data-choice="chunk-type-dist" onclick="toggleSelect(this)">
+      <div class="letter">+</div>
+      <div class="content">
+        <h3>📋 Chunk 类型分布</h3>
+        <p>function / class / method / file 等代码块类型统计</p>
+      </div>
+    </div>
+    <div class="option" data-choice="trace-stats" onclick="toggleSelect(this)">
+      <div class="letter">+</div>
+      <div class="content">
+        <h3>🔗 调用链追踪统计</h3>
+        <p>追踪次数、平均深度、最常被追踪的符号</p>
+      </div>
+    </div>
+  </div>
+</div>

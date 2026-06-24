@@ -1,0 +1,465 @@
+<!-- MCP 接入 Tab — 接入指南 / 客户端配置 / 使用示例 -->
+<div class="p-5 space-y-5">
+  <!-- 页头 -->
+  <h2 class="text-lg font-semibold text-white">🤖 Agent 接入</h2>
+  <p class="text-sm" style="color: var(--color-muted);">MCP (Model Context Protocol) 是 AI 助手与外部工具之间的开放标准协议。连接后，Claude Code、Cursor 等 AI 工具可以直接搜索代码、追踪调用链、进行 RAG 问答。</p>
+
+  <!-- 顶层 2-tab 切换：MCP 接入 / Skill 接入 -->
+  <div class="flex flex-wrap gap-2 border-b pb-3" style="border-color: var(--color-border);">
+    <button type="button" id="agent-tab-mcp" class="agent-tab-btn active px-3 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap"
+      style="background: var(--color-accent); color: var(--color-on-primary);" onclick="switchAgentTab('mcp')">🔌 MCP 接入</button>
+    <button type="button" id="agent-tab-skill" class="agent-tab-btn px-3 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap"
+      style="color: var(--color-muted);" onclick="switchAgentTab('skill')">📦 Skill 接入</button>
+  </div>
+
+  <!-- 子标签切换（接入指南 / 客户端配置 / 使用示例 / AI 视角 / 测试） -->
+  <div class="flex flex-wrap gap-2 border-b pb-3" style="border-color: var(--color-border);">
+    <button class="mcp-subtab-btn active px-3 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap" data-mcp-tab="guide"
+      style="background: var(--color-accent); color: var(--color-on-primary);" onclick="switchMcpTab('guide')">📖 接入指南</button>
+    <button class="mcp-subtab-btn px-3 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap" data-mcp-tab="config"
+      style="color: var(--color-muted);" onclick="switchMcpTab('config')">⚙️ 客户端配置</button>
+    <button class="mcp-subtab-btn px-3 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap" data-mcp-tab="examples"
+      style="color: var(--color-muted);" onclick="switchMcpTab('examples')">💡 使用示例</button>
+    <button class="mcp-subtab-btn px-3 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap" data-mcp-tab="ai"
+      style="color: var(--color-muted);" onclick="switchMcpTab('ai')">🤖 AI 视角</button>
+    <button class="mcp-subtab-btn px-3 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap" data-mcp-tab="test"
+      style="color: var(--color-muted);" onclick="switchMcpTab('test')">🧪 测试</button>
+  </div>
+
+  <div id="agent-mcp-side">
+  <!-- 内容区：接入指南 -->
+  <div id="mcp-tab-guide" class="mcp-tab-content space-y-4">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <!-- 左：服务连接信息 -->
+      <div>
+        <h3 class="text-sm font-semibold text-white mb-3">📡 服务连接信息</h3>
+        <div class="rounded-lg p-4 space-y-3 text-sm font-mono" style="background: var(--color-surface);">
+          <div class="flex justify-between items-center">
+            <span style="color: var(--color-muted);">服务地址</span>
+            <span class="font-semibold" style="color: var(--color-accent);" id="mcp-server-url">—</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span style="color: var(--color-muted);">MCP 端点</span>
+            <span class="font-semibold" style="color: var(--color-accent);">/mcp/</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span style="color: var(--color-muted);">传输协议</span>
+            <span class="font-semibold" style="color: var(--color-accent);">Streamable HTTP</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span style="color: var(--color-muted);">SDK 版本</span>
+            <span class="font-semibold" style="color: var(--color-accent);">mcp SDK v1.x</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span style="color: var(--color-muted);">旧端点 (兼容)</span>
+            <span class="font-semibold" style="color: var(--color-muted);">/mcp/sse</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右：可用工具列表 -->
+      <div>
+        <h3 class="text-sm font-semibold text-white mb-3">🛠️ 可用工具（5个）</h3>
+        <div class="space-y-2 text-sm">
+          <div class="rounded p-3" style="background: var(--color-surface); border-left: 3px solid #22C55E;" title="混合搜索（向量+关键词+符号），支持中文查询自动翻译">
+            <span class="font-semibold" style="color: #22C55E;">code_search</span>
+            <span style="color: var(--color-muted);"> — 混合搜索代码，支持中文查询</span>
+          </div>
+          <div class="rounded p-3" style="background: var(--color-surface); border-left: 3px solid #3B82F6;" title="基于搜索到的代码片段 + LLM 生成回答">
+            <span class="font-semibold" style="color: #3B82F6;">code_chat</span>
+            <span style="color: var(--color-muted);"> — RAG 代码问答</span>
+          </div>
+          <div class="rounded p-3" style="background: var(--color-surface); border-left: 3px solid #F59E0B;" title="BFS 多跳追踪，方向可选 callers/callees/both，深度 1-3">
+            <span class="font-semibold" style="color: #F59E0B;">code_trace</span>
+            <span style="color: var(--color-muted);"> — 调用链追踪 (callers/callees)</span>
+          </div>
+          <div class="rounded p-3" style="background: var(--color-surface); border-left: 3px solid #8B5CF6;" title="获取文件完整内容，可选行号范围">
+            <span class="font-semibold" style="color: #8B5CF6;">code_file_context</span>
+            <span style="color: var(--color-muted);"> — 获取文件内容</span>
+          </div>
+          <div class="rounded p-3" style="background: var(--color-surface); border-left: 3px solid #EC4899;" title="列出所有已索引的代码仓库及其统计信息">
+            <span class="font-semibold" style="color: #EC4899;">code_list_repos</span>
+            <span style="color: var(--color-muted);"> — 列出已索引仓库</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 内容区：客户端配置 -->
+  <div id="mcp-tab-config" class="mcp-tab-content hidden space-y-4">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <!-- Claude Code CLI -->
+      <div>
+        <h3 class="text-sm font-semibold text-white mb-2">Claude Code (CLI)</h3>
+        <div class="rounded-lg p-3 font-mono text-sm relative" style="background: var(--color-surface);">
+          <button class="absolute top-2 right-2 text-xs px-2 py-1 rounded transition-colors"
+            style="background: var(--color-secondary); color: var(--color-foreground); border: 1px solid var(--color-border);"
+            onclick="copyMcpCode(this, 'claude mcp add code-kb REPLACE_URL/mcp/')">📋 复制</button>
+          <code style="color: var(--color-accent); display: block; padding-top: 8px;">claude mcp add code-kb <span class="mcp-url-placeholder">加载中…</span>/mcp/</code>
+        </div>
+      </div>
+
+      <!-- Cursor -->
+      <div>
+        <h3 class="text-sm font-semibold text-white mb-2">Cursor IDE</h3>
+        <div class="rounded-lg p-3 font-mono text-sm relative" style="background: var(--color-surface);">
+          <button class="absolute top-2 right-2 text-xs px-2 py-1 rounded transition-colors"
+            style="background: var(--color-secondary); color: var(--color-foreground); border: 1px solid var(--color-border);"
+            onclick="copyMcpCode(this, '{\n  &quot;mcpServers&quot;: {\n    &quot;code-kb&quot;: {\n      &quot;url&quot;: &quot;REPLACE_URL/mcp/&quot;\n    }\n  }\n}')">📋 复制</button>
+          <code style="color: var(--color-foreground); display: block; padding-top: 8px; white-space: pre;">{
+  "mcpServers": {
+    "code-kb": {
+      "url": "<span class="mcp-url-placeholder">加载中…</span>/mcp/"
+    }
+  }
+}</code>
+        </div>
+      </div>
+
+      <!-- Claude Desktop -->
+      <div>
+        <h3 class="text-sm font-semibold text-white mb-2">Claude Desktop</h3>
+        <div class="rounded-lg p-3 font-mono text-sm relative" style="background: var(--color-surface);">
+          <button class="absolute top-2 right-2 text-xs px-2 py-1 rounded transition-colors"
+            style="background: var(--color-secondary); color: var(--color-foreground); border: 1px solid var(--color-border);"
+            onclick="copyMcpCode(this, '{\n  &quot;mcpServers&quot;: {\n    &quot;code-kb&quot;: {\n      &quot;command&quot;: &quot;npx&quot;,\n      &quot;args&quot;: [\n        &quot;-y&quot;, &quot;@anthropic-ai/mcp-client&quot;,\n        &quot;REPLACE_URL/mcp/&quot;\n      ]\n    }\n  }\n}')">📋 复制</button>
+          <code style="color: var(--color-foreground); display: block; padding-top: 8px; white-space: pre;">{
+  "mcpServers": {
+    "code-kb": {
+      "command": "npx",
+      "args": [
+        "-y", "@anthropic-ai/mcp-client",
+        "<span class="mcp-url-placeholder">加载中…</span>/mcp/"
+      ]
+    }
+  }
+}</code>
+        </div>
+      </div>
+
+      <!-- VS Code / Cline -->
+      <div>
+        <h3 class="text-sm font-semibold text-white mb-2">VS Code / Cline</h3>
+        <div class="rounded-lg p-3 font-mono text-sm relative" style="background: var(--color-surface);">
+          <button class="absolute top-2 right-2 text-xs px-2 py-1 rounded transition-colors"
+            style="background: var(--color-secondary); color: var(--color-foreground); border: 1px solid var(--color-border);"
+            onclick="copyMcpCode(this, '{\n  &quot;mcpServers&quot;: {\n    &quot;code-kb&quot;: {\n      &quot;url&quot;: &quot;REPLACE_URL/mcp/&quot;,\n      &quot;transport&quot;: &quot;streamable-http&quot;\n    }\n  }\n}')">📋 复制</button>
+          <code style="color: var(--color-foreground); display: block; padding-top: 8px; white-space: pre;">{
+  "mcpServers": {
+    "code-kb": {
+      "url": "<span class="mcp-url-placeholder">加载中…</span>/mcp/",
+      "transport": "streamable-http"
+    }
+  }
+}</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 内容区：使用示例 -->
+  <div id="mcp-tab-examples" class="mcp-tab-content hidden space-y-4">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <div class="rounded-lg p-4 text-sm" style="background: var(--color-surface); border-left: 3px solid #22C55E;">
+        <div class="font-semibold mb-1" style="color: #22C55E;">🔍 搜索代码</div>
+        <div class="mb-2" style="color: var(--color-muted);">"搜索邮件发送相关的代码"</div>
+        <div class="rounded p-2 text-xs font-mono" style="background: var(--color-background); color: var(--color-muted);">
+          → code_search(query="邮件发送", repo="mailflutter")<br>
+          → 返回 SendMailPage, MailService 等结果
+        </div>
+      </div>
+      <div class="rounded-lg p-4 text-sm" style="background: var(--color-surface); border-left: 3px solid #3B82F6;">
+        <div class="font-semibold mb-1" style="color: #3B82F6;">💬 代码问答</div>
+        <div class="mb-2" style="color: var(--color-muted);">"这段邮件发送逻辑是怎么工作的？"</div>
+        <div class="rounded p-2 text-xs font-mono" style="background: var(--color-background); color: var(--color-muted);">
+          → code_chat(question="...", repo="mailflutter")<br>
+          → RAG 检索 → LLM 解释，返回来源引用
+        </div>
+      </div>
+      <div class="rounded-lg p-4 text-sm" style="background: var(--color-surface); border-left: 3px solid #F59E0B;">
+        <div class="font-semibold mb-1" style="color: #F59E0B;">🔗 调用链追踪</div>
+        <div class="mb-2" style="color: var(--color-muted);">"谁调用了 sendMail？它又调用了谁？"</div>
+        <div class="rounded p-2 text-xs font-mono" style="background: var(--color-background); color: var(--color-muted);">
+          → code_trace(symbol="sendMail", direction="both")<br>
+          → BFS 多跳，返回调用图 + 被调用图
+        </div>
+      </div>
+      <div class="rounded-lg p-4 text-sm" style="background: var(--color-surface); border-left: 3px solid #8B5CF6;">
+        <div class="font-semibold mb-1" style="color: #8B5CF6;">📄 浏览文件</div>
+        <div class="mb-2" style="color: var(--color-muted);">"帮我看下 login_page.dart 的代码"</div>
+        <div class="rounded p-2 text-xs font-mono" style="background: var(--color-background); color: var(--color-muted);">
+          → code_file_context(repo="ghmail", file_name="login_page.dart")<br>
+          → 返回 LoginView 类完整内容
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 内容区：AI 视角 — 教 AI Agent 怎么高效使用（不是给人类看的） -->
+  <div id="mcp-tab-ai" class="mcp-tab-content hidden space-y-4">
+    <div class="rounded-lg p-3 text-sm" style="background: var(--color-surface); border-left: 3px solid #06B6D4;">
+      <div class="font-semibold mb-1" style="color: #06B6D4;">⚡ 核心策略</div>
+      <div style="color: var(--color-muted);">
+        用户提问 → 触发决策（搜索定位/使用调查/影响分析/参考借鉴/追溯调查）
+        → 阶段 1 同步多 query 并行搜 → 阶段 2 后台补全文+调用链 → 喂 LLM 整理答案
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <!-- 阶段 1 多 query 并行 -->
+      <div class="rounded-lg p-4 text-sm" style="background: var(--color-surface); border-left: 3px solid #22C55E;">
+        <div class="font-semibold mb-2" style="color: #22C55E;">🚀 阶段 1：多 query 并行（零后端改动）</div>
+        <div class="mb-2" style="color: var(--color-muted);">AI 一次性发出 2-3 个 search_code，全部 <code>run_in_background=true</code>，后端不用动：</div>
+        <div class="rounded p-2 text-xs font-mono" style="background: var(--color-background); color: var(--color-muted); white-space: pre;">run_in_background(true): code_search(query="会员 member VIP subscribe", repo=xxx)
+run_in_background(true): code_search(query="CloudMember privilege 续费", repo=xxx)
+run_in_background(true): code_search(query="membership plus payment", repo=xxx)
+# 三个返回后 AI 合并去重，总耗时 ≈ 单查询耗时</div>
+        <div class="mt-2 text-xs" style="color: var(--color-muted);">❌ 错误：串行 search(A) → search(B) → search(C) 三次等结果 = 3 倍单查询时间</div>
+      </div>
+
+      <!-- 阶段 2 后台补 -->
+      <div class="rounded-lg p-4 text-sm" style="background: var(--color-surface); border-left: 3px solid #3B82F6;">
+        <div class="font-semibold mb-2" style="color: #3B82F6;">📦 阶段 2：后台补全上下文</div>
+        <div class="mb-2" style="color: var(--color-muted);">拿到阶段 1 第一波结果就展示给用户，<strong>不阻塞</strong>。后台继续：</div>
+        <ul class="text-xs space-y-1" style="color: var(--color-muted);">
+          <li>• <code>code_file_context</code> 拉阶段 1 命中文件完整内容（补全 top_k=10 截断）</li>
+          <li>• <code>code_trace</code> 补充调用链（BFS 多跳，深度 1-3）</li>
+          <li>• grep 在命中文件上精确深挖（行级匹配）</li>
+        </ul>
+        <div class="mt-2 text-xs" style="color: var(--color-muted);">⚠️ 反直觉：本地有代码也要先 code_search（语义发现），再 grep（精确深挖）</div>
+      </div>
+
+      <!-- 反模式 -->
+      <div class="rounded-lg p-4 text-sm" style="background: var(--color-surface); border-left: 3px solid #F59E0B;">
+        <div class="font-semibold mb-2" style="color: #F59E0B;">🚫 反模式（AI 别这样干）</div>
+        <ul class="text-xs space-y-1" style="color: var(--color-muted);">
+          <li>❌ <strong>不要一开始就 grep</strong>：grep 只会字面匹配，漏语义相关代码。例："读信顶部引导条" grep→0，code_search→ConversationGuideBar</li>
+          <li>❌ <strong>已确定文件+行号</strong>的修改：直接改，不要搜索</li>
+          <li>❌ <strong>纯写代码</strong>不需要搜索：无"找/参考"意图不触发（除非追加"先看看现有的"）</li>
+          <li>❌ <strong>通用框架问题</strong>：查官方文档，不搜索代码库（"UIView 怎么用"→ 不需要）</li>
+          <li>❌ <strong>不要串行搜多次</strong>同一个 repo：2-3 组 query 并行搜（用 run_in_background）</li>
+          <li>❌ <strong>不要猜测文件路径</strong>：先用 code_search 确认</li>
+          <li>❌ <strong>不要用中文做精确类名搜索</strong>：中文→code_search 语义发现（翻译层负责中→英）</li>
+        </ul>
+      </div>
+
+      <!-- 双模调用 -->
+      <div class="rounded-lg p-4 text-sm" style="background: var(--color-surface); border-left: 3px solid #8B5CF6;">
+        <div class="font-semibold mb-2" style="color: #8B5CF6;">🔄 双模调用（MCP 不可用时降级）</div>
+        <div class="mb-2" style="color: var(--color-muted);">MCP 不可用时**同时做两件事**：</div>
+        <div class="rounded p-2 text-xs font-mono mb-2" style="background: var(--color-background); color: var(--color-muted); white-space: pre;"># 1. 立即用模式 B（不阻塞）
+python3 export/code-search/scripts/kb_rest.py search --query "XX" --top_k 5
+python3 export/code-search/scripts/kb_rest.py trace --symbol XX --direction both --depth 2
+python3 export/code-search/scripts/kb_rest.py repos
+
+# 2. 引导用户 4 步配置 MCP（不阻塞 AI 工作）
+# Step 1: Location = Project / User
+# Step 2: Name = code-kb
+# Step 3: Type = HTTP
+# Step 4: URL = http://<host>:8000/mcp/</div>
+        <div class="mt-2 text-xs" style="color: var(--color-muted);">⚠️ kb_rest.py 零依赖（urllib + json + argparse），Python 3.9+ 直接跑</div>
+      </div>
+    </div>
+
+    <!-- 失败回退链 -->
+    <div class="rounded-lg p-4 text-sm" style="background: var(--color-surface); border-left: 3px solid #EC4899;">
+      <div class="font-semibold mb-2" style="color: #EC4899;">🛟 失败回退链（7 步，code_search 返回空时依次尝试）</div>
+      <ol class="text-xs space-y-1" style="color: var(--color-muted);">
+        <li>1. <code>code_list_repos</code> 确认仓库在线状态</li>
+        <li>2. 去掉 <code>repo</code> 参数（搜所有已索引仓库；当前单仓下等同于搜 ghmail）</li>
+        <li>3. 换 query 策略：中文↔英文 / 同义词链（"登录"→"sign in"→"auth"）</li>
+        <li>4. 缩短 query："邮件附件下载进度条"→"附件下载"</li>
+        <li>5. 加 <code>repo</code> 参数限定（缩小范围确认问题在哪）</li>
+        <li>6. grep 在关键路径做字面匹配兜底</li>
+        <li>7. 提示用户：可能需要等待索引同步</li>
+      </ol>
+      <div class="mt-2 text-xs" style="color: var(--color-muted);">⚠️ <strong>假阳性</strong>：code_search 极少真返回 0 条，更常见是返回"语义相似"等低置信度假阳性。看每条结果的 <code>match_reason</code> 字段判真伪（符号匹配 > 混合匹配 > 关键词匹配 > 语义相似）</div>
+    </div>
+
+    <!-- 完整 SKILL.md 入口 -->
+    <div class="rounded-lg p-3 text-sm" style="background: var(--color-surface); border-left: 3px solid #F97316;">
+      <div class="font-semibold mb-1" style="color: #F97316;">📚 完整 AI 使用说明书</div>
+      <div style="color: var(--color-muted);">
+        上述只是要点速查。完整版（13 章节 / 含 5 个完整对话示例）见 <code>export/code-search/SKILL.md</code>，加载方式：<code>cp -r export/code-search/ ~/.claude/skills/code-kb/</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- 内容区：MCP 测试 — 浏览器直连验证 Streamable HTTP 端点 -->
+  <div id="mcp-tab-test" class="mcp-tab-content hidden space-y-4">
+    <div class="rounded-lg p-4 space-y-3" style="background: var(--color-surface);">
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="text-sm" style="color: var(--color-muted);">MCP 端点：</span>
+        <code id="mcp-test-endpoint" class="text-sm font-mono px-2 py-1 rounded"
+          style="background: var(--color-background); color: var(--color-accent);">—</code>
+        <button id="mcp-test-connect-btn" class="ml-auto px-3 py-1.5 rounded text-sm font-medium transition-colors"
+          style="background: var(--color-accent); color: var(--color-on-primary);" onclick="mcpTestConnect()">
+          🔌 测试连接
+        </button>
+        <span id="mcp-test-status" class="text-sm" style="color: var(--color-muted);">未连接</span>
+      </div>
+    </div>
+
+    <div class="rounded-lg p-4 space-y-3" style="background: var(--color-surface);">
+      <div class="flex flex-wrap items-center gap-3">
+        <label class="text-sm" style="color: var(--color-muted);">工具：</label>
+        <select id="mcp-test-tool" class="px-2 py-1.5 rounded text-sm font-mono"
+          style="background: var(--color-background); color: var(--color-foreground); border: 1px solid var(--color-border);" disabled>
+          <option value="">— 请先连接 —</option>
+        </select>
+        <!-- 4 个示例按钮：颜色对应 tool 列表（绿/蓝/橙/紫），左侧 3px 色条 + 文字色 + 浅色背景，hover 加深 -->
+        <button class="text-sm font-medium px-3 py-1.5 rounded transition-colors"
+          style="background: rgba(34, 197, 94, 0.12); color: #22C55E; border-left: 3px solid #22C55E; border-top: 1px solid var(--color-border); border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border);"
+          onmouseover="this.style.background='rgba(34, 197, 94, 0.25)'"
+          onmouseout="this.style.background='rgba(34, 197, 94, 0.12)'"
+          onclick="mcpTestFillSample('search')">🔍 搜代码</button>
+        <button class="text-sm font-medium px-3 py-1.5 rounded transition-colors"
+          style="background: rgba(59, 130, 246, 0.12); color: #3B82F6; border-left: 3px solid #3B82F6; border-top: 1px solid var(--color-border); border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border);"
+          onmouseover="this.style.background='rgba(59, 130, 246, 0.25)'"
+          onmouseout="this.style.background='rgba(59, 130, 246, 0.12)'"
+          onclick="mcpTestFillSample('chat')">💬 问答</button>
+        <button class="text-sm font-medium px-3 py-1.5 rounded transition-colors"
+          style="background: rgba(245, 158, 11, 0.12); color: #F59E0B; border-left: 3px solid #F59E0B; border-top: 1px solid var(--color-border); border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border);"
+          onmouseover="this.style.background='rgba(245, 158, 11, 0.25)'"
+          onmouseout="this.style.background='rgba(245, 158, 11, 0.12)'"
+          onclick="mcpTestFillSample('trace')">🔗 追踪</button>
+        <button class="text-sm font-medium px-3 py-1.5 rounded transition-colors"
+          style="background: rgba(139, 92, 246, 0.12); color: #8B5CF6; border-left: 3px solid #8B5CF6; border-top: 1px solid var(--color-border); border-right: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border);"
+          onmouseover="this.style.background='rgba(139, 92, 246, 0.25)'"
+          onmouseout="this.style.background='rgba(139, 92, 246, 0.12)'"
+          onclick="mcpTestFillSample('file')">📄 文件</button>
+        <span id="mcp-test-serverinfo" class="text-xs ml-auto" style="color: var(--color-muted);"></span>
+      </div>
+
+      <div>
+        <label class="text-sm block mb-1" style="color: var(--color-muted);">参数（JSON，对应工具的入参）：</label>
+        <textarea id="mcp-test-args" rows="6" class="w-full font-mono text-xs px-3 py-2 rounded"
+          style="background: var(--color-background); color: var(--color-foreground); border: 1px solid var(--color-border); resize: vertical;"
+          placeholder='例：{"query": "邮件发送", "top_k": 5}' disabled></textarea>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button id="mcp-test-send-btn" class="px-4 py-1.5 rounded text-sm font-medium transition-colors"
+          style="background: var(--color-accent); color: var(--color-on-primary);" onclick="mcpTestSend()" disabled>
+          📤 发送
+        </button>
+        <span id="mcp-test-spinner" class="text-sm hidden" style="color: var(--color-muted);">⏳ 请求中…</span>
+        <span id="mcp-test-elapsed" class="text-xs ml-auto" style="color: var(--color-muted);"></span>
+      </div>
+    </div>
+
+    <div>
+      <div class="flex items-center justify-between mb-1">
+        <label class="text-sm" style="color: var(--color-muted);">返回：</label>
+        <button class="text-xs px-2 py-1 rounded transition-colors"
+          style="background: var(--color-secondary); color: var(--color-foreground); border: 1px solid var(--color-border);"
+          onclick="mcpTestClear()">🗑 清空</button>
+      </div>
+      <pre id="mcp-test-response" class="rounded-lg p-3 text-xs font-mono whitespace-pre-wrap break-all"
+        style="background: var(--color-background); color: var(--color-foreground); border: 1px solid var(--color-border); min-height: 120px; max-height: 480px; overflow: auto;">点击"测试连接"开始验证 MCP 端点…</pre>
+    </div>
+  </div>
+
+  </div><!-- /agent-mcp-side -->
+
+  <div id="agent-skill-side" class="hidden space-y-4">
+    <h2 class="text-lg font-semibold text-white pt-3">📦 Skill 接入</h2>
+    <p class="text-sm" style="color:var(--color-muted);">
+      code-search skill 是 email-wiki-demo 给 AI Agent 用的使用说明书。装上后 AI 知道怎么调 MCP 的 5 个 tools（code_search / code_chat / code_trace / code_file_context / code_list_repos）。
+    </p>
+
+    <!-- 子 tab 切换 -->
+    <div class="flex flex-wrap gap-2 border-b pb-3" style="border-color:var(--color-border);">
+      <button type="button" class="skill-tab-btn active px-3 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap"
+        data-skill-tab="install" style="background:var(--color-accent); color:var(--color-on-primary);" onclick="switchSkillTab('install')">📦 安装指南</button>
+      <button type="button" class="skill-tab-btn px-3 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap"
+        data-skill-tab="md" style="color:var(--color-muted);" onclick="switchSkillTab('md')">📄 SKILL.md 预览</button>
+      <button type="button" class="skill-tab-btn px-3 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap"
+        data-skill-tab="commands" style="color:var(--color-muted);" onclick="switchSkillTab('commands')">🛠 脚本能力清单</button>
+      <button type="button" class="skill-tab-btn px-3 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap"
+        data-skill-tab="download" style="color:var(--color-muted);" onclick="switchSkillTab('download')">⬇️ 下载</button>
+    </div>
+
+    <!-- 子 tab 1: 安装指南 -->
+    <div id="skill-tab-install" class="skill-tab-content space-y-3">
+      <div class="rounded-lg p-4" style="background:var(--color-surface);">
+        <div class="text-sm font-semibold mb-2" style="color:#22C55E;">🤖 Claude Code</div>
+        <div class="rounded p-2 font-mono text-xs" style="background:var(--color-background);">
+          mkdir -p ~/.agents/skills/code-search &amp;&amp; unzip ~/Downloads/code-search.zip -d ~/.agents/skills/
+        </div>
+      </div>
+      <div class="rounded-lg p-4" style="background:var(--color-surface);">
+        <div class="text-sm font-semibold mb-2" style="color:#3B82F6;">✏️ Cursor</div>
+        <div class="rounded p-2 font-mono text-xs" style="background:var(--color-background);">
+          mkdir -p ~/.cursor/skills/code-search &amp;&amp; unzip ~/Downloads/code-search.zip -d ~/.cursor/skills/
+        </div>
+      </div>
+      <div class="rounded-lg p-4" style="background:var(--color-surface);">
+        <div class="text-sm font-semibold mb-2" style="color:#F59E0B;">🔧 CodeMaker / OpenCode</div>
+        <div class="rounded p-2 font-mono text-xs" style="background:var(--color-background);">
+          # CodeMaker<br>
+          mkdir -p ~/.codemaker/skills/code-search &amp;&amp; unzip ~/Downloads/code-search.zip -d ~/.codemaker/skills/<br>
+          # OpenCode<br>
+          mkdir -p ~/.config/opencode/skill/code-search &amp;&amp; unzip ~/Downloads/code-search.zip -d ~/.config/opencode/skill/
+        </div>
+      </div>
+    </div>
+
+    <!-- 子 tab 2: SKILL.md 预览 -->
+    <div id="skill-tab-md" class="skill-tab-content hidden">
+      <div id="skill-md-content" class="rounded-lg p-4 text-sm" style="background:var(--color-surface);">
+        <div style="color:var(--color-muted);">⏳ 加载中…</div>
+      </div>
+    </div>
+
+    <!-- 子 tab 3: 脚本能力清单 -->
+    <div id="skill-tab-commands" class="skill-tab-content hidden">
+      <div id="skill-commands-content" class="rounded-lg p-4" style="background:var(--color-surface);">
+        <div style="color:var(--color-muted);">⏳ 加载中…</div>
+      </div>
+    </div>
+
+    <!-- 子 tab 4: 下载 zip -->
+    <div id="skill-tab-download" class="skill-tab-content hidden">
+      <div id="skill-info-content">
+        <div style="color:var(--color-muted);">⏳ 加载中…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="mcp-toast" class="fixed bottom-6 right-6 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 opacity-0 pointer-events-none"
+    style="background: var(--color-accent); color: var(--color-on-primary); z-index: 9999;"></div>
+</div>
+
+<script>
+(function () {
+  const serverUrl = location.protocol + '//' + location.host;
+  document.querySelectorAll('.mcp-url-placeholder').forEach(function(el) {
+    el.textContent = serverUrl;
+  });
+  var urlEl = document.getElementById('mcp-server-url');
+  if (urlEl) urlEl.textContent = serverUrl;
+  var endpointEl = document.getElementById('mcp-test-endpoint');
+  if (endpointEl) endpointEl.textContent = serverUrl + '/mcp/';
+})();
+
+window.switchAgentTab = function(name) {
+  var sides = { mcp: 'agent-mcp-side', skill: 'agent-skill-side' };
+  var btns = { mcp: 'agent-tab-mcp', skill: 'agent-tab-skill' };
+  Object.keys(sides).forEach(function(k) {
+    var side = document.getElementById(sides[k]);
+    if (side) side.classList.toggle('hidden', k !== name);
+    var btn = document.getElementById(btns[k]);
+    if (btn) {
+      btn.classList.toggle('active', k === name);
+      btn.style.background = (k === name) ? 'var(--color-accent)' : '';
+      btn.style.color = (k === name) ? 'var(--color-on-primary)' : 'var(--color-muted)';
+    }
+  });
+  if (name === 'skill' && typeof window.initSkillTab === 'function') {
+    window.initSkillTab();
+  }
+}
+</script>

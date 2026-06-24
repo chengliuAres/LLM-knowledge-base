@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>两级 Tab 导航 — 设计方案对比</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Fira Sans', sans-serif; }
+  code, .mono { font-family: 'Fira Code', monospace; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+</style>
+</head>
+<body class="bg-[#0F172A] text-[#F8FAFC] min-h-screen p-8">
+
+<h1 class="text-2xl font-bold mb-2">两级 Tab 导航 — 三种设计方案</h1>
+<p class="text-[#94A3B8] mb-8">基于 Data-Dense Dashboard 设计系统 · Slate 深色主题 · Fira Code/Sans 字体</p>
+
+<!-- ═══ 方案 A ═══ -->
+<div class="mb-12">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="bg-[#22C55E] text-[#0F172A] font-bold px-3 py-1 rounded text-sm mono">A</span>
+    <h2 class="text-lg font-semibold">顶部双层 Tab（推荐）</h2>
+    <span class="text-xs bg-[#1E293B] text-[#94A3B8] px-2 py-1 rounded">最接近现有结构，改动最小</span>
+  </div>
+  <div class="bg-[#1E293B] rounded-xl overflow-hidden border border-[#334155]">
+    <!-- 一级 Tab -->
+    <div class="flex border-b border-[#334155]">
+      <div class="flex items-center gap-2 px-6 py-3 bg-[#0F172A] border-b-2 border-[#22C55E] text-[#22C55E] font-medium text-sm cursor-pointer">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        文档知识管理
+      </div>
+      <div class="flex items-center gap-2 px-6 py-3 text-[#64748B] text-sm cursor-pointer hover:text-[#94A3B8] transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+        代码知识库
+      </div>
+      <div class="flex-1"></div>
+      <div class="flex items-center px-4 text-xs text-[#475569] mono">Email Wiki v2.0</div>
+    </div>
+    <!-- 二级 Tab -->
+    <div class="flex items-center gap-1 px-4 py-2 bg-[#0F172A]/50 border-b border-[#334155]">
+      <button class="px-3 py-1.5 rounded-md text-xs font-medium bg-[#22C55E]/10 text-[#22C55E] border border-[#22C55E]/20">文档管理</button>
+      <button class="px-3 py-1.5 rounded-md text-xs font-medium text-[#64748B] hover:text-[#94A3B8] hover:bg-[#1E293B] transition-colors">邮件导入</button>
+      <button class="px-3 py-1.5 rounded-md text-xs font-medium text-[#64748B] hover:text-[#94A3B8] hover:bg-[#1E293B] transition-colors">智能问答</button>
+      <button class="px-3 py-1.5 rounded-md text-xs font-medium text-[#64748B] hover:text-[#94A3B8] hover:bg-[#1E293B] transition-colors">看板</button>
+      <button class="px-3 py-1.5 rounded-md text-xs font-medium text-[#64748B] hover:text-[#94A3B8] hover:bg-[#1E293B] transition-colors">LanceDB 内部</button>
+    </div>
+    <!-- 内容区占位 -->
+    <div class="p-6 text-[#475569] text-sm h-32 flex items-center justify-center">
+      Tab 内容区 · 自适应高度
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 方案 B ═══ -->
+<div class="mb-12">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="bg-[#3B82F6] text-white font-bold px-3 py-1 rounded text-sm mono">B</span>
+    <h2 class="text-lg font-semibold">左侧 Sidebar + 顶部子 Tab</h2>
+    <span class="text-xs bg-[#1E293B] text-[#94A3B8] px-2 py-1 rounded">信息层级更清晰，适合功能多的场景</span>
+  </div>
+  <div class="bg-[#1E293B] rounded-xl overflow-hidden border border-[#334155] flex" style="height:240px">
+    <!-- Sidebar -->
+    <div class="w-52 bg-[#0F172A] border-r border-[#334155] flex flex-col">
+      <div class="px-4 py-3 border-b border-[#334155]">
+        <span class="text-sm font-semibold text-[#F8FAFC]">📚 Email Wiki</span>
+      </div>
+      <div class="flex-1 py-2">
+        <div class="px-3 py-0.5 text-[10px] uppercase text-[#475569] tracking-wider mb-1">文档知识管理</div>
+        <div class="flex items-center gap-2 px-3 py-2 bg-[#22C55E]/10 text-[#22C55E] text-xs rounded mx-2 cursor-pointer">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          文档管理
+        </div>
+        <div class="flex items-center gap-2 px-3 py-2 text-[#64748B] text-xs rounded mx-2 cursor-pointer hover:text-[#94A3B8]">📧 邮件导入</div>
+        <div class="flex items-center gap-2 px-3 py-2 text-[#64748B] text-xs rounded mx-2 cursor-pointer hover:text-[#94A3B8]">💬 智能问答</div>
+        <div class="flex items-center gap-2 px-3 py-2 text-[#64748B] text-xs rounded mx-2 cursor-pointer hover:text-[#94A3B8]">📊 看板</div>
+        <div class="flex items-center gap-2 px-3 py-2 text-[#64748B] text-xs rounded mx-2 cursor-pointer hover:text-[#94A3B8]">🗄️ LanceDB</div>
+        <div class="h-px bg-[#334155] mx-3 my-2"></div>
+        <div class="px-3 py-0.5 text-[10px] uppercase text-[#475569] tracking-wider mb-1">代码知识库</div>
+        <div class="flex items-center gap-2 px-3 py-2 text-[#64748B] text-xs rounded mx-2 cursor-pointer hover:text-[#94A3B8]">📂 仓库扫描</div>
+        <div class="flex items-center gap-2 px-3 py-2 text-[#64748B] text-xs rounded mx-2 cursor-pointer hover:text-[#94A3B8]">🔍 代码搜索</div>
+        <div class="flex items-center gap-2 px-3 py-2 text-[#64748B] text-xs rounded mx-2 cursor-pointer hover:text-[#94A3B8]">💬 代码问答</div>
+        <div class="flex items-center gap-2 px-3 py-2 text-[#64748B] text-xs rounded mx-2 cursor-pointer hover:text-[#94A3B8]">📊 看板</div>
+        <div class="flex items-center gap-2 px-3 py-2 text-[#64748B] text-xs rounded mx-2 cursor-pointer hover:text-[#94A3B8]">🗄️ LanceDB</div>
+      </div>
+    </div>
+    <!-- 内容区 -->
+    <div class="flex-1 p-6 text-[#475569] text-sm flex items-center justify-center">
+      Tab 内容区 · 全高自适应
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 方案 C ═══ -->
+<div class="mb-12">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="bg-[#A855F7] text-white font-bold px-3 py-1 rounded text-sm mono">C</span>
+    <h2 class="text-lg font-semibold">Segmented Control + Pill 子 Tab</h2>
+    <span class="text-xs bg-[#1E293B] text-[#94A3B8] px-2 py-1 rounded">现代感最强，适合功能数量适中的场景</span>
+  </div>
+  <div class="bg-[#1E293B] rounded-xl overflow-hidden border border-[#334155]">
+    <!-- 一级 Segmented Control -->
+    <div class="flex items-center justify-center py-4 border-b border-[#334155]">
+      <div class="inline-flex bg-[#0F172A] rounded-lg p-1">
+        <div class="flex items-center gap-2 px-5 py-2 rounded-md bg-[#22C55E] text-[#0F172A] font-semibold text-sm cursor-pointer shadow-lg shadow-[#22C55E]/20">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          文档知识管理
+        </div>
+        <div class="flex items-center gap-2 px-5 py-2 rounded-md text-[#64748B] text-sm cursor-pointer hover:text-[#94A3B8] transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          代码知识库
+        </div>
+      </div>
+    </div>
+    <!-- 二级 Pill Tab -->
+    <div class="flex items-center gap-2 px-6 py-3">
+      <span class="px-3 py-1 rounded-full text-xs font-medium bg-[#22C55E]/15 text-[#22C55E] border border-[#22C55E]/30 cursor-pointer">文档管理</span>
+      <span class="px-3 py-1 rounded-full text-xs font-medium text-[#64748B] hover:text-[#94A3B8] cursor-pointer transition-colors">邮件导入</span>
+      <span class="px-3 py-1 rounded-full text-xs font-medium text-[#64748B] hover:text-[#94A3B8] cursor-pointer transition-colors">智能问答</span>
+      <span class="px-3 py-1 rounded-full text-xs font-medium text-[#64748B] hover:text-[#94A3B8] cursor-pointer transition-colors">看板</span>
+      <span class="px-3 py-1 rounded-full text-xs font-medium text-[#64748B] hover:text-[#94A3B8] cursor-pointer transition-colors">LanceDB 内部</span>
+    </div>
+    <!-- 内容区 -->
+    <div class="p-6 text-[#475569] text-sm h-32 flex items-center justify-center">
+      Tab 内容区 · 自适应高度
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 对比总结 ═══ -->
+<div class="bg-[#1E293B] rounded-xl border border-[#334155] p-6">
+  <h3 class="font-semibold mb-4 text-[#F8FAFC]">方案对比</h3>
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="text-[#94A3B8] text-xs uppercase tracking-wider border-b border-[#334155]">
+        <th class="text-left pb-3 pr-4">维度</th>
+        <th class="text-center pb-3 px-4">A 双层 Tab</th>
+        <th class="text-center pb-3 px-4">B Sidebar</th>
+        <th class="text-center pb-3 px-4">C Segmented</th>
+      </tr>
+    </thead>
+    <tbody class="text-[#CBD5E1]">
+      <tr class="border-b border-[#334155]/50">
+        <td class="py-2 pr-4 text-[#94A3B8]">改动量</td>
+        <td class="py-2 px-4 text-center text-[#22C55E]">最小</td>
+        <td class="py-2 px-4 text-center text-[#F59E0B]">中等</td>
+        <td class="py-2 px-4 text-center text-[#F59E0B]">中等</td>
+      </tr>
+      <tr class="border-b border-[#334155]/50">
+        <td class="py-2 pr-4 text-[#94A3B8]">信息层级</td>
+        <td class="py-2 px-4 text-center">清晰</td>
+        <td class="py-2 px-4 text-center text-[#22C55E]">最清晰</td>
+        <td class="py-2 px-4 text-center">清晰</td>
+      </tr>
+      <tr class="border-b border-[#334155]/50">
+        <td class="py-2 pr-4 text-[#94A3B8]">扩展性</td>
+        <td class="py-2 px-4 text-center">一般</td>
+        <td class="py-2 px-4 text-center text-[#22C55E]">最强</td>
+        <td class="py-2 px-4 text-center">一般</td>
+      </tr>
+      <tr class="border-b border-[#334155]/50">
+        <td class="py-2 pr-4 text-[#94A3B8]">内容空间</td>
+        <td class="py-2 px-4 text-center text-[#22C55E]">最大</td>
+        <td class="py-2 px-4 text-center text-[#EF4444]">被 sidebar 占</td>
+        <td class="py-2 px-4 text-center text-[#22C55E]">最大</td>
+      </tr>
+      <tr>
+        <td class="py-2 pr-4 text-[#94A3B8]">现代感</td>
+        <td class="py-2 px-4 text-center">中</td>
+        <td class="py-2 px-4 text-center">中</td>
+        <td class="py-2 px-4 text-center text-[#22C55E]">最强</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>

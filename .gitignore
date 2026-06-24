@@ -11,7 +11,12 @@ backend/.env
 
 # Auto-generated data (rebuilt on first run)
 data/
-models/
+
+# ML models (too large for git, downloaded on first run)
+config/models/
+
+# Runtime scan state (rebuilt on scan, not code)
+config/code_repos.json
 
 # IDE
 .idea/
@@ -29,3 +34,17 @@ Thumbs.db
 
 # Generated diagram PNGs (rebuild from SVGs)
 diagram/*@2x.png
+.superpowers/
+
+# Node modules（依赖）
+backend/node_modules/
+
+# frontend/vendor/（tailwindcss / chart / mermaid）—— **必须入库**
+#   项目运行必需的 vendor JS 不再靠 curl 下载，新 clone 直接可用。
+#   2026-06-15 约定反转：之前用全局 .gitignore 忽略导致 Mermaid 渲染踩坑。
+
+# Runtime artifacts (PID files, debug screenshots, MCP caches)
+.start.pid
+.playwright-mcp/
+read-letter-search-results.png
+*.pid
