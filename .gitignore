@@ -15,6 +15,9 @@ data/
 # ML models (too large for git, downloaded on first run)
 config/models/
 
+# Runtime scan state (rebuilt on scan, not code)
+config/code_repos.json
+
 # IDE
 .idea/
 .vscode/
