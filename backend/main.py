@@ -440,7 +440,8 @@ async def search(request: SearchRequest):
         step6 = tracker.add_step("filter_results", "结果过滤与排序")
         step6.start()
         
-        # 过滤低分结果（默认不过滤）
+        # 过滤低分结果（默认阈值 0.3）
+        score_threshold = 0.3
         filtered_results = [r for r in results if r["score"] > score_threshold]
 
         annotate_results(request.query, filtered_results)
